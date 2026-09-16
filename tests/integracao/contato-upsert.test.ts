@@ -28,7 +28,9 @@ function upsert(loja: string, telefone: string, nome?: string) {
 
 describe("upsertContatoPorCanal", () => {
   it("carimba o whatsapp_id no contato do CRM em vez de criar outro", async () => {
-    const telefone = "5551988887777";
+    // Telefone só deste arquivo: a varredura da LGPD (M2) procura 5551988887777
+    // em todas as tabelas, e o mesmo banco roda as duas suítes.
+    const telefone = "5551930304040";
     const crm = await criarContatoDeCrm(lojaId, telefone, "Joana do CRM");
     const linha = await upsert(lojaId, telefone, "Joana");
     expect(linha.id).toBe(crm);

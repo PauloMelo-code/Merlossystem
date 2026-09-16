@@ -103,6 +103,11 @@ describe("gestão da conversa", () => {
     const from = numero();
     const id = await receber(from, "oi");
     await emTransacao(ctx, async (tx, c) => arquivarConversa({ conversaId: id, updatedAt: await atualEm(id) }, c, tx));
+    const { rows: trilha } = await banco.query(
+      "select count(*)::int as n from auditoria_eventos where acao = 'conversa_arquivada' and entidade_id = $1",
+      [id],
+    );
+    expect(trilha[0].n).toBe(1);
     const nova = await receber(from, "voltei");
     expect(nova).not.toBe(id);
     await expect(

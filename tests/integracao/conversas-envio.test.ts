@@ -1,15 +1,17 @@
 import { randomUUID } from "node:crypto";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Contexto } from "@/lib/auth/guard";
-import type { ClienteHttp } from "@/lib/canais/tipos";
+import type { ClienteHttp, ConfigDoCanal } from "@/lib/canais/tipos";
 import {
   enviarDaFila,
   enviarPelaTela,
   processarEventoDeCanal,
   reenviarMensagem,
   registrarEnvio,
+  type DadosDoEnvio,
 } from "@/lib/conversas";
-import { emTransacao } from "@/lib/db/mutacoes";
+import { ATOR_SISTEMA, contextoDeSistema, emTransacao } from "@/lib/db/mutacoes";
+import { ErroDeEscopo } from "@/lib/erros";
 import { fecharConexoes, redisDoLimitador } from "@/lib/fila/conexao";
 import { fecharFilas } from "@/lib/fila/filas";
 import {
@@ -25,12 +27,31 @@ import {
 /**
  * Saída (pacote M1): envio pela tela, pela costura e pela fila; reenvio como
  * ÚNICA saída de `falhou`; conta da conversa decide; janela de 24 h; nota
- * interna nunca vai ao canal. O provedor é um dublê (`ClienteHttp`).
+ * interna nunca vai ao canal; anexo sobe pelo binário do MinIO. O provedor é
+ * um dublê (`ClienteHttp`) e a config de plataforma é FIXA — nada vem do env.
  */
+
+// O binário da mídia é do M3 (MinIO): aqui, bytes fixos por id.
+const binarios = vi.hoisted(() => new Map<string, Buffer>());
+vi.mock("@/lib/midias/leitura", async () => {
+  const { ErroDeEscopo: Escopo } = await import("@/lib/erros");
+  return {
+    lerBinarioDaMidia: async (_lojaId: string, midiaId: string) => {
+      const bytes = binarios.get(midiaId);
+      if (!bytes) throw new Escopo();
+      return { midiaId, bytes, mime: "image/png", nomeOriginal: "vestido.png", tamanhoBytes: bytes.byteLength };
+    },
+  };
+});
+
+const CONFIG: ConfigDoCanal = { versaoGraph: "v23.0", baseUazapi: "https://uazapi.exemplo.com" };
 
 let lojaId: string;
 let conta: { id: string; referencia: string };
 let ctx: Contexto;
+
+const enviar = (dados: DadosDoEnvio, ultima: boolean, http: ClienteHttp) =>
+  enviarDaFila(dados, ultima, { http, config: CONFIG });
 
 const provedorOk = (id = `wamid.${randomUUID()}`): ClienteHttp => async () => ({
   status: 200,
@@ -109,7 +130,7 @@ describe("envio", () => {
     expect(c[0]).toMatchObject({ responsavel_id: ctx.autorId, nao_lidas: 0 });
     expect(c[0].primeira_resposta_em).not.toBeNull();
 
-    const desfecho = await enviarDaFila(r.envio!, false, provedorOk("wamid.OK1"));
+    const desfecho = await enviar(r.envio!, false, provedorOk("wamid.OK1"));
     expect(desfecho.desfecho).toBe("enviada");
     expect(await linha(r.mensagemId)).toMatchObject({ status_entrega: "enviada", externo_id: "wamid.OK1" });
   });
@@ -117,7 +138,7 @@ describe("envio", () => {
   it("recusa permanente vira `falhou` com motivo; reenvio é claim único e limpa o motivo", async () => {
     const { conversaId } = await conversaRecebida();
     const r = await enviarTexto(conversaId);
-    const falha = await enviarDaFila(r.envio!, false, provedorRecusa(400, "Número inválido"));
+    const falha = await enviar(r.envio!, false, provedorRecusa(400, "Número inválido"));
     expect(falha.desfecho).toBe("falhou");
     expect(await linha(r.mensagemId)).toMatchObject({ status_entrega: "falhou", falha_motivo: "Número inválido" });
 
@@ -133,16 +154,16 @@ describe("envio", () => {
     );
     expect(trilha[0].n).toBe(1);
 
-    const ok = await enviarDaFila(reenvio.envio!, false, provedorOk());
+    const ok = await enviar(reenvio.envio!, false, provedorOk());
     expect(ok.desfecho).toBe("enviada");
   });
 
   it("erro transitório retenta; na última tentativa vira `falhou`", async () => {
     const { conversaId } = await conversaRecebida();
     const r = await enviarTexto(conversaId);
-    await expect(enviarDaFila(r.envio!, false, provedorRecusa(503, "Indisponível"))).rejects.toThrow("Indisponível");
+    await expect(enviar(r.envio!, false, provedorRecusa(503, "Indisponível"))).rejects.toThrow("Indisponível");
     expect((await linha(r.mensagemId)).status_entrega).toBe("pendente");
-    const ultima = await enviarDaFila(r.envio!, true, provedorRecusa(503, "Indisponível"));
+    const ultima = await enviar(r.envio!, true, provedorRecusa(503, "Indisponível"));
     expect(ultima.desfecho).toBe("falhou");
   });
 
@@ -150,7 +171,7 @@ describe("envio", () => {
     const { conversaId } = await conversaRecebida();
     const outra = await criarConta(lojaId, { status: "desconectado" });
     const r = await enviarTexto(conversaId);
-    const desfecho = await enviarDaFila({ ...r.envio!, integracaoId: outra.id }, false, provedorOk());
+    const desfecho = await enviar({ ...r.envio!, integracaoId: outra.id }, false, provedorOk());
     expect(desfecho.desfecho).toBe("enviada");
   });
 
@@ -188,21 +209,30 @@ describe("envio", () => {
     const { conversaId } = await conversaRecebida();
     const r = await enviarTexto(conversaId, "só para a equipe", true);
     expect(r.envio).toBeNull();
-    const desfecho = await enviarDaFila({ lojaId, mensagemId: r.mensagemId, integracaoId: conta.id }, false, provedorOk());
+    const desfecho = await enviar({ lojaId, mensagemId: r.mensagemId, integracaoId: conta.id }, false, provedorOk());
     expect(desfecho.desfecho).toBe("ignorada");
   });
 
   it("costura registrarEnvio: mesma chave = mesma mensagem; conta de outra loja = 404", async () => {
     const { conversaId, contatoId } = await conversaRecebida();
-    const sistema: Contexto = { ...ctx, origem: "worker" };
+    const sistema = contextoDeSistema({ origem: "worker", lojaId });
     const chave = randomUUID();
     const envio = { lojaId, contatoId, integracaoId: conta.id, conteudo: "Promoção!", chaveIdempotencia: chave };
     const a = await emTransacao(sistema, (tx, c) => registrarEnvio(tx, envio, c));
     const b = await emTransacao(sistema, (tx, c) => registrarEnvio(tx, envio, c));
     expect(a).toEqual(b);
     expect(a.conversaId).toBe(conversaId);
-    const { rows } = await banco.query("select autor_tipo, autor_usuario_id from conversas_mensagens where id = $1", [a.mensagemId]);
-    expect(rows[0]).toMatchObject({ autor_tipo: "campanha", autor_usuario_id: null });
+    const { rows } = await banco.query(
+      "select autor_tipo, autor_usuario_id, modified_by from conversas_mensagens where id = $1",
+      [a.mensagemId],
+    );
+    // Sem pessoa: o autor da linha é o ATOR_SISTEMA, e a mensagem não tem usuário.
+    expect(rows[0]).toMatchObject({ autor_tipo: "campanha", autor_usuario_id: null, modified_by: ATOR_SISTEMA });
+    const { rows: trilha } = await banco.query(
+      "select ator_tipo, ator_id from auditoria_eventos where acao = 'mensagem_enviada' and entidade_id = $1",
+      [a.mensagemId],
+    );
+    expect(trilha).toEqual([{ ator_tipo: "sistema", ator_id: ATOR_SISTEMA }]);
 
     const alheia = await criarConta(await criarLoja());
     await expect(
@@ -219,5 +249,75 @@ describe("envio", () => {
         enviarPelaTela({ conversaId, conteudo: "x", chaveIdempotencia: randomUUID(), notaInterna: false, variaveis: [] }, c, tx),
       ),
     ).rejects.toMatchObject({ codigo: "NAO_ENCONTRADO" });
+  });
+});
+
+describe("anexo de saída", () => {
+  async function criarMidia(loja: string, bytes?: Buffer): Promise<string> {
+    const id = randomUUID();
+    await banco.query(
+      `insert into lojas_midias (id, loja_id, nome_original, chave_objeto, tipo_arquivo, mime_type, tamanho_bytes, origem, pasta)
+       values ($1, $2, 'vestido.png', $3, 'imagem', 'image/png', 4, 'upload', 'geral')`,
+      [id, loja, `${loja}/upload/${id}.png`],
+    );
+    if (bytes) binarios.set(id, bytes);
+    return id;
+  }
+
+  const anexar = (conversaId: string, midiaId: string, conteudo = "") =>
+    emTransacao(ctx, (tx, c) =>
+      enviarPelaTela(
+        { conversaId, conteudo, chaveIdempotencia: randomUUID(), notaInterna: false, midiaId, variaveis: [] },
+        c,
+        tx,
+      ),
+    );
+
+  it("a tela liga a mídia guardada; a fila sobe o binário (multipart) e cita o id", async () => {
+    const { conversaId } = await conversaRecebida();
+    const midiaId = await criarMidia(lojaId, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    const r = await anexar(conversaId, midiaId, "olha esse");
+
+    const { rows: m } = await banco.query("select tipo_conteudo, conteudo, status_entrega from conversas_mensagens where id = $1", [r.mensagemId]);
+    expect(m[0]).toEqual({ tipo_conteudo: "imagem", conteudo: "olha esse", status_entrega: "pendente" });
+    const { rows: anexo } = await banco.query(
+      "select midia_id, url_externa, baixada, tipo_arquivo from conversas_mensagens_midias where mensagem_id = $1",
+      [r.mensagemId],
+    );
+    expect(anexo).toEqual([{ midia_id: midiaId, url_externa: null, baixada: true, tipo_arquivo: "imagem" }]);
+    const { rows: trilha } = await banco.query(
+      "select count(*)::int as n from auditoria_eventos where acao = 'midia_enviada' and entidade = 'conversas_mensagens_midias' and ator_id = $1",
+      [ctx.autorId],
+    );
+    expect(trilha[0].n).toBeGreaterThanOrEqual(1);
+
+    const vistas: { url: string; corpo: unknown }[] = [];
+    const graph: ClienteHttp = async (url, opcoes) => {
+      vistas.push({ url, corpo: opcoes.corpo });
+      const corpo = url.endsWith("/media") ? { id: "MID-9" } : { messages: [{ id: "wamid.ANEXO" }] };
+      return { status: 200, tipo: "application/json", bytes: Buffer.from(JSON.stringify(corpo)) };
+    };
+    const desfecho = await enviar(r.envio!, false, graph);
+    expect(desfecho.desfecho).toBe("enviada");
+    expect(vistas[0]!.url).toMatch(/\/media$/);
+    expect(vistas[0]!.corpo).toBeInstanceOf(FormData);
+    expect(JSON.parse(vistas[1]!.corpo as string)).toMatchObject({ type: "image", image: { id: "MID-9", caption: "olha esse" } });
+    expect(await linha(r.mensagemId)).toMatchObject({ status_entrega: "enviada", externo_id: "wamid.ANEXO" });
+  });
+
+  it("mídia de outra loja responde 404 e nada é gravado", async () => {
+    const { conversaId } = await conversaRecebida();
+    const alheia = await criarMidia(await criarLoja(), Buffer.from([1]));
+    await expect(anexar(conversaId, alheia)).rejects.toMatchObject({ codigo: "NAO_ENCONTRADO" });
+    await expect(anexar(conversaId, randomUUID())).rejects.toBeInstanceOf(ErroDeEscopo);
+  });
+
+  it("binário que sumiu antes do envio: `falhou` com motivo, sem retentar", async () => {
+    const { conversaId } = await conversaRecebida();
+    const midiaId = await criarMidia(lojaId);
+    const r = await anexar(conversaId, midiaId);
+    const desfecho = await enviar(r.envio!, false, provedorOk());
+    expect(desfecho.desfecho).toBe("falhou");
+    expect(await linha(r.mensagemId)).toMatchObject({ status_entrega: "falhou", falha_motivo: "O anexo foi excluído da galeria." });
   });
 });

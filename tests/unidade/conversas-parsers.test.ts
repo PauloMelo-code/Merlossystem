@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { interpretarInstagram } from "@/lib/canais/instagram";
+import { criarInstagram, interpretarInstagram } from "@/lib/canais/instagram";
 import { interpretarUazapi } from "@/lib/canais/uazapi";
 import { criarWhatsappOficial, interpretarWhatsappOficial } from "@/lib/canais/whatsapp-oficial";
 import { criarUazapi } from "@/lib/canais/uazapi";
 import type { ClienteHttp } from "@/lib/canais/tipos";
+import { aceitaAnexo } from "@/lib/conversas/regras";
 
 /**
  * Parser de webhook dos 3 provedores com payload FIXO (pacote M1). O parser
@@ -263,7 +264,7 @@ describe("uazapi", () => {
 });
 
 describe("adaptadores: envio pela porta HTTP injetada", () => {
-  const chamadas: { url: string; corpo?: string; cabecalhos?: Record<string, string> }[] = [];
+  const chamadas: { url: string; corpo?: string | FormData; cabecalhos?: Record<string, string> }[] = [];
   const http =
     (status: number, corpo: unknown): ClienteHttp =>
     async (url, opcoes) => {
@@ -292,6 +293,63 @@ describe("adaptadores: envio pela porta HTTP injetada", () => {
     expect(await recusa.enviarTexto("1", "x")).toEqual({ ok: false, motivo: "inválido", permanente: true });
     const fora = criarWhatsappOficial({ ...base, http: http(503, {}) });
     expect(await fora.enviarTexto("1", "x")).toMatchObject({ ok: false, permanente: false });
+  });
+
+  it("oficial: anexo sobe por multipart (sem content-type) e a mensagem cita o id", async () => {
+    const vistas: { url: string; corpo?: string | FormData; cabecalhos?: Record<string, string> }[] = [];
+    const graph: ClienteHttp = async (url, opcoes) => {
+      vistas.push({ url, ...(opcoes.corpo ? { corpo: opcoes.corpo } : {}), ...(opcoes.cabecalhos ? { cabecalhos: opcoes.cabecalhos } : {}) });
+      const corpo = url.endsWith("/media") ? { id: "MID-1" } : { messages: [{ id: "wamid.MIDIA" }] };
+      return { status: 200, tipo: "application/json", bytes: Buffer.from(JSON.stringify(corpo)) };
+    };
+    const a = criarWhatsappOficial({ accessToken: "tk", phoneNumberId: "PN", versaoGraph: "v23.0", http: graph, conferirAssinatura: () => true });
+    const bytes = Buffer.from([0x25, 0x50, 0x44, 0x46]);
+    const r = await a.enviarMidia!("5551930304040", { tipo: "documento", bytes, mime: "application/pdf", nome: "catalogo.pdf", legenda: "Segue" });
+    expect(r).toEqual({ ok: true, externoId: "wamid.MIDIA" });
+
+    const [subida, mensagem] = vistas;
+    expect(subida!.url).toBe("https://graph.facebook.com/v23.0/PN/media");
+    expect(subida!.cabecalhos).toEqual({ authorization: "Bearer tk" });
+    const form = subida!.corpo as FormData;
+    expect(form).toBeInstanceOf(FormData);
+    expect(form.get("messaging_product")).toBe("whatsapp");
+    expect(form.get("type")).toBe("application/pdf");
+    expect((form.get("file") as File).name).toBe("catalogo.pdf");
+    expect((form.get("file") as File).size).toBe(4);
+
+    expect(mensagem!.url).toBe("https://graph.facebook.com/v23.0/PN/messages");
+    expect(JSON.parse(mensagem!.corpo as string)).toEqual({
+      messaging_product: "whatsapp",
+      to: "5551930304040",
+      type: "document",
+      document: { id: "MID-1", caption: "Segue", filename: "catalogo.pdf" },
+    });
+  });
+
+  it("oficial: upload recusado vira falha com o motivo da Graph", async () => {
+    const a = criarWhatsappOficial({
+      accessToken: "tk",
+      phoneNumberId: "PN",
+      versaoGraph: "v23.0",
+      http: http(400, { error: { message: "Formato não suportado" } }),
+      conferirAssinatura: () => true,
+    });
+    const r = await a.enviarMidia!("1", { tipo: "audio", bytes: Buffer.from([1]), mime: "audio/ogg" });
+    expect(r).toEqual({ ok: false, motivo: "Formato não suportado", permanente: true });
+  });
+
+  it("a tela (aceitaAnexo) e o adaptador (enviarMidia) concordam por provedor", () => {
+    const comum = { accessToken: "tk", versaoGraph: "v23.0", http: http(200, {}), conferirAssinatura: () => true };
+    const adaptadores = {
+      whatsapp_oficial: criarWhatsappOficial({ ...comum, phoneNumberId: "PN" }),
+      uazapi: criarUazapi({ token: "tk", base: "https://uazapi.exemplo.com", http: comum.http, conferirAssinatura: () => true }),
+      // O Direct pede o anexo por URL pública, e a mídia da loja é privada.
+      instagram: criarInstagram(comum),
+    };
+    for (const [provedor, a] of Object.entries(adaptadores)) {
+      expect(aceitaAnexo(provedor), provedor).toBe(Boolean(a.enviarMidia));
+    }
+    expect(aceitaAnexo("instagram")).toBe(false);
   });
 
   it("erro de rede vira resultado, não exceção", async () => {

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { processarEventoDeCanal } from "@/lib/conversas";
+import { ATOR_SISTEMA } from "@/lib/db/mutacoes";
 import {
   banco,
   criarConta,
@@ -79,6 +80,18 @@ describe("entrada de mensagem", () => {
     expect(ev[0].corpo.mascarado).toBe(true);
     expect(JSON.stringify(ev[0].corpo)).not.toContain(from);
     expect(JSON.stringify(ev[0].corpo)).not.toContain("vestido");
+
+    // Trilha com as ações próprias da entrada, gravada pelo ATOR_SISTEMA.
+    const { mensagemId, conversaId } = r.novas[0]!;
+    const { rows: trilha } = await banco.query(
+      `select entidade, acao, ator_tipo, ator_id from auditoria_eventos
+        where entidade_id in ($1, $2) order by entidade`,
+      [mensagemId, conversaId],
+    );
+    expect(trilha).toEqual([
+      { entidade: "conversas", acao: "conversa_criada", ator_tipo: "sistema", ator_id: ATOR_SISTEMA },
+      { entidade: "conversas_mensagens", acao: "mensagem_recebida", ator_tipo: "sistema", ator_id: ATOR_SISTEMA },
+    ]);
   });
 
   it("a 2ª entrega do mesmo externo_id não duplica", async () => {

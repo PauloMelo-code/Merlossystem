@@ -17,6 +17,15 @@ vi.mock("next/link", () => ({
   ),
 }));
 
+// A subida real é um XHR para `/api/midias`: aqui só o id que a rota devolveria.
+const { subirAnexo } = vi.hoisted(() => ({
+  subirAnexo: vi.fn(async () => ({ ok: true as const, id: "0b4e2f0e-8c4b-4c61-9d3a-6f1f5f0c0a01" })),
+}));
+vi.mock("@/app/(app)/conversas/_components/anexos", async (original) => ({
+  ...(await original<typeof import("@/app/(app)/conversas/_components/anexos")>()),
+  subirAnexo,
+}));
+
 const { Composer } = await import("@/app/(app)/conversas/_components/composer");
 const { BalaoMensagem } = await import("@/app/(app)/conversas/_components/balao-mensagem");
 
@@ -27,6 +36,8 @@ function montar(extra: Partial<Props> = {}) {
   render(
     <Composer
       conversaId="c1"
+      lojaId="loja-1"
+      aceitaAnexo={false}
       bloqueio={null}
       aviso={null}
       limite={4096}
@@ -113,6 +124,68 @@ describe("composer: nota interna", () => {
     fireEvent.click(screen.getByRole("button", { name: /Enviar/ }));
     await waitFor(() => expect(screen.getByRole("alert").textContent).toBe("Registro não encontrado."));
     expect(campo.value).toBe("oi");
+  });
+});
+
+describe("composer: anexo", () => {
+  const png = () => new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], "vestido.png", { type: "image/png" });
+  const escolher = (arquivo: File) =>
+    fireEvent.change(screen.getByLabelText("Escolher arquivo para anexar"), { target: { files: [arquivo] } });
+
+  it("número sem anexo: o botão nem aparece", () => {
+    montar();
+    expect(screen.queryByRole("button", { name: /Anexar/ })).toBeNull();
+  });
+
+  it("escolhe, mostra a prévia e envia só o id da mídia com a legenda", async () => {
+    const { aoEnviar } = montar({ aceitaAnexo: true });
+    escolher(png());
+    expect(screen.getByText("vestido.png")).toBeTruthy();
+    const campo = screen.getByPlaceholderText("Legenda (opcional)");
+    fireEvent.change(campo, { target: { value: "  olha esse  " } });
+    fireEvent.click(screen.getByRole("button", { name: /Enviar/ }));
+    await waitFor(() =>
+      expect(aoEnviar).toHaveBeenCalledWith({
+        conteudo: "olha esse",
+        nota: false,
+        midiaId: "0b4e2f0e-8c4b-4c61-9d3a-6f1f5f0c0a01",
+      }),
+    );
+    expect(subirAnexo).toHaveBeenCalledWith(expect.any(File), "loja-1", expect.any(Function));
+    await waitFor(() => expect(screen.queryByText("vestido.png")).toBeNull());
+  });
+
+  it("sem legenda também envia (o anexo basta)", async () => {
+    const { aoEnviar } = montar({ aceitaAnexo: true });
+    escolher(png());
+    const enviar = screen.getByRole("button", { name: /Enviar/ }) as HTMLButtonElement;
+    expect(enviar.disabled).toBe(false);
+    fireEvent.click(enviar);
+    await waitFor(() => expect(aoEnviar).toHaveBeenCalledWith(expect.objectContaining({ conteudo: "" })));
+  });
+
+  it("tipo fora da lista: explica e não anexa", () => {
+    montar({ aceitaAnexo: true });
+    escolher(new File(["oi"], "nota.txt", { type: "text/plain" }));
+    expect(screen.getByRole("alert").textContent).toBe("Tipo de arquivo não aceito.");
+    expect(screen.queryByText("nota.txt")).toBeNull();
+  });
+
+  it("falha do servidor: motivo visível e o anexo continua para tentar de novo", async () => {
+    const aoEnviar = vi.fn(async () => "Este número não envia anexo.");
+    montar({ aceitaAnexo: true, aoEnviar });
+    escolher(png());
+    fireEvent.click(screen.getByRole("button", { name: /Enviar/ }));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toBe("Este número não envia anexo."));
+    expect(screen.getByText("vestido.png")).toBeTruthy();
+  });
+
+  it("nota interna não leva anexo", () => {
+    montar({ aceitaAnexo: true });
+    escolher(png());
+    fireEvent.click(screen.getByRole("button", { name: /Nota interna/ }));
+    expect(screen.queryByText("vestido.png")).toBeNull();
+    expect((screen.getByRole("button", { name: /Anexar/ }) as HTMLButtonElement).disabled).toBe(true);
   });
 });
 

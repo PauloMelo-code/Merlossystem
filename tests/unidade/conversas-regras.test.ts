@@ -114,6 +114,8 @@ describe("normalização", () => {
     expect(telefoneDoRemetente("5551988887777@s.whatsapp.net")).toBe("5551988887777");
     expect(telefoneDoRemetente("IGSID-123")).toBeUndefined();
     expect(telefoneDoRemetente("0551988887777")).toBeUndefined();
+    // O id do WhatsApp já traz o país: número estrangeiro curto não ganha o 55.
+    expect(telefoneDoRemetente("14155551234@s.whatsapp.net")).toBe("14155551234");
   });
 
   it("prévia de 100 caracteres e rótulo por tipo", () => {
