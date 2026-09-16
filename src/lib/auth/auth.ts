@@ -17,7 +17,7 @@ import { enfileirarEmailSeguranca } from "./emails";
 import { kdf } from "./kdf";
 import { politicaDeSenha } from "./politica-senha";
 import { aposSenhaGravada } from "./senha-gravada";
-import { aposCriarSessao, podeCriarSessao } from "./sessoes";
+import { aposCriarSessao, consumirMarcaPre2fa, podeCriarSessao } from "./sessoes";
 import { registrarEventoAuth } from "./trilha";
 
 /**
@@ -324,6 +324,9 @@ export const opcoesAuth = {
           // G25: a prova tem de existir ANTES do delete físico da biblioteca.
           // `try/catch` explícito porque hook `before` que lança ABORTA a
           // operação — e "sair" tem de sair sempre.
+          // A sessão pré-2FA não é entrada nem saída: já virou
+          // `senha_aceita_aguardando_2fa` (§17.2, L2).
+          if (consumirMarcaPre2fa(sessao.id)) return;
           try {
             await registrarEventoAuth({
               tipo: "sessao_encerrada",

@@ -103,6 +103,26 @@ describe("anti-replay de TOTP", () => {
     expect(rows[0]!.n).toBe("1");
   });
 
+  it("a sessão pré-2FA não vira login_sucesso nem sessao_* na trilha (L2)", async () => {
+    const u = await criarUsuario("pre-2fa@teste.local");
+    await ligarTotp(u.id);
+    const r = await postar(
+      "/two-factor/verify-totp",
+      { code: await OTP.totp() },
+      { cookie: await abrirDesafio(u) },
+    );
+    expect(r.status).toBe(200);
+
+    const { rows } = await poolDeTeste.query<{ tipo: string; meio: string | null }>(
+      "select tipo::text, meio::text from auth_eventos where usuario_id = $1::uuid order by criado_em",
+      [u.id],
+    );
+    expect(rows).toEqual([
+      { tipo: "sessao_criada", meio: "senha+totp" },
+      { tipo: "login_sucesso", meio: "senha+totp" },
+    ]);
+  });
+
   it("grava o passo DO CÓDIGO: um código mais novo continua entrando", async () => {
     const u = await criarUsuario("passo-do-codigo@teste.local");
     await ligarTotp(u.id);

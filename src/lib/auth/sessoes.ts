@@ -41,6 +41,7 @@ type LinhaUsuario = {
   is_deleted: boolean;
   precisa_configurar_fator: boolean;
   bloqueado_ate: Date | null;
+  two_factor_enabled: boolean;
 };
 
 function caminho(ctx: ContextoBA): string {
@@ -57,7 +58,8 @@ export function meioDoCaminho(rota: string): MeioAuth {
 
 async function lerUsuario(usuarioId: string): Promise<LinhaUsuario | undefined> {
   const linhas = await db.execute<LinhaUsuario>(sql`
-    select id, papel, ativo, is_deleted, precisa_configurar_fator, bloqueado_ate
+    select id, papel, ativo, is_deleted, precisa_configurar_fator, bloqueado_ate,
+      two_factor_enabled
     from usuarios where id = ${usuarioId}::uuid limit 1
   `);
   return linhas.rows[0];
@@ -108,8 +110,36 @@ export async function podeCriarSessao(sessao: SessaoBA, ctx: ContextoBA): Promis
  * Trilha de entrada + teto de sessões. Nunca lança: é o funil best-effort de
  * §17.2 — trilha não pode impedir alguém de entrar (REQ-L3).
  */
+/**
+ * Sessões pré-2FA vistas no `create.after`: o plugin apaga cada uma logo em
+ * seguida, na mesma requisição, e o `delete.before` consome a marca.
+ * ponytail: Set em memória do processo; basta porque criação e exclusão
+ * acontecem no mesmo handler.
+ */
+const sessoesPre2fa = new Set<string>();
+
+/** `true` uma única vez para a sessão pré-2FA: o hook de exclusão não a grava. */
+export function consumirMarcaPre2fa(sessaoId: string | undefined): boolean {
+  return sessaoId !== undefined && sessoesPre2fa.delete(sessaoId);
+}
+
 export async function aposCriarSessao(sessao: SessaoBA, ctx: ContextoBA): Promise<void> {
   const rota = caminho(ctx);
+  // L2 (02-seguranca.md §17.2, item 1): a senha certa de conta com TOTP gera
+  // uma sessão que o plugin apaga no ato. Ela vira `senha_aceita_aguardando_2fa`
+  // no Route Handler e nunca `login_sucesso`; também não entra no teto, senão
+  // derrubaria uma sessão legítima só por alguém acertar a senha.
+  if (rota === "/sign-in/email") {
+    try {
+      if ((await lerUsuario(sessao.userId))?.two_factor_enabled) {
+        if (sessao.id !== undefined) sessoesPre2fa.add(sessao.id);
+        return;
+      }
+    } catch (erro) {
+      logger.error({ erro: sanitizarErroBanco(erro) }, "aposCriarSessao falhou");
+      return;
+    }
+  }
   const meio = meioDoCaminho(rota);
   // O IP da trilha sai de `ipDoCliente()`, nunca do que o BA resolveu: a nossa
   // resolução tem o teto de 1 salto e cai para o socket em cadeia inesperada.
