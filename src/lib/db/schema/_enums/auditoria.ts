@@ -21,11 +21,16 @@ export const ACOES_AUDITADAS = [
   "conversa_reaberta",
   "conversa_transferida",
   "conversa_prioridade_alterada",
+  "conversa_criada",
+  "conversa_arquivada",
   "mensagem_enviada",
   "mensagem_reenviada",
   "mensagem_nota_interna",
+  "mensagem_recebida",
   "midia_enviada",
   "midia_excluida",
+  "midia_recebida",
+  "midia_alterada",
   "contato_criado",
   "contato_alterado",
   "contato_excluido",
@@ -40,6 +45,7 @@ export const ACOES_AUDITADAS = [
   "pedido_lancado_masc",
   "pedido_dispensado_masc",
   "pedido_voltou_fila_masc",
+  "pedido_rastreio_informado",
   "pagamento_gerado",
   "pagamento_confirmado",
   "pagamento_estornado",
@@ -52,15 +58,29 @@ export const ACOES_AUDITADAS = [
   "campanha_pausada",
   "campanha_concluida",
   "campanha_excluida",
+  "campanha_alterada",
   "template_enviado",
   "template_aprovado",
   "template_rejeitado",
+  "template_criado",
+  "template_alterado",
+  "template_excluido",
+  "template_pausado",
+  "resposta_rapida_criada",
+  "resposta_rapida_alterada",
+  "resposta_rapida_excluida",
+  "agendamento_criado",
+  "agendamento_reagendado",
+  "agendamento_cancelado",
   "produto_sincronizado",
   "produto_preco_alterado",
   "lgpd_exportado",
   "lgpd_anonimizado",
   "lgpd_solicitacao_registrada",
   "consentimento_registrado",
+  // Migração 0018 (ADR 0032): o que a onda 2 provou faltar.
+  "alerta_reconhecido",
+  "convite_expirado",
 ] as const;
 export type AcaoAuditada = (typeof ACOES_AUDITADAS)[number];
 
@@ -85,6 +105,8 @@ export const CAMPOS_PII: Readonly<Record<string, readonly string[]>> = {
   usuarios: ["nome", "email", "avatar_url"],
   pedidos: ["endereco_entrega"],
   pesquisas_satisfacao: ["comentario"],
+  /** Texto livre: quem registra pode escrever o nome do titular (ADR 0033). */
+  lgpd_solicitacoes: ["motivo"],
 };
 
 export const TIPOS_CONSENTIMENTO = [

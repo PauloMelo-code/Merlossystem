@@ -54,6 +54,8 @@ export const TIPOS_ALERTA = [
   "follow_up_atrasado",
   "sessao_uazapi_caiu",
   "integracao_com_erro",
+  /** Reconciliação noturna: espelho × verdade divergem (01-dados-dominio.md §7.2). */
+  "espelho_divergente",
 ] as const;
 export type TipoAlerta = (typeof TIPOS_ALERTA)[number];
 

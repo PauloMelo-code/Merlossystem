@@ -18,7 +18,8 @@
  *      escrita de exceções);
  *   6. as 16 FKs compostas `(id, loja_id)` e as 40 FKs de `modified_by`;
  *   7. os 4 gatilhos de trilha, o REVOKE do papel da aplicação e a ausência
- *      total de DELETE para `merlo_app`.
+ *      total de DELETE para `merlo_app`;
+ *   8. o ATOR_SISTEMA semeado pela 0018: inativo, `viewer`, sem credencial.
  *
  * Uso: `npm run db:verificar` (lê DATABASE_URL — ler catálogo não exige o papel
  * de migração, então a credencial do dono não entra aqui).
@@ -30,6 +31,8 @@ import { Client } from "pg";
 const TOTAL_TABELAS = 48;
 const TOTAL_MODIFIED_BY = 40;
 const TOTAL_FK_COMPOSTA = 16;
+/** Espelha `ATOR_SISTEMA` de src/lib/db/schema/_enums/auth.ts. */
+const ATOR_SISTEMA = "00000000-0000-4000-8000-000000000001";
 
 /** Trilhas: só `criado_em`. Um log que aceita UPDATE não é trilha. */
 const APPEND_ONLY = [
@@ -200,6 +203,18 @@ async function principal() {
       erro(`merlo_app tem DELETE em ${t.nome}: a única exclusão do sistema é de objeto no MinIO`);
     }
 
+    // 8. ator de sistema
+    const [ator] = await q(
+      `select u.ativo, u.papel, u.loja_id,
+              (select count(*)::int from usuarios_contas c where c.usuario_id = u.id) as credenciais
+         from usuarios u where u.id = $1`,
+      [ATOR_SISTEMA],
+    );
+    if (!ator) erro("ATOR_SISTEMA não está semeado em usuarios (migração 0018)");
+    else if (ator.ativo || ator.papel !== "viewer" || ator.loja_id !== null || ator.credenciais > 0) {
+      erro("ATOR_SISTEMA não está inerte (ativo, papel, loja ou credencial)");
+    }
+
     if (problemas.length > 0) {
       console.error(`\nverificar-schema: ${problemas.length} problema(s)\n`);
       for (const p of problemas) console.error(`  ERRO  ${p}`);
@@ -207,7 +222,7 @@ async function principal() {
     }
     console.log(
       `OK — ${tabelas.length} tabelas, ${fks.length} FKs RESTRICT, ${nCompostas} compostas, ` +
-        `${nModified} de modified_by, ${nGatilhos} gatilhos de trilha.`,
+        `${nModified} de modified_by, ${nGatilhos} gatilhos de trilha, ator de sistema inerte.`,
     );
   } finally {
     await c.end();

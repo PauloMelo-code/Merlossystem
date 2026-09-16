@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { boolean, check, index, integer, pgTable, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { colunasAuditoria, instante } from "../_compartilhado";
 import { checkLista, listaSql } from "../_enums";
-import { PAPEIS, PAPEIS_COM_LOJA, PAPEIS_SEM_LOJA } from "../_enums/auth";
+import { ATOR_SISTEMA, PAPEIS, PAPEIS_COM_LOJA, PAPEIS_SEM_LOJA } from "../_enums/auth";
 import { lojas } from "../lojas";
 
 /**
@@ -45,11 +45,21 @@ export const usuarios = pgTable(
   },
   (t) => [
     checkLista("usuarios_papel_lista", t.papel, PAPEIS),
-    /** Gestão não tem loja; operação tem (06/INV-14). A barreira é do banco. */
+    /**
+     * Gestão não tem loja; operação tem (06/INV-14). A barreira é do banco.
+     * Única exceção: o ator de sistema, `viewer` sem loja (migração 0018).
+     */
     check(
       "usuarios_papel_loja",
       sql`(${t.papel} in (${sql.raw(listaSql(PAPEIS_SEM_LOJA))}) and ${t.loja_id} is null)
-        or (${t.papel} in (${sql.raw(listaSql(PAPEIS_COM_LOJA))}) and ${t.loja_id} is not null)`,
+        or (${t.papel} in (${sql.raw(listaSql(PAPEIS_COM_LOJA))}) and ${t.loja_id} is not null)
+        or (${t.id} = ${sql.raw(`'${ATOR_SISTEMA}'`)} and ${t.loja_id} is null)`,
+    ),
+    /** O ator de sistema nunca vira conta de gente: nem ativo, nem outro papel. */
+    check(
+      "usuarios_ator_sistema_inerte",
+      sql`${t.id} <> ${sql.raw(`'${ATOR_SISTEMA}'`)}
+        or (${t.ativo} = false and ${t.papel} = 'viewer' and ${t.two_factor_enabled} = false)`,
     ),
     check("usuarios_bloqueio_coerente", sql`${t.falhas_login} >= 0`),
     /**

@@ -21,6 +21,10 @@ export type MetadadosMensagem = {
   citacao_externa_id?: string;
   erro_provedor?: { codigo: string; mensagem: string };
   card?: { tipo: "produto" | "pedido" | "pagamento"; id: string };
+  /** Mensagem de modelo: o worker envia o template com estas variáveis. */
+  modelo?: { template_id: string; variaveis: string[] };
+  /** Saída feita no próprio aparelho (`fromMe` do provedor), não pelo sistema. */
+  enviada_pelo_aparelho?: boolean;
 };
 
 /**

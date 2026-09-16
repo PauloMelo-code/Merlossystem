@@ -129,6 +129,7 @@ const TIPO_ALERTA_TONS: Record<TipoAlerta, Entrada> = {
   follow_up_atrasado: { rotulo: "Retorno atrasado", tom: "neutro" },
   sessao_uazapi_caiu: { rotulo: "Sessão do uazapi caiu", tom: "neutro" },
   integracao_com_erro: { rotulo: "Integração com erro", tom: "neutro" },
+  espelho_divergente: { rotulo: "Dados divergentes", tom: "neutro" },
 };
 
 /**

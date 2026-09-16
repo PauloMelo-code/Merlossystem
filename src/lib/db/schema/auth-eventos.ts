@@ -13,6 +13,13 @@ export type DetalhesAuthEvento = {
   papel?: string;
   tentativas?: number;
   contagem?: number;
+  /** Versão do texto de ciência aceito pelo admin (ex.: `CIENCIA_ADMIN_V1`). */
+  ciencia_versao?: string;
+  /**
+   * Código curto da recusa (ex.: `alvo`), nunca texto livre. O motivo
+   * ESCRITO pela pessoa continua na coluna `motivo`.
+   */
+  motivo?: string;
 };
 
 /**

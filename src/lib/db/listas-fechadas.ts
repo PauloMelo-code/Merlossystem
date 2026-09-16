@@ -28,7 +28,16 @@ export const CONTADORES: Readonly<Record<string, readonly string[]>> = {
 
 /** Máquinas de estado escritas pelo provedor ou pelo worker, nunca por uma pessoa. */
 export const ESTADOS_DE_SISTEMA: Readonly<Record<string, readonly string[]>> = {
-  conversas_mensagens: ["status_entrega", "status_atualizado_em", "falha_motivo"],
+  /** `externo_id`: o id do provedor chega DEPOIS do envio (worker). */
+  conversas_mensagens: ["status_entrega", "status_atualizado_em", "falha_motivo", "externo_id"],
+  /**
+   * O job `baixar-de-url` preenche a mídia e LIMPA a URL no mesmo UPDATE
+   * (01-dados-dominio.md §2.4). O vínculo continua "ligação pura" para
+   * pessoas; só o worker o completa.
+   */
+  conversas_mensagens_midias: ["midia_id", "baixada", "url_externa"],
+  /** Quem resolve é o gerador, nunca a pessoa (01-dados.md §6.6). */
+  alertas: ["resolvido_em"],
   campanhas_destinatarios: [
     "status",
     "mensagem_id",
@@ -41,5 +50,6 @@ export const ESTADOS_DE_SISTEMA: Readonly<Record<string, readonly string[]>> = {
     "lido_em",
     "respondido_em",
   ],
-  lojas_integracoes_eventos: ["tipo", "processado_em", "erro", "corpo", "cabecalhos"],
+  /** `ip`: a retenção de 30 dias o zera (01-dados.md §6.4). */
+  lojas_integracoes_eventos: ["tipo", "processado_em", "erro", "corpo", "cabecalhos", "ip"],
 };

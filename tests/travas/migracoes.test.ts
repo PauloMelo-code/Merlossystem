@@ -38,6 +38,11 @@ const TAGS = [
    * regra: pacote que precisar de coluna PARA e reporta.
    */
   "0017_totp_framework",
+  /**
+   * 0018 é da CONSOLIDAÇÃO (DF1): CHECK do nome de modelo, listas fechadas
+   * ampliadas pela onda 2 e a semente do ATOR_SISTEMA. Não cria tabela.
+   */
+  "0018_consolidacao",
 ];
 
 const arquivos = readdirSync(PASTA)
@@ -46,7 +51,7 @@ const arquivos = readdirSync(PASTA)
 const sql = arquivos.map((nome) => ({ nome, texto: readFileSync(join(PASTA, nome), "utf8") }));
 
 describe("migrações", () => {
-  it("são as 17 de 01-dados.md §9 mais a 0017 da fundação, na ordem", () => {
+  it("são as 17 de 01-dados.md §9 mais a 0017 e a 0018, na ordem", () => {
     expect(arquivos).toEqual(TAGS.map((t) => `${t}.sql`));
     const diario = JSON.parse(readFileSync(join(PASTA, "meta", "_journal.json"), "utf8")) as {
       entries: { idx: number; tag: string }[];

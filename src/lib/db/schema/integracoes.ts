@@ -169,7 +169,11 @@ export const lojas_integracoes_templates = pgTable(
       t.cabecalho_tipo,
       TIPOS_CABECALHO_TEMPLATE,
     ),
-    check("lojas_integracoes_templates_nome", sql`${t.nome} ~ '^[a-z0-9_]{1,512}$'`),
+    // `{1,512}` estoura o limite de repetição do Postgres (255): migração 0018.
+    check(
+      "lojas_integracoes_templates_nome",
+      sql`${t.nome} ~ '^[a-z0-9_]+$' and char_length(${t.nome}) <= 512`,
+    ),
     check("lojas_integracoes_templates_variaveis", sql`${t.variaveis_contagem} >= 0`),
     uniqueIndex("uq_lojas_integracoes_templates_nome")
       .on(t.integracao_id, t.nome, t.idioma)

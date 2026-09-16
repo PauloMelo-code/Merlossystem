@@ -12,6 +12,16 @@ export type PapelConvidavel = (typeof PAPEIS_CONVIDAVEIS)[number];
 export const PAPEIS_SEM_LOJA = ["dono", "admin", "gerente"] as const;
 export const PAPEIS_COM_LOJA = ["vendedor", "viewer"] as const;
 
+/**
+ * Ator de sistema (03-arquitetura.md §6.4, ADR 0031): webhook e worker gravam
+ * com este id em `modified_by` e `auditoria_eventos.ator_id`. A linha é
+ * semeada pela migração 0018 — `viewer`, inativa, sem credencial, e-mail em
+ * domínio `.invalid` — e dois CHECKs de `usuarios` garantem que ela nunca
+ * vira conta de gente.
+ */
+export const ATOR_SISTEMA = "00000000-0000-4000-8000-000000000001" as const;
+export const EMAIL_ATOR_SISTEMA = "sistema@merlostore.invalid" as const;
+
 export const MEIOS_AUTH = [
   "senha",
   "senha+totp",
