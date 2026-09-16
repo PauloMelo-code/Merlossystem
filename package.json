@@ -38,6 +38,7 @@
     "verificar": "npm run lint && npm run typecheck && npm run compliance && npm run test:compliance && npm run test:travas && npm test && npm run docs:check"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "0.126.0",
     "@aws-sdk/client-s3": "3.1133.0",
     "@aws-sdk/s3-request-presigner": "3.1133.0",
     "@better-auth/passkey": "1.7.5",

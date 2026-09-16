@@ -35,6 +35,8 @@ describe("T23 pisos de versao", () => {
     ["better-auth", "1.7.3"],
     ["zod", "4.0.0"],
     ["bullmq", "5.0.0"],
+    /** R2-C (ADR 0047): `helpers/zod` e `messages.parse`, conferidos no typecheck do FR1. */
+    ["@anthropic-ai/sdk", "0.126.0"],
   ])("%s instalado e pelo menos %s", (nome, minimo) => {
     expect(peloMenos(versao(nome), minimo)).toBe(true);
   });
