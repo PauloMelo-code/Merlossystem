@@ -75,10 +75,12 @@ describe("perfil > segurança", () => {
     }
   });
 
-  it("a lista de arquivos da área é a de §11.1 (sobe em F8)", () => {
-    // Hoje a área ainda não existe: F8 cria as telas e as actions. O teste
-    // passa a cobri-las sozinho quando os arquivos aparecerem — e este caso
-    // documenta que a cobertura é condicional hoje, não permanente.
-    expect(Array.isArray(arquivos)).toBe(true);
+  it("a área do perfil existe e a varredura a alcança (piso mínimo)", () => {
+    // PISO, não `Array.isArray`: a área nasceu em F8 e tem hoje a action de
+    // segurança, as duas páginas e os seis componentes colocados. Sem um piso,
+    // um erro de caminho faria a varredura achar ZERO arquivos e a suíte
+    // continuaria verde — provando nada.
+    expect(arquivos.length).toBeGreaterThanOrEqual(8);
+    expect(arquivos.map((a) => a.caminho)).toContain("src/lib/actions/seguranca.ts");
   });
 });
