@@ -108,17 +108,16 @@ describe("T2 o matcher do proxy e a lista de prefixos sao a mesma coisa", () => 
 });
 
 describe("T2 a navegacao so aponta para rota da arvore canonica", () => {
-  it("todo item R1 do catalogo tem linha no documento de caminhos", () => {
-    const faltando = NAVEGACAO.filter((i) => i.fase === "R1" && !doc.includes(i.rota));
+  it("todo item entregue do catalogo tem linha no documento de caminhos", () => {
+    const faltando = NAVEGACAO.filter((i) => i.fase === "entregue" && !doc.includes(i.rota));
     expect(faltando.map((i) => i.rota)).toEqual([]);
   });
 
-  it("item R2 NAO aparece como rota entregue no documento", () => {
-    // Item fora do R1 nao pode ter rota: tela que promete o que o codigo nao
-    // faz e o defeito U8.
-    const r2 = NAVEGACAO.filter((i) => i.fase === "R2");
-    expect(r2.length).toBeGreaterThan(0);
-    const comRota = r2.filter((i) => rotasNoDisco.includes(i.rota));
+  it("item futura NAO tem page.tsx", () => {
+    // Item futuro nao pode ter rota: tela que promete o que o codigo nao faz e
+    // o defeito U8. Hoje nenhum item e futuro; a trava vale para o proximo.
+    const futuros = NAVEGACAO.filter((i) => i.fase === "futura");
+    const comRota = futuros.filter((i) => rotasNoDisco.includes(i.rota));
     expect(comRota.map((i) => i.rota)).toEqual([]);
   });
 });

@@ -77,6 +77,7 @@ publica com segmento `[token]` reprova em T27.
 | `/conversas/[id]` | `conversas:ler` | entregue |
 | `/contatos` | `contatos:ler` | entregue |
 | `/contatos/[id]` | `contatos:ler` | entregue |
+| `/funil` | `negocios:ler` | pacote R2-A |
 | `/api/eventos` (SSE) | sessao ativa, reavaliada a cada 25 s | entregue |
 
 ---
@@ -89,6 +90,7 @@ publica com segmento `[token]` reprova em T27.
 | `/pedidos/[id]` | `pedidos:ler` | entregue |
 | `/produtos` | `produtos:ler` | entregue |
 | `/produtos/[id]` | `produtos:ler` | entregue |
+| `/trocas` | `devolucoes:ler` | pacote R2-A |
 
 Nao existe cadastro manual de produto: o catalogo e espelho do Bling (ADR
 0015), e a matriz nao tem `produtos:criar`, `produtos:editar` nem
@@ -107,6 +109,7 @@ Nao existe cadastro manual de produto: o catalogo e espelho do Bling (ADR
 | `/respostas-rapidas` | `respostas:ler` | entregue |
 | `/agendadas` | `agendamentos:ler` | entregue |
 | `/galeria` | `midia:ler` | entregue |
+| `/lookbooks` | `conteudo:ler` | pacote R2-E |
 | `/api/midias` | `midia:enviar` | entregue |
 | `/api/midias/[id]` | `midia:ler` mais escopo de loja | entregue |
 
@@ -125,6 +128,8 @@ UNICO endereco de midia do sistema.
 | `/auditoria/qualidade` | `trilha:ler` | entregue |
 | `/auditoria/excluidos` | `trilha:ler` | entregue |
 | `/auditoria/seguranca` | `seguranca:ler_eventos` | entregue |
+| `/satisfacao` | `pesquisas:ler` | pacote R2-A |
+| `/base-de-conhecimento` | `conhecimento:ler` (escrita gerente+) | pacote R2-C |
 
 `gerente` alcanca `trilha:ler` e **nao** alcanca `seguranca:ler_eventos`:
 `auth_eventos` carrega IP, agente, meio e alvo de dono e admin. A aba mostra
@@ -157,13 +162,14 @@ action daquela pasta.
 
 ---
 
-## 7. Fora do R1 (tabela existe, rota nao)
+## 7. Fora do corte (tabela existe, rota nao)
 
 Nenhum arquivo, nenhum link, nenhum item de menu. O catalogo de navegacao
-(`src/lib/navegacao.ts`) marca o item como `fase: "R2"` e ele nao renderiza.
+(`src/lib/navegacao.ts`) marca o item como `fase: "futura"` e ele nao
+renderiza. Hoje nenhum item e `futura`: as telas do R2 estao decididas acima,
+com estado `pacote R2-x`.
 
-`/trocas`, `/funil`, `/lookbooks`, `/base-de-conhecimento`, `/csat`,
-`/pagamentos`, e qualquer rota de TikTok ou Facebook.
+`/csat`, `/pagamentos`, e qualquer rota de TikTok Shop.
 
 Mudar o corte do R1 e editar uma linha de `src/lib/navegacao.ts` e criar a
 rota. Enquanto a rota nao existe, o item nao aparece: tela que promete o que o

@@ -38,17 +38,28 @@ const { FRASE_CIENCIA_ADMIN } = await import("@/lib/validadores/usuarios");
  * CONTRATO do componente, que é o que toda tela vai herdar.
  */
 
-/** §9.1, na ordem do documento. Vinte itens, nem um a mais. */
+/** §9.1, na ordem do documento. Vinte e sete itens, nem um a mais. */
 export const ACOES_COM_BLOCK = [
+  // Atendimento e vendas
   "fechar-venda",
   "marcar-lancado-no-masc",
   "dispensar-pedido-do-masc",
   "cancelar-pedido",
   "excluir-registro",
+  "negar-troca",
+  "concluir-troca",
+  "gerar-cobranca",
+  "cancelar-cobranca",
+  // Comunicação
   "iniciar-ou-retomar-disparo",
+  "enviar-lookbook",
+  "publicar-artigo",
+  // Plataforma
   "desconectar-integracao",
   "parear-novo-aparelho",
   "criar-editar-ou-desativar-loja",
+  "salvar-prazos-de-sla",
+  // Pessoas e acesso
   "convidar-usuario",
   "trocar-papel",
   "promover-a-admin",
@@ -58,6 +69,7 @@ export const ACOES_COM_BLOCK = [
   "recuperacao-assistida",
   "encerrar-todas-as-sessoes",
   "substituir-fator-ou-remover-passkey",
+  // LGPD
   "exportar-dossie-do-titular",
   "eliminar-dados-do-titular",
 ] as const;
@@ -245,9 +257,9 @@ describe("ConfirmarExclusao herda o contrato", () => {
 });
 
 describe("lista fechada de ações com block", () => {
-  it("tem exatamente os 20 itens de §9.1", () => {
-    expect(ACOES_COM_BLOCK).toHaveLength(20);
-    expect(new Set(ACOES_COM_BLOCK).size).toBe(20);
+  it("tem exatamente os 27 itens de §9.1", () => {
+    expect(ACOES_COM_BLOCK).toHaveLength(27);
+    expect(new Set(ACOES_COM_BLOCK).size).toBe(27);
   });
 
   it("não contém o que §9.1 diz que NÃO existe", () => {

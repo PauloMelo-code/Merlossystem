@@ -5,7 +5,7 @@ import type { ChavePermissao } from "@/lib/auth/permissoes";
  * espalhada por componente: menu lateral, tab bar do celular e o grupo
  * "Páginas" da busca global leem este array.
  *
- * Mudar o corte do R1 é editar `fase` numa linha — não cinco arquivos.
+ * Mudar o corte do que aparece é editar `fase` numa linha — não cinco arquivos.
  *
  * Módulo PURO (sem `server-only`, sem I/O): a navegação renderiza no servidor
  * já filtrada por `pode()`, e a trava de inventário de rotas lê daqui.
@@ -20,7 +20,7 @@ export type Contador = "conversas_nao_lidas" | "masc_pendentes";
 export type ItemNav = {
   rotulo: string;
   rota: string;
-  /** Chave do mapa de `src/components/layout/icones-nav.ts`, não o componente. */
+  /** Chave de `ICONES_NAV` (`src/components/layout/navegacao-lateral.tsx`), não o componente. */
   icone: string;
   grupo: Grupo;
   /**
@@ -32,8 +32,8 @@ export type ItemNav = {
    * `/perfil`, que não tem chave.
    */
   permissao: ChavePermissao | null;
-  /** Item `R2` não renderiza e não tem rota servida por nenhum `page.tsx`. */
-  fase: "R1" | "R2";
+  /** Item `futura` não renderiza e não tem `page.tsx` (U8). */
+  fase: "entregue" | "futura";
   contador?: Contador;
 };
 
@@ -45,7 +45,7 @@ export const NAVEGACAO: readonly ItemNav[] = [
     icone: "conversas",
     grupo: "Atendimento",
     permissao: "conversas:ler",
-    fase: "R1",
+    fase: "entregue",
     contador: "conversas_nao_lidas",
   },
   {
@@ -54,7 +54,7 @@ export const NAVEGACAO: readonly ItemNav[] = [
     icone: "contatos",
     grupo: "Atendimento",
     permissao: "contatos:ler",
-    fase: "R1",
+    fase: "entregue",
   },
   {
     rotulo: "Funil",
@@ -62,7 +62,7 @@ export const NAVEGACAO: readonly ItemNav[] = [
     icone: "funil",
     grupo: "Atendimento",
     permissao: "negocios:ler",
-    fase: "R2",
+    fase: "entregue",
   },
 
   // -- Vendas ---------------------------------------------------------------
@@ -72,7 +72,7 @@ export const NAVEGACAO: readonly ItemNav[] = [
     icone: "pedidos",
     grupo: "Vendas",
     permissao: "pedidos:ler",
-    fase: "R1",
+    fase: "entregue",
     contador: "masc_pendentes",
   },
   {
@@ -81,7 +81,7 @@ export const NAVEGACAO: readonly ItemNav[] = [
     icone: "produtos",
     grupo: "Vendas",
     permissao: "produtos:ler",
-    fase: "R1",
+    fase: "entregue",
   },
   {
     rotulo: "Trocas e devoluções",
@@ -89,7 +89,7 @@ export const NAVEGACAO: readonly ItemNav[] = [
     icone: "trocas",
     grupo: "Vendas",
     permissao: "devolucoes:ler",
-    fase: "R2",
+    fase: "entregue",
   },
 
   // -- Comunicação ----------------------------------------------------------
@@ -99,7 +99,7 @@ export const NAVEGACAO: readonly ItemNav[] = [
     icone: "campanhas",
     grupo: "Comunicação",
     permissao: "campanhas:ler",
-    fase: "R1",
+    fase: "entregue",
   },
   {
     rotulo: "Modelos",
@@ -107,7 +107,7 @@ export const NAVEGACAO: readonly ItemNav[] = [
     icone: "modelos",
     grupo: "Comunicação",
     permissao: "campanhas:ler",
-    fase: "R1",
+    fase: "entregue",
   },
   {
     rotulo: "Respostas rápidas",
@@ -115,7 +115,15 @@ export const NAVEGACAO: readonly ItemNav[] = [
     icone: "respostas",
     grupo: "Comunicação",
     permissao: "conversas:ler",
-    fase: "R1",
+    fase: "entregue",
+  },
+  {
+    rotulo: "Lookbooks",
+    rota: "/lookbooks",
+    icone: "lookbooks",
+    grupo: "Comunicação",
+    permissao: "conteudo:ler",
+    fase: "entregue",
   },
   {
     rotulo: "Agendadas",
@@ -123,7 +131,7 @@ export const NAVEGACAO: readonly ItemNav[] = [
     icone: "agendadas",
     grupo: "Comunicação",
     permissao: "conversas:ler",
-    fase: "R1",
+    fase: "entregue",
   },
   {
     rotulo: "Galeria",
@@ -131,7 +139,7 @@ export const NAVEGACAO: readonly ItemNav[] = [
     icone: "galeria",
     grupo: "Comunicação",
     permissao: "midia:ler",
-    fase: "R1",
+    fase: "entregue",
   },
 
   // -- Gestão ---------------------------------------------------------------
@@ -141,7 +149,7 @@ export const NAVEGACAO: readonly ItemNav[] = [
     icone: "relatorios",
     grupo: "Gestão",
     permissao: "relatorios:ler",
-    fase: "R1",
+    fase: "entregue",
   },
   {
     rotulo: "Alertas",
@@ -149,7 +157,7 @@ export const NAVEGACAO: readonly ItemNav[] = [
     icone: "alertas",
     grupo: "Gestão",
     permissao: "alertas:ler",
-    fase: "R1",
+    fase: "entregue",
   },
   {
     rotulo: "Auditoria",
@@ -157,15 +165,23 @@ export const NAVEGACAO: readonly ItemNav[] = [
     icone: "auditoria",
     grupo: "Gestão",
     permissao: "trilha:ler",
-    fase: "R1",
+    fase: "entregue",
+  },
+  {
+    rotulo: "Satisfação",
+    rota: "/satisfacao",
+    icone: "satisfacao",
+    grupo: "Gestão",
+    permissao: "pesquisas:ler",
+    fase: "entregue",
   },
   {
     rotulo: "Base de conhecimento",
     rota: "/base-de-conhecimento",
     icone: "conhecimento",
     grupo: "Gestão",
-    permissao: "conteudo:ler",
-    fase: "R2",
+    permissao: "conhecimento:ler",
+    fase: "entregue",
   },
 
   // -- Rodapé ---------------------------------------------------------------
@@ -175,7 +191,7 @@ export const NAVEGACAO: readonly ItemNav[] = [
     icone: "configuracoes",
     grupo: "Rodapé",
     permissao: "configuracao:ler",
-    fase: "R1",
+    fase: "entregue",
   },
   {
     rotulo: "Meu perfil",
@@ -183,12 +199,12 @@ export const NAVEGACAO: readonly ItemNav[] = [
     icone: "perfil",
     grupo: "Rodapé",
     permissao: null,
-    fase: "R1",
+    fase: "entregue",
   },
 ];
 
-/** O que existe hoje. Item R2 nunca renderiza e nunca vira link. */
-export const NAVEGACAO_R1: readonly ItemNav[] = NAVEGACAO.filter((i) => i.fase === "R1");
+/** O que existe hoje. Item `futura` nunca renderiza e nunca vira link. */
+export const NAVEGACAO_ENTREGUE: readonly ItemNav[] = NAVEGACAO.filter((i) => i.fase === "entregue");
 
 /**
  * Itens do celular (§4.2): Conversas, Contatos, Pedidos e "Mais" (o resto vai
@@ -203,7 +219,7 @@ export const ROTAS_DA_TAB_BAR = ["/conversas", "/contatos", "/pedidos"] as const
 export function itensVisiveis(
   podeFn: (recurso: string, acao: string) => boolean,
 ): readonly ItemNav[] {
-  return NAVEGACAO_R1.filter((item) => {
+  return NAVEGACAO_ENTREGUE.filter((item) => {
     if (item.permissao === null) return true;
     const [recurso = "", acao = ""] = item.permissao.split(":", 2);
     return podeFn(recurso, acao);
