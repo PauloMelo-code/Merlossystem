@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition, type FormEvent } from "react";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { Pencil, Plus, Send, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -12,7 +12,12 @@ import { EstadoVazio } from "@/components/comum/estado-vazio";
 import { FaixaAviso } from "@/components/comum/faixa-aviso";
 import { ResumoDeErros } from "@/components/comum/resumo-de-erros";
 import { SeloStatus } from "@/components/comum/selo-status";
-import { criarModeloWhatsapp, editarModeloWhatsapp, excluirModeloWhatsapp } from "@/lib/actions/conteudo";
+import {
+  criarModeloWhatsapp,
+  editarModeloWhatsapp,
+  enviarModeloAprovacao,
+  excluirModeloWhatsapp,
+} from "@/lib/actions/conteudo";
 import { contarVariaveis } from "@/lib/conteudo/variaveis";
 import { CATEGORIAS_TEMPLATE } from "@/lib/db/schema/_enums/plataforma";
 import type { Resultado } from "@/lib/erros";
@@ -64,17 +69,28 @@ export function ListaModelos({
   podeCriar,
   podeEditar,
   podeExcluir,
+  podeEnviar,
 }: {
   modelos: Modelo[];
   contas: { id: string; rotulo: string }[];
   podeCriar: boolean;
   podeEditar: boolean;
   podeExcluir: boolean;
+  podeEnviar: boolean;
 }) {
   const [editando, setEditando] = useState<Modelo | "novo" | null>(null);
   const [excluindo, setExcluindo] = useState<Modelo | null>(null);
   const [falha, setFalha] = useState<Falha | null>(null);
+  const [envio, setEnvio] = useState<{ id: string; erro: string | null } | null>(null);
   const [pendente, iniciar] = useTransition();
+
+  function enviarParaAprovacao(m: Modelo) {
+    setEnvio({ id: m.id, erro: null });
+    iniciar(async () => {
+      const r = await enviarModeloAprovacao({ id: m.id });
+      setEnvio(r.ok ? null : { id: m.id, erro: r.mensagem });
+    });
+  }
 
   function excluir() {
     if (!excluindo) return;
@@ -125,7 +141,22 @@ export function ListaModelos({
                 <p>{m.corpo}</p>
                 {m.rodape ? <p className="text-legenda text-muted-foreground">{m.rodape}</p> : null}
               </div>
-              <footer className="flex gap-2">
+              {envio?.id === m.id && envio.erro ? (
+                <FaixaAviso tom="perigo" titulo="Não foi possível enviar para a Meta" descricao={envio.erro} />
+              ) : null}
+              <footer className="flex flex-wrap gap-2">
+                {podeEnviar && EDITAVEIS.includes(m.status) ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={pendente}
+                    aria-busy={pendente && envio?.id === m.id}
+                    onClick={() => enviarParaAprovacao(m)}
+                  >
+                    <Send aria-hidden="true" strokeWidth={2} />
+                    {pendente && envio?.id === m.id ? "Enviando…" : "Enviar para aprovação"}
+                  </Button>
+                ) : null}
                 {podeEditar && EDITAVEIS.includes(m.status) ? (
                   <Button type="button" variant="outline" size="sm" onClick={() => setEditando(m)}>
                     <Pencil aria-hidden="true" strokeWidth={2} />

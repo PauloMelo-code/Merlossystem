@@ -1,9 +1,13 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { executarAcao } from "@/lib/actions/_base";
-import type { Resultado } from "@/lib/erros";
+import { ErroDoAplicativo, paraResultado, type Resultado } from "@/lib/erros";
+import { enviarModeloParaAprovacao } from "@/lib/integracoes/meta/aprovacao";
+import { logger } from "@/lib/logger";
 import {
   alternarResposta,
+  conferirEnviavel,
   criarModelo,
   criarResposta,
   editarModelo,
@@ -16,6 +20,7 @@ import {
   alvoSchema,
   editarModeloSchema,
   editarRespostaSchema,
+  idModeloSchema,
   modeloSchema,
   respostaSchema,
 } from "@/lib/validadores/conteudo";
@@ -132,4 +137,35 @@ export async function excluirModeloWhatsapp(bruto: unknown): Promise<Resultado<n
     },
     bruto,
   );
+}
+
+/**
+ * "Enviar para aprovação" (04-ui.md §5.4, `modelos:enviar_aprovacao`). A
+ * action confere o modelo na transação; a costura do M5 envia DEPOIS do commit
+ * e grava `template_enviado` com as transações dela.
+ */
+export async function enviarModeloAprovacao(bruto: unknown): Promise<Resultado<{ status: string }>> {
+  const r = await executarAcao(
+    {
+      permissao: "modelos:enviar_aprovacao",
+      entrada: idModeloSchema,
+      loja: "grava",
+      executar: async (dados, ctx, tx) => {
+        await conferirEnviavel(tx, ctx, dados.id);
+        return { id: dados.id, ctx: { escopo: ctx.escopo, autorId: ctx.autorId, origem: ctx.origem } };
+      },
+    },
+    bruto,
+  );
+  if (!r.ok) return r;
+  try {
+    const enviado = await enviarModeloParaAprovacao(r.dados.ctx, r.dados.id);
+    for (const caminho of MODELOS) revalidatePath(caminho);
+    return { ok: true, dados: { status: enviado.status } };
+  } catch (erro) {
+    if (!(erro instanceof ErroDoAplicativo)) {
+      logger.error({ acao: "modelos:enviar_aprovacao", erro: erro instanceof Error ? erro.message : String(erro) }, "envio de modelo falhou");
+    }
+    return paraResultado(erro);
+  }
 }

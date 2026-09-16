@@ -9,11 +9,8 @@ export const metadata: Metadata = { title: "Modelos do WhatsApp" };
 
 /**
  * `/modelos` — modelos do WhatsApp oficial (04-ui.md §5.4). O `status` vem da
- * Meta; a tela NÃO oferece "aprovar" manualmente.
- *
- * "Enviar para aprovação" não aparece: o cliente da API da Meta é do pacote de
- * integrações e ainda não tem costura para cá (bloqueio registrado pelo M6).
- * Botão que não faz nada seria fachada (U8).
+ * Meta; a tela NÃO oferece "aprovar" manualmente. "Enviar para aprovação"
+ * (`modelos:enviar_aprovacao`, gerente para cima) passa pela costura do M5.
  */
 export default async function PaginaModelos() {
   const { escopo, lojaId, permite } = await abrirPagina("modelos:ler");
@@ -38,6 +35,7 @@ export default async function PaginaModelos() {
         podeCriar={lojaId !== null && permite("modelos:criar") && contas.length > 0}
         podeEditar={lojaId !== null && permite("modelos:editar")}
         podeExcluir={lojaId !== null && permite("modelos:excluir")}
+        podeEnviar={lojaId !== null && permite("modelos:enviar_aprovacao")}
       />
     </div>
   );
