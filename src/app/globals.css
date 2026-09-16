@@ -33,6 +33,8 @@
   --chat-fundo: #F4F4F5;  --balao-entrada: #FFFFFF;       --balao-saida: #EDE9FE;  --balao-saida-hora: #5B21B6;
   --nota-interna-fundo: #FEF9C3; --nota-interna-texto: #713F12; --nota-interna-borda: #FDE047;
   --canal-whatsapp: #128C7E; --canal-instagram: #E1306C; --canal-facebook: #0866FF; --canal-tiktok: #09090B;
+  /* série de gráfico (04-ui.md §3): todas com 3:1 ou mais sobre --card */
+  --chart-1: #7C3AED; --chart-2: #0891B2; --chart-3: #D97706; --chart-4: #15803D; --chart-5: #DB2777;
   --duracao-rapida: 100ms; --duracao-normal: 150ms; --duracao-moderada: 200ms; --duracao-lenta: 300ms;
 }
 
@@ -52,6 +54,7 @@
   --neutro: #A1A1AA;      --neutro-fundo: #252529;
   --chat-fundo: #09090B;  --balao-entrada: #27272A;       --balao-saida: #4C1D95;  --balao-saida-hora: #DDD6FE;
   --nota-interna-fundo: #312B19; --nota-interna-texto: #FEF08A; --nota-interna-borda: #713F12;
+  --chart-1: #A78BFA; --chart-2: #22D3EE; --chart-3: #FBBF24; --chart-4: #4ADE80; --chart-5: #F472B6;
   /* bordas de tom sao decorativas: no escuro todas iguais a --border */
   --sucesso-borda: #3F3F46; --aviso-borda: #3F3F46; --perigo-borda: #3F3F46;
   --info-borda: #3F3F46;    --neutro-borda: #3F3F46;
@@ -95,6 +98,8 @@
   --color-canal-instagram: var(--canal-instagram);
   --color-canal-facebook: var(--canal-facebook);
   --color-canal-tiktok: var(--canal-tiktok);
+  --color-chart-1: var(--chart-1);  --color-chart-2: var(--chart-2);  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);  --color-chart-5: var(--chart-5);
 
   --radius-sm: calc(var(--radius) - 4px); --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);             --radius-xl: calc(var(--radius) + 4px);

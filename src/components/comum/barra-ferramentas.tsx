@@ -35,15 +35,31 @@ export function BarraFerramentas({
   const caminho = usePathname();
   const parametros = useSearchParams();
   const parametroDeBusca = busca?.parametro ?? "busca";
-  const [termo, setTermo] = useState(parametros.get(parametroDeBusca) ?? "");
+  const daUrl = parametros.get(parametroDeBusca) ?? "";
+  const [termo, setTermo] = useState(daUrl);
+  // O que ESTA barra mandou para a URL por último, e a URL que já foi vista.
+  const [enviado, setEnviado] = useState(daUrl);
+  const [vista, setVista] = useState(daUrl);
+
+  // A URL mudou por fora ("Limpar filtros", voltar do navegador): o campo
+  // acompanha. Sem isto o debounce devolvia o termo antigo para a URL. A
+  // mudança que a própria barra provocou não conta — senão a URL atrasada
+  // apagaria o que a pessoa digitou depois. Ajuste no render, não em efeito.
+  if (daUrl !== vista) {
+    setVista(daUrl);
+    if (daUrl !== enviado) {
+      setEnviado(daUrl);
+      setTermo(daUrl);
+    }
+  }
 
   // Debounce de 250 ms (§8.2): uma entrada na URL por pausa de digitação, não
   // uma por tecla — senão o histórico do navegador vira uma letra por passo.
   useEffect(() => {
     if (!busca) return;
-    const atual = parametros.get(parametroDeBusca) ?? "";
-    if (termo === atual) return;
+    if (termo === daUrl) return;
     const relogio = window.setTimeout(() => {
+      setEnviado(termo);
       const proximos = new URLSearchParams(parametros.toString());
       if (termo) proximos.set(parametroDeBusca, termo);
       else proximos.delete(parametroDeBusca);
@@ -52,7 +68,7 @@ export function BarraFerramentas({
       router.replace(`${caminho}?${proximos.toString()}`);
     }, ESPERA_MS);
     return () => window.clearTimeout(relogio);
-  }, [termo, busca, parametroDeBusca, parametros, caminho, router]);
+  }, [termo, daUrl, busca, parametroDeBusca, parametros, caminho, router]);
 
   return (
     <div className="flex flex-col gap-3">
