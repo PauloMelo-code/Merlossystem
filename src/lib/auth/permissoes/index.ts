@@ -1,6 +1,7 @@
 import type { Papel } from "@/lib/db/schema/_enums/auth";
 import { ATENDIMENTO } from "./atendimento";
 import { COMERCIAL } from "./comercial";
+import { CONTA } from "./conta";
 import { FASE_R2 } from "./fase-r2";
 import { GOVERNANCA } from "./governanca";
 import { PESSOAS } from "./pessoas";
@@ -27,6 +28,7 @@ export const MATRIZ_R1: MapaPermissao = {
   ...PLATAFORMA,
   ...PESSOAS,
   ...GOVERNANCA,
+  ...CONTA,
 };
 
 export { FASE_R2 };

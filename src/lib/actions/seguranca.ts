@@ -40,13 +40,11 @@ import {
  * O que esta área NÃO tem (U13, G4/G5): desligar o 2º fator, remover o último
  * fator, gerar código de recuperação e ver a semente do TOTP.
  *
- * ACHADO HERDADO DE F7: a matriz de 02-seguranca.md §2.2 não tem chave para
- * "qualquer sessão ativa", e `executarAcao` exige uma (trava T1). `lojas:ler` é
- * a única concedida a TODOS os papéis. Chave própria (`conta:*`) é ADR, não
- * decisão de pacote.
+ * A chave é `conta:gerir` (ADR 0030): toda sessão ativa alcança a PRÓPRIA
+ * conta, e só ela — o alvo nunca sai do pedido.
  */
 
-const CHAVE_DE_QUALQUER_SESSAO = "lojas:ler" as const;
+const CHAVE_DE_QUALQUER_SESSAO = "conta:gerir" as const;
 
 /** Ninguém aqui grava em loja: o registro é a própria pessoa. */
 const SEM_LOJA = "nenhuma" as const;

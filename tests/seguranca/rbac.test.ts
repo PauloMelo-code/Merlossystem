@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { FASE_R2, MATRIZ, MATRIZ_R1, pode, podeChave } from "@/lib/auth/permissoes";
 import { PAPEIS, type Papel } from "@/lib/db/schema/_enums/auth";
+import { lerFonte } from "./_fonte";
 
 /**
  * T12 — invariantes da matriz de permissão (02-seguranca.md §2.2).
@@ -8,7 +9,9 @@ import { PAPEIS, type Papel } from "@/lib/db/schema/_enums/auth";
  * Reprova quando: `dono` deixa de conter `admin`; `viewer` escreve (INV-19);
  * `vendedor` exclui ou cancela fora de `agendamentos:cancelar` (INV-20);
  * `gerente` alcança `configuracao:*`, `integracoes:*`, `usuarios:*` ou
- * `seguranca:ler_eventos` (INV-21/22); papel inventado passa em algo (INV-26).
+ * `seguranca:ler_eventos` (INV-21/22); papel inventado passa em algo (INV-26);
+ * algum papel perde a PRÓPRIA conta, ou `conta:*` ganha chave além de
+ * `conta:gerir` sem passar por aqui (ADR 0030).
  */
 
 const CHAVES = Object.keys(MATRIZ) as `${string}:${string}`[];
@@ -36,6 +39,7 @@ describe("matriz de permissão", () => {
       "trilha:",
       "lgpd:",
       "seguranca:",
+      "conta:",
     ]) {
       expect(CHAVES.some((c) => c.startsWith(prefixo)), prefixo).toBe(true);
     }
@@ -49,9 +53,12 @@ describe("matriz de permissão", () => {
     }
   });
 
-  it("viewer NUNCA escreve (INV-19)", () => {
+  it("viewer NUNCA escreve (INV-19) — fora da PRÓPRIA conta", () => {
     for (const chave of CHAVES) {
       if (!podeChave("viewer", chave)) continue;
+      // INV-19 é sobre dado de negócio. `conta:*` só alcança a sessão corrente
+      // (T11) e tem o seu próprio teste abaixo.
+      if (chave.startsWith("conta:")) continue;
       expect(ESCRITA.test(acaoDe(chave)), `viewer alcança ${chave}`).toBe(false);
     }
   });
@@ -91,6 +98,26 @@ describe("matriz de permissão", () => {
       for (const papel of ["admin", "gerente", "vendedor", "viewer"] as Papel[]) {
         expect(podeChave(papel, chave), `${papel} em ${chave}`).toBe(false);
       }
+    }
+  });
+
+  it("toda sessão ativa alcança a PRÓPRIA conta, e a família é uma chave só", () => {
+    const familia = CHAVES.filter((c) => c.startsWith("conta:"));
+    expect(familia).toEqual(["conta:gerir"]);
+    for (const papel of PAPEIS) {
+      expect(pode(papel, "conta", "gerir"), papel).toBe(true);
+    }
+  });
+
+  it("as actions da conta usam conta:gerir, não o remendo lojas:ler", () => {
+    for (const arquivo of [
+      "src/lib/actions/seguranca.ts",
+      "src/app/(app)/_acoes.ts",
+      "src/app/(publico)/_acoes.ts",
+    ]) {
+      const fonte = lerFonte(arquivo);
+      expect(fonte, arquivo).toContain('"conta:gerir"');
+      expect(fonte, arquivo).not.toContain('"lojas:ler"');
     }
   });
 

@@ -15,6 +15,7 @@ import {
   confirmarTotp,
   iniciarTotp,
   opcoesDePasskey,
+  type FatorQueFalta,
 } from "@/lib/auth/fatores";
 import {
   apelidoSchema,
@@ -158,11 +159,11 @@ export async function redefinirSenha(
 // Passo 2 — segundo fator, com a sessão PROVISÓRIA
 // ---------------------------------------------------------------------------
 
-/**
- * `lojas:ler` é a única chave concedida a todos os papéis; a matriz de §2.2 não
- * tem chave para "qualquer sessão ativa" e `executarAcao` exige uma (T1).
- */
-const CHAVE_DE_QUALQUER_SESSAO = "lojas:ler" as const;
+/** `falta` diz à tela qual fator a política ainda pede (ADR 0029). */
+type Conclusao = { concluido: boolean; falta: FatorQueFalta };
+
+/** A própria conta, alcançável por qualquer sessão (ADR 0030). */
+const CHAVE_DE_QUALQUER_SESSAO = "conta:gerir" as const;
 
 const BASE_PROVISORIA = {
   permissao: CHAVE_DE_QUALQUER_SESSAO,
@@ -193,16 +194,16 @@ export async function prepararTotpDoPrimeiroAcesso(
  * provisória morre — a pessoa entra de novo pelo caminho normal (REQ-F4).
  */
 export async function confirmarTotpDoPrimeiroAcesso(
-  _anterior: Resultado<{ concluido: boolean }>,
+  _anterior: Resultado<Conclusao>,
   form: FormData,
-): Promise<Resultado<{ concluido: boolean }>> {
+): Promise<Resultado<Conclusao>> {
   return executarAcao(
     {
       ...BASE_PROVISORIA,
       entrada: z.object({ codigo: codigoTotpSchema }),
       executar: async (dados, ctx) => {
         await confirmarTotp(ctx.sessao, dados.codigo);
-        return { concluido: await concluirProvisionamento(ctx.sessao) };
+        return concluirProvisionamento(ctx.sessao);
       },
     },
     form,
@@ -225,14 +226,14 @@ export async function prepararPasskeyDoPrimeiroAcesso(
 export async function confirmarPasskeyDoPrimeiroAcesso(entrada: {
   apelido: string;
   resposta: Record<string, unknown>;
-}): Promise<Resultado<{ concluido: boolean }>> {
+}): Promise<Resultado<Conclusao>> {
   return executarAcao(
     {
       ...BASE_PROVISORIA,
       entrada: z.object({ apelido: apelidoSchema, resposta: respostaWebauthnSchema }),
       executar: async (dados, ctx) => {
         await confirmarPasskey(ctx.sessao, dados.resposta, dados.apelido);
-        return { concluido: await concluirProvisionamento(ctx.sessao) };
+        return concluirProvisionamento(ctx.sessao);
       },
     },
     entrada,

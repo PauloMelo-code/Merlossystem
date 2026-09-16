@@ -5,6 +5,7 @@ import { db } from "@/lib/db/client";
 import { ErroDoAplicativo } from "@/lib/erros";
 import { logger } from "@/lib/logger";
 import { sanitizarErroBanco } from "@/lib/db/erros";
+import type { Papel } from "@/lib/db/schema/_enums/auth";
 import type { Sessao } from "./guard";
 import { auth } from "./auth";
 import { enfileirarEmailSeguranca } from "./emails";
@@ -106,8 +107,35 @@ export async function estadoDosFatores(usuarioId: string): Promise<EstadoDosFato
   return { totpAtivo, passkeys, total: (totpAtivo ? 1 : 0) + passkeys.length };
 }
 
+export type FatorQueFalta = "passkey" | "totp" | null;
+
+/** Papéis que precisam dos DOIS fatores. Comparação literal, como `ehPrivilegioMaximo`. */
+export function exigeDoisFatores(papel: Papel): boolean {
+  return papel === "dono" || papel === "admin";
+}
+
 /**
- * §9.2 item 7 — o provisionamento só fecha quando existe um fator de verdade.
+ * POLÍTICA DE FATORES (02-seguranca.md §9.1 H7; ADR 0029).
+ *
+ * - `dono` e `admin`: passkey (H7, a resistente a phishing) E aplicativo
+ *   autenticador. Não existe código de resgate (G4): perder o único aparelho de
+ *   quem administra tudo seria recuperação assistida por outra pessoa — o TOTP
+ *   é a segunda porta, num aparelho diferente.
+ * - demais papéis: um fator basta, qualquer um dos dois.
+ *
+ * Devolve o que ainda falta, na ordem em que a tela deve pedir.
+ */
+export function fatorQueFalta(papel: Papel, estado: EstadoDosFatores): FatorQueFalta {
+  if (exigeDoisFatores(papel)) {
+    if (estado.passkeys.length === 0) return "passkey";
+    if (!estado.totpAtivo) return "totp";
+    return null;
+  }
+  return estado.total === 0 ? "passkey" : null;
+}
+
+/**
+ * §9.2 item 7 — o provisionamento só fecha quando a POLÍTICA está cumprida.
  * `ativo = true`, `two_factor_enabled = true`, `precisa_configurar_fator =
  * false`, e a sessão provisória MORRE: a pessoa entra de novo, agora pelo
  * caminho normal (REQ-F4).
@@ -115,11 +143,13 @@ export async function estadoDosFatores(usuarioId: string): Promise<EstadoDosFato
  * Em sessão plena (alguém acrescentando uma passkey no perfil) esta função não
  * revoga nada — só o provisionamento derruba sessão.
  */
-export async function concluirProvisionamento(sessao: Sessao): Promise<boolean> {
-  if (!sessao.precisaConfigurarFator) return false;
+export async function concluirProvisionamento(
+  sessao: Sessao,
+): Promise<{ concluido: boolean; falta: FatorQueFalta }> {
+  if (!sessao.precisaConfigurarFator) return { concluido: false, falta: null };
 
-  const estado = await estadoDosFatores(sessao.usuarioId);
-  if (estado.total === 0) return false;
+  const falta = fatorQueFalta(sessao.papel, await estadoDosFatores(sessao.usuarioId));
+  if (falta) return { concluido: false, falta };
 
   await db.execute(sql`
     update usuarios
@@ -128,7 +158,7 @@ export async function concluirProvisionamento(sessao: Sessao): Promise<boolean> 
     where id = ${sessao.usuarioId}::uuid
   `);
   await revogarSessoesDe(sessao.usuarioId);
-  return true;
+  return { concluido: true, falta: null };
 }
 
 /**
@@ -169,20 +199,32 @@ export async function carimbarReautenticacao(sessaoId: string): Promise<void> {
   `);
 }
 
+async function senhaGuardada(usuarioId: string): Promise<string | null> {
+  const linhas = await db.execute<{ senha_hash: string | null }>(sql`
+    select senha_hash from usuarios_contas
+    where usuario_id = ${usuarioId}::uuid and provedor_id = 'credential'
+    limit 1
+  `);
+  return linhas.rows[0]?.senha_hash ?? null;
+}
+
+/**
+ * Conta SÓ-PASSKEY: não há senha para errar, e dizer "senha incorreta" mandaria
+ * a pessoa tentar de novo algo que não existe (ADR 0029). A frase diz qual é o
+ * caminho de entrada dela. Não é oráculo: quem lê já está dentro da conta.
+ */
+const SEM_SENHA =
+  "Esta conta não tem senha: o caminho de entrada dela é a passkey. Saia e entre de novo com a passkey para continuar.";
+
 /**
  * Prova por senha. Falha aqui NÃO alimenta o bloqueio por conta: quem já está
  * dentro errando a própria senha não pode trancar o próprio login (T6).
  */
 export async function reautenticarComSenha(sessao: Sessao, senha: string): Promise<void> {
-  const linhas = await db.execute<{ senha_hash: string | null }>(sql`
-    select senha_hash from usuarios_contas
-    where usuario_id = ${sessao.usuarioId}::uuid and provedor_id = 'credential'
-    limit 1
-  `);
-  const guardada = linhas.rows[0]?.senha_hash;
+  const guardada = await senhaGuardada(sessao.usuarioId);
+  if (!guardada) throw new ErroDeFator(SEM_SENHA);
   const { kdf } = await import("./kdf");
-  const confere = guardada ? await kdf.verify(guardada, senha) : false;
-  if (!confere) throw new ErroDeFator("Senha incorreta.");
+  if (!(await kdf.verify(guardada, senha))) throw new ErroDeFator("Senha incorreta.");
   await carimbarReautenticacao(sessao.sessaoId);
 }
 
@@ -202,6 +244,13 @@ export async function reautenticarComSenha(sessao: Sessao, senha: string): Promi
  * quem tem passkey OU está em provisionamento.
  */
 export async function iniciarTotp(sessao: Sessao, senha: string): Promise<string> {
+  // O `/two-factor/enable` do BA exige a senha atual; sem `allowPasswordless`
+  // (ADR 0029), conta só-passkey não tem como cadastrar o aplicativo.
+  if (!(await senhaGuardada(sessao.usuarioId))) {
+    throw new ErroDeFator(
+      "Esta conta não tem senha: o caminho de entrada dela é a passkey, e o aplicativo autenticador só pode ser cadastrado em conta com senha.",
+    );
+  }
   const estado = await estadoDosFatores(sessao.usuarioId);
   if (estado.totpAtivo) {
     if (estado.passkeys.length === 0 && !sessao.precisaConfigurarFator) {
@@ -297,6 +346,11 @@ export async function removerPasskey(sessao: Sessao, passkeyId: string): Promise
   if (estado.total <= 1) {
     throw new ErroDeFator(
       "Esta é a sua única forma de provar quem você é. Cadastre outra antes de remover esta.",
+    );
+  }
+  if (exigeDoisFatores(sessao.papel) && estado.passkeys.length <= 1) {
+    throw new ErroDeFator(
+      "Contas de administração precisam de ao menos uma passkey. Cadastre outra antes de remover esta.",
     );
   }
 

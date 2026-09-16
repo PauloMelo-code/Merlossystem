@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Campo } from "@/components/comum/campo";
 import { BotaoEnviar } from "@/components/comum/botao-enviar";
 import { Copiar } from "@/components/comum/copiar";
+import { FaixaAviso } from "@/components/comum/faixa-aviso";
 import type { Resultado } from "@/lib/erros";
 import {
   confirmarPasskeyDoPrimeiroAcesso,
@@ -17,14 +18,26 @@ import {
 import { criarPasskeyNoAparelho } from "../../_components/porta-de-auth";
 
 const INICIAL_URI: Resultado<{ uri: string }> = { ok: false, codigo: "", mensagem: "" };
-const INICIAL_FIM: Resultado<{ concluido: boolean }> = { ok: false, codigo: "", mensagem: "" };
+type Conclusao = { concluido: boolean; falta: "passkey" | "totp" | null };
+const INICIAL_FIM: Resultado<Conclusao> = { ok: false, codigo: "", mensagem: "" };
+
+/**
+ * Política de fatores (ADR 0029): `dono` e `admin` cadastram os DOIS. A tela
+ * não sabe o papel de antemão — quem decide é o servidor, que devolve o que
+ * `falta` depois de cada fator.
+ */
+const O_QUE_FALTA = {
+  passkey:
+    "Contas de dono e de administração usam as duas formas. O aplicativo já está cadastrado; agora cadastre a passkey.",
+  totp: "Contas de dono e de administração usam as duas formas. A passkey já está cadastrada; agora cadastre o aplicativo autenticador — ele é a segunda porta se este aparelho se perder.",
+} as const;
 
 /**
  * Passo 2: cadastrar o segundo fator (02-seguranca.md §9.1 e §9.2 item 7).
  *
  * PASSKEY é a recomendada — é a resistente a phishing e, para `dono` e `admin`,
- * é obrigatória (H7). O aplicativo autenticador existe para o celular de loja
- * sem biometria.
+ * é obrigatória (H7), junto com o aplicativo (ADR 0029). O aplicativo
+ * autenticador existe também para o celular de loja sem biometria.
  *
  * Não há terceira opção: OTP por e-mail, SMS e código de recuperação não
  * existem no sistema (S-07, D3/D4, G4), e desenhar a tela deles seria prometer
@@ -38,14 +51,43 @@ export function CadastrarFator({
   aoConcluir: () => void;
 }) {
   const [escolha, setEscolha] = useState<"nenhuma" | "passkey" | "totp">("nenhuma");
+  const [falta, setFalta] = useState<Conclusao["falta"]>(null);
 
-  if (escolha === "totp") return <ComAplicativo senha={senha} aoConcluir={aoConcluir} />;
-  if (escolha === "passkey") return <ComPasskey aoConcluir={aoConcluir} />;
+  function terminou(resultado: Conclusao) {
+    if (resultado.concluido) {
+      aoConcluir();
+      return;
+    }
+    setFalta(resultado.falta);
+    setEscolha(resultado.falta ?? "nenhuma");
+  }
+
+  const aviso = falta ? (
+    <FaixaAviso tom="info" titulo="Falta mais um passo." descricao={O_QUE_FALTA[falta]} />
+  ) : null;
+
+  if (escolha === "totp") {
+    return (
+      <div className="flex flex-col gap-4">
+        {aviso}
+        <ComAplicativo key="totp" senha={senha} aoTerminar={terminou} />
+      </div>
+    );
+  }
+  if (escolha === "passkey") {
+    return (
+      <div className="flex flex-col gap-4">
+        {aviso}
+        <ComPasskey key="passkey" aoTerminar={terminou} />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-4">
       <p className="text-corpo text-muted-foreground">
-        Escolha como você vai confirmar que é você toda vez que entrar.
+        Escolha como você vai confirmar que é você toda vez que entrar. Contas de dono e
+        de administração cadastram as duas formas, uma depois da outra.
       </p>
 
       <Button type="button" onClick={() => setEscolha("passkey")}>
@@ -68,7 +110,7 @@ export function CadastrarFator({
   );
 }
 
-function ComPasskey({ aoConcluir }: { aoConcluir: () => void }) {
+function ComPasskey({ aoTerminar }: { aoTerminar: (resultado: Conclusao) => void }) {
   const [erro, setErro] = useState("");
   const [ocupado, setOcupado] = useState(false);
   const apelido = "Meu aparelho";
@@ -88,7 +130,7 @@ function ComPasskey({ aoConcluir }: { aoConcluir: () => void }) {
         setErro(fim.mensagem);
         return;
       }
-      aoConcluir();
+      aoTerminar(fim.dados);
     } catch {
       setErro("O cadastro foi cancelado no aparelho. Tente de novo quando quiser.");
     } finally {
@@ -160,13 +202,19 @@ export function ChaveDoTotp({ uri }: { uri: string }) {
   );
 }
 
-function ComAplicativo({ senha, aoConcluir }: { senha: string; aoConcluir: () => void }) {
+function ComAplicativo({
+  senha,
+  aoTerminar,
+}: {
+  senha: string;
+  aoTerminar: (resultado: Conclusao) => void;
+}) {
   const [preparo, prepararAcao] = useActionState(prepararTotpDoPrimeiroAcesso, INICIAL_URI);
   const [fim, confirmarAcao] = useActionState(confirmarTotpDoPrimeiroAcesso, INICIAL_FIM);
 
   useEffect(() => {
-    if (fim.ok) aoConcluir();
-  }, [fim, aoConcluir]);
+    if (fim.ok) aoTerminar(fim.dados);
+  }, [fim, aoTerminar]);
 
   if (!preparo.ok) {
     return (

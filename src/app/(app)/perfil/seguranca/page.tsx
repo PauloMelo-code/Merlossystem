@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { exigirSessao } from "@/lib/auth/guard";
-import { estadoDosFatores } from "@/lib/auth/fatores";
+import { estadoDosFatores, exigeDoisFatores } from "@/lib/auth/fatores";
 import { listarSessoesDe } from "@/lib/auth/sessoes";
 import { CabecalhoPagina } from "@/components/comum/cabecalho-pagina";
 import { TrocarSenha } from "./_components/trocar-senha";
@@ -74,7 +74,11 @@ export default async function PaginaSeguranca() {
           ...chave,
           criadaEm: chave.criadaEm.toISOString(),
         }))}
-        podeRemover={fatores.total > 1}
+        // Mesma regra de `removerPasskey`: dono e admin guardam ao menos uma (ADR 0029).
+        podeRemover={
+          fatores.total > 1 &&
+          !(exigeDoisFatores(sessao.papel) && fatores.passkeys.length <= 1)
+        }
       />
 
       <ListaSessoes

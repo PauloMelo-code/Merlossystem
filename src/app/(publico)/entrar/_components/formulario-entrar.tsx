@@ -145,6 +145,14 @@ export function FormularioEntrar({
             ) : null}
             Entrar
           </Button>
+          {/*
+           * Conta só-passkey (ADR 0029): não tem senha, e a recusa única não pode
+           * dizer isso conta a conta (enumeração). O aviso é fixo, para todos.
+           */}
+          <p className="text-legenda text-muted-foreground">
+            Sua conta foi criada só com passkey? Ela não tem senha: entre pelo botão
+            “Entrar com passkey”.
+          </p>
         </form>
       ) : (
         <Button type="button" variant="ghost" onClick={() => setAbrirSenha(true)}>

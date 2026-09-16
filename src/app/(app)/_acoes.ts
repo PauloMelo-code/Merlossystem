@@ -17,11 +17,8 @@ import { registrarEventoAuth } from "@/lib/auth/trilha";
  * Sair é POST de Server Action, nunca `<a href>`: encerrar sessão é efeito, e
  * um pré-carregador de link derrubaria a sessão de quem só passou o mouse.
  *
- * ACHADO PARA F8/F9: a matriz de `02-seguranca.md §2.2` não tem chave para
- * "qualquer sessão ativa", e `executarAcao` exige uma (é o que a trava T1
- * cobra). As duas usam `lojas:ler`, a única chave concedida a TODOS os papéis
- * que descreve algo verdadeiro sobre trocar de loja. `/perfil` e
- * `/perfil/seguranca` vão esbarrar no mesmo buraco — a chave própria é ADR.
+ * As duas usam `conta:gerir` (ADR 0030): sair e escolher a loja ativa do
+ * seletor são efeitos sobre a PRÓPRIA sessão, que toda sessão ativa alcança.
  */
 
 const TROCA = z.object({ lojaId: z.string().trim().max(64) });
@@ -33,7 +30,7 @@ const TODAS = "todas";
 export async function trocarLojaAtiva(lojaId: string): Promise<void> {
   await executarAcao(
     {
-      permissao: "lojas:ler",
+      permissao: "conta:gerir",
       entrada: TROCA,
       // O cookie é PREFERÊNCIA de UI; quem autoriza é o escopo, a cada
       // requisição. Por isso esta action não resolve loja nenhuma.
@@ -71,7 +68,7 @@ export async function trocarLojaAtiva(lojaId: string): Promise<void> {
 export async function sair(): Promise<void> {
   await executarAcao(
     {
-      permissao: "lojas:ler",
+      permissao: "conta:gerir",
       entrada: z.object({}),
       loja: "nenhuma",
       // Quem está com a senha vencida também precisa poder sair (§9.4).
