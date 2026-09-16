@@ -372,9 +372,20 @@ export async function removerTodosOsFatores(
   usuarioId: string,
 ): Promise<{ totp: number; passkeys: number }> {
   const adaptador = (await auth.$context).adapter;
-  const onde = [{ field: "userId", value: usuarioId }];
-  const passkeys = await adaptador.deleteMany({ model: "passkey", where: onde });
-  const totp = await adaptador.deleteMany({ model: "twoFactor", where: onde });
+  // Linha a linha, pelo id: é o mesmo `delete` que o próprio plugin usa, e o
+  // auditor não tem exceção para remoção em lote.
+  const remover = async (model: "passkey" | "twoFactor"): Promise<number> => {
+    const linhas = await adaptador.findMany<{ id: string }>({
+      model,
+      where: [{ field: "userId", value: usuarioId }],
+    });
+    for (const linha of linhas) {
+      await adaptador.delete({ model, where: [{ field: "id", value: linha.id }] });
+    }
+    return linhas.length;
+  };
+  const passkeys = await remover("passkey");
+  const totp = await remover("twoFactor");
   return { totp, passkeys };
 }
 
