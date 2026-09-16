@@ -136,7 +136,7 @@ function FragmentoDoDia({ dia, novas, children }: { dia: string | null; novas: b
   return (
     <>
       {dia ? (
-        <li role="separator" className="sticky top-0 z-[1] flex justify-center py-2">
+        <li role="separator" className="sticky top-0 z-1 flex justify-center py-2">
           <span className="rounded-full bg-card px-3 py-0.5 text-legenda text-muted-foreground shadow-sm">{dia}</span>
         </li>
       ) : null}

@@ -34,7 +34,7 @@ export function LinhaConversa({
         className={cn(
           "relative flex min-h-16 gap-3 border-b border-border px-3 py-2.5 outline-none transition-colors",
           "hover:bg-muted focus-visible:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
-          selecionada && "bg-accent before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-primary",
+          selecionada && "bg-accent before:absolute before:inset-y-0 before:left-0 before:w-0.75 before:bg-primary",
         )}
       >
         <AvatarContato nome={item.contatoNome} url={item.contatoAvatar} canal={item.provedor} tamanho="medio" />

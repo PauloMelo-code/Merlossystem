@@ -37,7 +37,7 @@ function Midia({ m }: { m: MidiaDaMensagem }) {
             src={m.miniatura ?? m.endereco}
             alt={descricao}
             loading="lazy"
-            className="aspect-[4/3] w-64 max-w-full rounded-md bg-muted object-cover"
+            className="aspect-4/3 w-64 max-w-full rounded-md bg-muted object-cover"
           />
         </a>
       );
@@ -91,7 +91,7 @@ export function BalaoMensagem({
       ) : null}
       <div
         className={cn(
-          "flex max-w-[min(75%,60ch)] flex-col gap-1.5 rounded-lg px-3 py-2 text-mensagem shadow-sm",
+          "flex max-w-3/4 flex-col gap-1.5 rounded-lg px-3 py-2 text-mensagem shadow-sm",
           m.notaInterna
             ? "border border-nota-interna-borda bg-nota-interna-fundo text-nota-interna-texto"
             : saida
@@ -113,7 +113,7 @@ export function BalaoMensagem({
             {card.tipo === "pedido" ? "Pedido" : card.tipo === "pagamento" ? "Pagamento" : "Produto"}
           </Link>
         ) : null}
-        {m.conteudo ? <p className="break-words whitespace-pre-wrap">{m.conteudo}</p> : null}
+        {m.conteudo ? <p className="max-w-prose break-words whitespace-pre-wrap">{m.conteudo}</p> : null}
         <span
           className={cn(
             "inline-flex items-center gap-1 self-end text-legenda",
@@ -130,7 +130,7 @@ export function BalaoMensagem({
         </span>
       </div>
       {m.status === "falhou" ? (
-        <div className="mt-1 flex max-w-[min(75%,60ch)] flex-wrap items-center justify-end gap-2 text-legenda text-perigo">
+        <div className="mt-1 flex max-w-3/4 flex-wrap items-center justify-end gap-2 text-legenda text-perigo">
           <span>{m.falhaMotivo ?? "O provedor recusou a mensagem."}</span>
           {podeReenviar ? (
             <Button type="button" variant="outline" size="xs" onClick={() => aoReenviar(m.id)}>

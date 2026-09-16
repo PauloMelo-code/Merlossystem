@@ -63,7 +63,7 @@ export function TelaAtendimento({
       <div className="flex h-full min-h-0">
         <div
           className={cn(
-            "min-h-0 w-full flex-col border-r border-border bg-card md:flex md:w-[22rem] md:shrink-0",
+            "min-h-0 w-full flex-col border-r border-border bg-card md:flex md:w-88 md:shrink-0",
             selecionadaId ? "hidden" : "flex",
           )}
         >
