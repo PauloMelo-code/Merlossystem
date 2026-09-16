@@ -1,40 +1,142 @@
-# CI/CD — Estrutura Base
+# CI/CD — MerlostoreChat
 #
-# Logica (espelha o CLAUDE.md):
-#   push em `develop` -> CI -> Deploy HML (Homologacao)
-#   push em `master`  -> CI -> Deploy PRD (Producao), com BACKUP do banco antes
+#   push/PR em qualquer branch -> job `verificar` (os 12 passos de 03-arquitetura §19)
+#   push em `develop`          -> verificar -> deploy HML
+#   push em `master`           -> verificar -> BACKUP obrigatorio -> deploy PRD
 #
-# Pipeline obrigatorio: Lint -> Type Check -> Testes -> Build -> Deploy (SSH VPS).
+# Por que o auditor roda aqui: os hooks de `.claude/hooks/` so existem dentro do Claude
+# Code. Codex, Antigravity, qualquer pessoa da equipe e qualquer commit vindo de fora
+# passam por baixo deles. O CI e a unica barreira comum — por isso `compliance`,
+# `test:compliance`, `docs:check` e `ai-marks` sao passos daqui, nao so do hook.
 #
-# Secrets necessarios (configurar em Settings > Secrets and variables > Actions,
-# preferencialmente por Environment `hml` e `prd`):
-#   HML_SSH_HOST / HML_SSH_USER / HML_SSH_KEY / HML_KNOWN_HOSTS / HML_APP_DIR
-#   PRD_SSH_HOST / PRD_SSH_USER / PRD_SSH_KEY / PRD_KNOWN_HOSTS / PRD_APP_DIR
-#   PRD_DATABASE_URL   (string de conexao usada no pg_dump antes do deploy PRD)
+# O worker e publicado JUNTO com o app: sem ele o sistema sobe sem quem processe a fila.
 #
-# OBS: este e o pipeline-template da base. Ele assume os scripts npm padrao
-# (`lint`, `test`, `build`) e `tsc`. Eles passam a existir quando a app Next.js
-# for adicionada em `src/` com seu package.json.
+# Secrets por Environment (`hml` e `prd`):
+#   <AMB>_DATABASE_URL_MIGRACAO   papel merlo_migracao — migracao e backup
+#   <AMB>_DEPLOY_APP              gatilho de deploy do app
+#   <AMB>_DEPLOY_WORKER           gatilho de deploy do worker
+#   <AMB>_APP_URL                 alvo da fumaca de seguranca
+#   <AMB>_SONDA_SEGREDO           header x-merlo-sonda de /api/pronto
+#   PRD_BACKUP_DEST               destino do backup FORA do servidor do banco
 
 name: CI/CD
 
 on:
   push:
     branches: [develop, master]
+  pull_request:
   workflow_dispatch:
 
-# Evita dois deploys simultaneos no mesmo ambiente.
 concurrency:
   group: cicd-${{ github.ref }}
   cancel-in-progress: false
 
+env:
+  NODE_VERSION: "24"
+
 jobs:
   # ---------------------------------------------------------------------------
-  # 1) CI — roda em TODA push (develop e master)
+  # verificar — roda em TODO push e TODA PR. 12 passos, nesta ordem.
+  # As travas de fonte vem antes de subir servico: e o retorno mais rapido.
   # ---------------------------------------------------------------------------
-  ci:
-    name: Lint + Type Check + Testes + Build
+  verificar:
+    name: Verificar (12 passos)
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: merlostore_test
+          POSTGRES_USER: dev
+          POSTGRES_PASSWORD: dev
+        ports: ["5437:5432"]
+        options: >-
+          --health-cmd "pg_isready -U dev"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7
+        ports: ["6382:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://dev:dev@localhost:5437/merlostore_test
+      DATABASE_URL_MIGRACAO: postgres://dev:dev@localhost:5437/merlostore_test
+      DATABASE_URL_TESTE: postgres://dev:dev@localhost:5437/merlostore_test
+      REDIS_URL: redis://localhost:6382
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # o gitleaks precisa do historico
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: 1. Lint
+        run: npm run lint
+
+      - name: 2. Type check
+        run: npm run typecheck
+
+      - name: 3. Auditor de conformidade
+        run: npm run compliance
+
+      - name: 4. Trava do auditor
+        run: npm run test:compliance
+
+      - name: 5. Travas de fonte
+        run: npm run test:travas
+
+      - name: 6. Testes de unidade
+        run: npm run test:unidade
+
+      - name: 7. Testes de componentes
+        run: npm run test:componentes
+
+      - name: 8. Banco de teste, migracoes e conferencia de schema
+        run: |
+          node scripts/db-teste.mjs
+          npm run db:migrate
+          npm run db:verificar
+
+      - name: 9. Testes de integracao e seguranca
+        run: npm run test:integracao
+
+      - name: 10. Drift de documentacao e marcas de IA
+        run: |
+          node scripts/docs-check.mjs --strict
+          npm run ai-marks
+
+      - name: 11. Build
+        run: npm run build
+
+      - name: 12a. Vulnerabilidades de dependencia
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: 12b. Segredos no historico
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ---------------------------------------------------------------------------
+  # HML — branch develop
+  # ---------------------------------------------------------------------------
+  hml:
+    name: Deploy HML
+    needs: verificar
+    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: hml
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -42,142 +144,100 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
       - name: Instalar dependencias
         run: npm ci
 
-      - name: Lint
-        run: npm run lint
+      - name: Migrar o banco de HML
+        env:
+          DATABASE_URL_MIGRACAO: ${{ secrets.HML_DATABASE_URL_MIGRACAO }}
+        run: npm run db:migrate
 
-      - name: Type Check
-        run: npx tsc --noEmit
-
-      - name: Testes
-        run: npm test
-
-      - name: Build
-        run: npm run build
-
-  # ---------------------------------------------------------------------------
-  # 2) Deploy HML — somente branch develop
-  # ---------------------------------------------------------------------------
-  deploy-hml:
-    name: Deploy HML (Homologacao)
-    needs: ci
-    if: github.ref == 'refs/heads/develop'
-    runs-on: ubuntu-latest
-    environment: hml
-    steps:
-      - name: Configurar SSH
+      - name: Publicar app e worker
+        env:
+          APP: ${{ secrets.HML_DEPLOY_APP }}
+          WORKER: ${{ secrets.HML_DEPLOY_WORKER }}
         run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.HML_SSH_KEY }}" > ~/.ssh/id_deploy
-          chmod 600 ~/.ssh/id_deploy
-          echo "${{ secrets.HML_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
-          chmod 644 ~/.ssh/known_hosts
+          if [ -z "$APP" ] || [ -z "$WORKER" ]; then
+            echo "::error::HML_DEPLOY_APP e HML_DEPLOY_WORKER sao obrigatorios."
+            echo "O worker sobe JUNTO com o app; sem ele a fila nao e processada."
+            exit 1
+          fi
+          curl -fsS -X POST "$APP"
+          curl -fsS -X POST "$WORKER"
 
-      - name: Deploy na VPS HML
-        run: |
-          ssh -i ~/.ssh/id_deploy "${{ secrets.HML_SSH_USER }}@${{ secrets.HML_SSH_HOST }}" \
-            "set -e; \
-             cd '${{ secrets.HML_APP_DIR }}'; \
-             git fetch --all; \
-             git reset --hard origin/develop; \
-             npm ci; \
-             npm run build; \
-             npm run db:migrate --if-present; \
-             pm2 reload ecosystem.config.js --update-env || pm2 start ecosystem.config.js"
+      - name: Fumaca de seguranca
+        env:
+          ALVO: ${{ secrets.HML_APP_URL }}
+          SONDA_SEGREDO: ${{ secrets.HML_SONDA_SEGREDO }}
+        run: node scripts/fumaca-seguranca.mjs --alvo "$ALVO"
 
   # ---------------------------------------------------------------------------
-  # 3) Deploy PRD — somente branch master, com BACKUP do banco ANTES
+  # PRD — branch master. O backup e passo OBRIGATORIO: falhou, aborta.
   # ---------------------------------------------------------------------------
-  deploy-prd:
-    name: Deploy PRD (Producao)
-    needs: ci
-    if: github.ref == 'refs/heads/master'
+  prd:
+    name: Deploy PRD
+    needs: verificar
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
     runs-on: ubuntu-latest
     environment: prd
     steps:
-      - name: Configurar SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.PRD_SSH_KEY }}" > ~/.ssh/id_deploy
-          chmod 600 ~/.ssh/id_deploy
-          echo "${{ secrets.PRD_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
-          chmod 644 ~/.ssh/known_hosts
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      # =======================================================================
-      # Disaster Recovery (CLAUDE.md): SEMPRE backup ANTES do deploy PRD, e o
-      # backup NUNCA pode ficar so no mesmo servidor do banco.
-      #
-      # O dump NAO passa pelo runner do GitHub e NAO vira artifact.
-      # Um artifact do Actions e baixavel por QUALQUER pessoa com acesso de
-      # leitura ao repositorio e fica hospedado por semanas. Um dump de producao
-      # carrega nome, endereco, CNPJ e valor de venda de cliente real: isso nao
-      # sai do perimetro. A copia off-server e feita HOST -> DESTINO, direto,
-      # sem intermediario.
-      #
-      # PRE-REQUISITO OPERACIONAL (uma vez, fora do CI):
-      #   a VPS de banco precisa ter chave SSH propria autorizada no destino de
-      #   backup. O CI so dispara o comando; ele nao carrega credencial nenhuma
-      #   do destino.
-      # Secret necessario: PRD_BACKUP_DEST  (ex.: "backup@10.0.0.9:/srv/backups/mm")
-      # =======================================================================
-      - name: Definir nome do backup
-        id: bk
-        run: echo "file=backup_$(date +%d_%m_%Y_%H_%M).sql" >> "$GITHUB_OUTPUT"
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
 
-      - name: Exigir destino de backup off-server
+      - name: Instalar dependencias
+        run: npm ci
+
+      # A regra de DR nao aceita backup que fica no mesmo servidor do banco.
+      # O dump tambem nao vira artifact do Actions: qualquer pessoa com leitura no
+      # repositorio baixaria nome, telefone e valor de venda de cliente real.
+      - name: Exigir destino de backup fora do servidor do banco
         env:
           DEST: ${{ secrets.PRD_BACKUP_DEST }}
         run: |
           if [ -z "$DEST" ]; then
-            echo "::error::PRD_BACKUP_DEST nao configurado."
-            echo "A regra de DR do CLAUDE.md exige copia do backup FORA do servidor do banco."
-            echo "Sem destino off-server, o deploy em producao NAO prossegue."
+            echo "::error::PRD_BACKUP_DEST nao configurado. Deploy em producao abortado."
             exit 1
           fi
 
-      - name: Backup do banco no host (obrigatorio antes do PRD)
-        run: |
-          ssh -i ~/.ssh/id_deploy "${{ secrets.PRD_SSH_USER }}@${{ secrets.PRD_SSH_HOST }}" \
-            "set -e; \
-             mkdir -p ~/Documents/DB_backups; \
-             pg_dump '${{ secrets.PRD_DATABASE_URL }}' \
-               --no-owner --no-acl --clean --if-exists \
-               --file=\"\$HOME/Documents/DB_backups/${{ steps.bk.outputs.file }}\""
+      - name: Backup do banco (obrigatorio, aborta o deploy se falhar)
+        env:
+          DATABASE_URL_MIGRACAO: ${{ secrets.PRD_DATABASE_URL_MIGRACAO }}
+          BACKUP_DEST: ${{ secrets.PRD_BACKUP_DEST }}
+        run: npm run db:backup
 
-      # Dump vazio "com sucesso" e a falha silenciosa classica de DR: so se
-      # descobre no dia do restore. 1 KB e generoso — o schema sozinho ja passa.
-      - name: Conferir que o dump nao esta vazio
-        run: |
-          ssh -i ~/.ssh/id_deploy "${{ secrets.PRD_SSH_USER }}@${{ secrets.PRD_SSH_HOST }}" \
-            "set -e; \
-             f=\"\$HOME/Documents/DB_backups/${{ steps.bk.outputs.file }}\"; \
-             bytes=\$(wc -c < \"\$f\"); \
-             echo \"backup: \$bytes bytes\"; \
-             if [ \"\$bytes\" -lt 1024 ]; then echo 'BACKUP SUSPEITO (< 1KB)'; exit 1; fi; \
-             grep -q 'PostgreSQL database dump' \"\$f\" || { echo 'nao parece um dump'; exit 1; }"
+      - name: Migrar o banco de PRD
+        env:
+          DATABASE_URL_MIGRACAO: ${{ secrets.PRD_DATABASE_URL_MIGRACAO }}
+        run: npm run db:migrate
 
-      # Copia HOST -> DESTINO. O dump nunca toca a infraestrutura do GitHub.
-      - name: Copiar backup para FORA do servidor do banco (regra DR)
+      - name: Publicar app e worker
+        env:
+          APP: ${{ secrets.PRD_DEPLOY_APP }}
+          WORKER: ${{ secrets.PRD_DEPLOY_WORKER }}
         run: |
-          ssh -i ~/.ssh/id_deploy "${{ secrets.PRD_SSH_USER }}@${{ secrets.PRD_SSH_HOST }}" \
-            "set -e; \
-             scp -o StrictHostKeyChecking=yes \
-               \"\$HOME/Documents/DB_backups/${{ steps.bk.outputs.file }}\" \
-               '${{ secrets.PRD_BACKUP_DEST }}/${{ steps.bk.outputs.file }}'"
+          if [ -z "$APP" ] || [ -z "$WORKER" ]; then
+            echo "::error::PRD_DEPLOY_APP e PRD_DEPLOY_WORKER sao obrigatorios."
+            exit 1
+          fi
+          curl -fsS -X POST "$APP"
+          curl -fsS -X POST "$WORKER"
 
-      - name: Deploy na VPS PRD
+      - name: Fumaca de seguranca
+        env:
+          ALVO: ${{ secrets.PRD_APP_URL }}
+          SONDA_SEGREDO: ${{ secrets.PRD_SONDA_SEGREDO }}
+        run: node scripts/fumaca-seguranca.mjs --alvo "$ALVO"
+
+      - name: Marcar a versao publicada
         run: |
-          ssh -i ~/.ssh/id_deploy "${{ secrets.PRD_SSH_USER }}@${{ secrets.PRD_SSH_HOST }}" \
-            "set -e; \
-             cd '${{ secrets.PRD_APP_DIR }}'; \
-             git fetch --all; \
-             git reset --hard origin/master; \
-             npm ci; \
-             npm run build; \
-             npm run db:migrate --if-present; \
-             pm2 reload ecosystem.config.js --update-env || pm2 start ecosystem.config.js"
+          git tag "prd-$(date +%Y%m%d-%H%M)"
+          git push origin --tags

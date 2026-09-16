@@ -1,261 +1,204 @@
 ---
 name: repo-docs-sync
 description: >-
-  Audita e sincroniza a documentacao tecnica da base com o estado real do
-  codigo. Use quando o usuario pedir para atualizar/sincronizar docs, revisar
-  se a documentacao esta desatualizada, ou garantir que as regras dos agentes
-  IA batem com o projeto. Gatilhos: "atualize a documentacao", "sincronize os
-  docs", "revise o README", "atualize o CLAUDE.md", "atualize o AGENTS.md",
-  "os docs estao desatualizados", "atualizar documentacao do repositorio",
-  "update docs", "sync documentation".
-  NAO usar para: escrever feature nova, debugar, ou rodar testes.
+  Audita e sincroniza a documentação técnica do MerlostoreChat com o estado real
+  do código. Use quando o usuário pedir para atualizar/sincronizar docs, revisar
+  se a documentação está desatualizada, ou garantir que as regras dos agentes IA
+  batem com o projeto. Gatilhos: "atualize a documentação", "sincronize os docs",
+  "revise o README", "atualize o CLAUDE.md", "atualize o AGENTS.md", "os docs
+  estão desatualizados", "atualizar documentação do repositório", "update docs",
+  "sync documentation".
+  NÃO usar para: escrever feature nova, debugar, ou rodar testes.
 ---
 
 # Repo Docs Sync
 
-Audita e sincroniza a documentacao da base para que as instrucoes dos agentes
-IA (`CLAUDE.md`, `AGENTS.md`, `Agente.md`), os docs de dominio (`docs/**`) e o
-README reflitam o estado REAL do codigo. Evita alucinacao da IA, regras stale e
-confusao do dev detectando drift entre codigo e documentacao.
+Audita e sincroniza a documentação para que as instruções dos agentes (`CLAUDE.md`,
+`AGENTS.md`, `Agente.md`, `.agents/`), os docs de domínio (`docs/**`) e o `README.md`
+reflitam o estado **real** do código. Evita alucinação da IA, regra stale e confusão do
+dev, detectando drift entre código e documentação.
 
 > [!CAUTION]
-> **READ-FIRST, WRITE-SECOND.** Nunca atualize um doc sem antes ler o codigo
-> fonte que ele referencia. Nunca assuma que um padrao existe — abra o arquivo
-> real e confirme. O determinismo (provar o drift) e dos scripts; o julgamento
-> e a escrita sao seus.
+> **READ-FIRST, WRITE-SECOND.** Nunca atualize um doc sem antes ler o código fonte que
+> ele referencia. Nunca assuma que um padrão existe — abra o arquivo real e confirme.
+> O determinismo (provar o drift) é dos scripts; o julgamento e a escrita são seus.
 
 ---
 
-## Ferramentas desta base (use SEMPRE, nao reinvente)
+## Ferramentas deste repositório (use SEMPRE, não reinvente)
 
-Esta base ja tem geradores determinísticos. Use-os em vez de `grep`/`find`
-(que nem sao cross-platform no Windows da equipe):
+Geradores determinísticos, cross-platform — não use `grep`/`find` à mão (o time trabalha
+no Windows):
 
 | Comando | Para que |
 |---------|----------|
-| `node scripts/project-map.mjs` | Inventario do codigo: tabelas Drizzle, rotas, server actions, componentes, paginas |
-| `node scripts/docs-check.mjs` | Relatorio de drift (refs quebradas + codigo sem cobertura nos docs) |
-| `node scripts/docs-check.mjs --json` | Mesmo relatorio, machine-readable (para voce parsear) |
-| `node scripts/docs-check.mjs --strict` | Exit 1 se houver qualquer gap (verificacao final) |
-| `node scripts/check-compliance.mjs` | Auditoria de conformidade (Prisma/SQLite/delete fisico/auditoria/>500 linhas/secrets) |
+| `npm run map` | Inventário do código em `docs/PROJECT_MAP.md`: tabelas Drizzle, rotas, actions, componentes, páginas |
+| `npm run docs:check` | Relatório de drift (refs quebradas + código sem cobertura nos docs) |
+| `node scripts/docs-check.mjs --json` | Mesmo relatório, machine-readable |
+| `node scripts/docs-check.mjs --strict` | Exit 1 se houver qualquer gap (verificação final e passo 10 do CI) |
+| `npm run compliance` | Auditoria das regras absolutas |
+| `npm run ai-marks` | Marcas invisíveis de IA em `docs/` |
+
+O `docs-check.mjs` daqui já exclui `PROJECT_MAP.md` do corpus (senão tudo pareceria
+documentado) e ignora caminho citado **dentro de bloco de código** (exemplo não é link).
 
 ---
 
 ## Fase 1: Descoberta — mapear o terreno
 
-### 1.1 Rode os geradores (nao grepe na mao)
+### 1.1 Rode os geradores
 
 ```bash
-node scripts/project-map.mjs        # o que o codigo TEM
-node scripts/docs-check.mjs --json  # o que os docs ERRAM/FALTAM
+npm run map                          # o que o código TEM
+node scripts/docs-check.mjs --json   # o que os docs ERRAM/FALTAM
 ```
 
-### 1.2 Conheca o conjunto REAL de docs desta base
-
-Leia (somente os que existirem):
+### 1.2 Conheça o conjunto REAL de docs
 
 ```
 RAIZ
-├── CLAUDE.md                 # Regras p/ Claude Code (Anthropic)
-├── AGENTS.md                 # Regras universais (Codex, Cursor, Copilot, Gemini)
-├── Agente.md                 # Regras de comportamento dos agentes
-├── README.md                 # Overview p/ devs (pode nao existir ainda)
+├── CLAUDE.md        # regras para o Claude Code
+├── AGENTS.md        # regras universais (Codex, Cursor, Copilot, Gemini, Antigravity)
+├── Agente.md        # comportamento do agente (como trabalhar, não o que construir)
+├── README.md        # visão, stack, setup
+.agents/             # espelho versionado: rules/, skills/, workflows/
 docs/
-├── rbac.md                   # Controle de acesso e permissoes
-├── oauth.md                  # Autenticacao e autorizacao
-├── front.md                  # Documentacao do frontend
-├── back.md                   # Documentacao do backend
-├── regras-negocio.md         # Regras de negocio do cliente
-├── components.md             # Padrao de componentes
-├── definition-of-done.md     # Checklist de conclusao
-├── git-commits.md            # Conventional Commits
-└── adr/                      # Architecture Decision Records (o "porque")
-.github/
-└── pull_request_template.md
+├── seguranca/       # caminhos-de-acesso.md, runbook.md, matriz-req-teste.md
+├── modulos/         # um por domínio (conversas, contatos, midias, pedidos, …)
+├── adr/             # decisões 0008..0024 + índice (0001..0007 estão "Substituído por")
+├── rbac.md  back.md  front.md  components.md  regras-negocio.md
+├── integracoes.md  definition-of-done.md  git-commits.md  deploy.md
+└── PROJECT_MAP.md   # GERADO — nunca editar à mão
+.github/pull_request_template.md
 ```
 
 > [!NOTE]
-> Esta base NAO usa `.agents/` (Antigravity), `COPILOT.md` nem `.cursorrules`.
-> Nao invente esses arquivos. O `docs-check.mjs` ja descobre os docs sozinho.
+> Este repositório **usa** `.agents/` (Codex e Antigravity) — é espelho versionado do
+> `.claude/skills/` e das regras da raiz. Ao mudar uma skill ou uma regra, **espelhe**.
+> Não existem `COPILOT.md` nem `.cursorrules` aqui; não os invente.
+
+> [!NOTE]
+> O `next dev` mantém um bloco gerenciado dentro do `AGENTS.md`
+> (`<!-- BEGIN:nextjs-agent-rules -->`). Ele é **commitado** e **não se edita à mão** —
+> reescrever aquele trecho o faz voltar como diff no próximo `dev`.
 
 ### 1.3 Monte o registro
 
-Para cada doc encontrado, anote: caminho, proposito, ultimo dominio coberto e
-termos-chave (paths, nomes de tabela, funcoes) citados.
+Para cada doc: caminho, propósito, domínio coberto e termos-chave (paths, nomes de
+tabela, funções) citados.
 
 ---
 
-## Fase 2: Arqueologia — o que mudou no codigo
-
-> [!IMPORTANT]
-> Esta base pode NAO ser um repositorio git. Verifique antes:
-> `git rev-parse --is-inside-work-tree`
-
-### 2.1 Se FOR repo git
+## Fase 2: Arqueologia — o que mudou no código
 
 ```bash
-git log --oneline --name-only -n 50            # arquivos alterados
-git log --diff-filter=A --name-only --pretty=format: -n 50 | sort -u  # novos
-git log --diff-filter=D --name-only --pretty=format: -n 50 | sort -u  # deletados
+git log --oneline --name-only -n 50
+git log --diff-filter=A --name-only --pretty=format: -n 50 | sort -u   # novos
+git log --diff-filter=D --name-only --pretty=format: -n 50 | sort -u   # deletados
 ```
 
-### 2.2 Se NAO for repo git (fallback)
+O commit `5e902d4` é o **sistema antigo**, referência de domínio e nunca de
+implementação. Não documente comportamento lido de lá.
 
-Use o `docs-check.mjs --json` como verdade absoluta do drift, e ordene por
-data de modificacao para achar o que mudou recentemente:
+### Classifique cada mudança
 
-```bash
-node scripts/docs-check.mjs --json
-# PowerShell: Get-ChildItem -Recurse src -Include *.ts,*.tsx | Sort-Object LastWriteTime -Descending | Select-Object -First 20
-```
-
-### 2.3 Classifique cada mudanca
-
-| Categoria | Impacto | Acao |
+| Categoria | Impacto | Ação |
 |-----------|---------|------|
-| Novo dominio/modulo | ALTO | Criar secao no doc de dominio |
-| Nova tabela/schema | ALTO | Atualizar docs de schema + `back.md` |
-| Nova rota de API | ALTO | Atualizar `back.md` |
-| Nova permissao/RBAC | ALTO | Atualizar `rbac.md` |
-| Nova regra de negocio | ALTO | Atualizar `regras-negocio.md` + invariante em AGENTS/CLAUDE |
-| Refactor de modulo | MEDIO | Verificar precisao dos docs existentes |
-| Bug fix / dep bump / estilo | BAIXO/NENHUM | Pular salvo se mudou um padrao |
+| Domínio/módulo novo | ALTO | `docs/modulos/<dominio>.md` + índice em `back.md`/`front.md` |
+| Tabela ou coluna nova | ALTO | ADR + `docs/modulos/` + `PROJECT_MAP` |
+| Rota nova | ALTO | linha em `docs/seguranca/caminhos-de-acesso.md` (a trava T2 cobra) |
+| Permissão ou papel novo | ALTO | `docs/rbac.md` + matriz em `src/lib/auth/permissoes/` |
+| Regra de negócio nova | ALTO | `docs/regras-negocio.md` + invariante em AGENTS/CLAUDE |
+| Mudança em auth, borda ou webhook | ALTO | `docs/seguranca/` + rodar `/audit-auth-security` |
+| Refactor de módulo | MÉDIO | conferir precisão do que já está escrito |
+| Bug fix, bump, estilo | BAIXO | pular, salvo se mudou um padrão |
 
-### 2.4 Deep-dive nos ALTO impacto — LEIA O CODIGO REAL
-
-Para cada mudanca de alto impacto, abra o arquivo fonte e extraia: o que faz,
-funcoes/classes-chave, invariantes/constraints, dependencias, config (env vars).
-**Nunca documente com base em mensagem de commit.**
+**Nunca documente com base em mensagem de commit.** Abra o arquivo.
 
 ---
 
-## Fase 3: Gap analysis — o que falta ou esta errado
+## Fase 3: Gap analysis
 
-### 3.1 Consuma o relatorio do docs-check
+O JSON do `docs-check` traz `staleRefs[]` (caminho citado que não existe),
+`missingCoverage[]` (tabela/rota/action sem menção em doc nenhum) e `summary`.
+Sobre isso aplique julgamento:
 
-```bash
-node scripts/docs-check.mjs --json
-```
-
-O JSON traz:
-- `staleRefs[]` — caminho citado nos docs que nao existe no disco
-- `missingCoverage[]` — tabela/rota/action no codigo sem mencao em nenhum doc
-- `summary` — contagens
-
-### 3.2 Cruze codigo vs docs (julgamento humano sobre o que o script aponta)
-
-- **Completude**: todo dominio/modulo tem secao em ao menos um doc?
-- **Precisao**: paths, nomes de funcao e detalhes batem com o codigo?
-- **Atualidade**: nenhuma ref a arquivo deletado / funcao renomeada?
-- **Consistencia**: a mesma info nao se contradiz entre dois docs?
-
-### 3.3 Produza o gap report (use as categorias do docs-check + seu julgamento)
+- **Completude**: todo domínio tem seção em ao menos um doc?
+- **Precisão**: paths, nomes de função e contagens batem?
+- **Atualidade**: nenhuma ref a arquivo deletado ou função renomeada?
+- **Consistência**: dois docs não se contradizem?
 
 ```markdown
 ## Gap Report
-### Falta documentar (codigo existe, doc nao)
-- [ ] <item de missingCoverage>
-### Stale (doc cita codigo que mudou/sumiu)
-- [ ] <item de staleRefs>
-### Inconsistencia (docs se contradizem)
+### Falta documentar (código existe, doc não)
+- [ ] <missingCoverage>
+### Stale (doc cita código que mudou/sumiu)
+- [ ] <staleRefs>
+### Inconsistência
 - [ ] <ex: CLAUDE.md diz X, AGENTS.md diz Y>
 ```
 
 ---
 
-## Fase 4: Execucao — atualizar os docs
+## Fase 4: Execução
 
-### 4.1 Ordem OBRIGATORIA
+### Ordem obrigatória
 
-1. **Docs de dominio** (`docs/**`) — mais profundo e detalhado
+1. **Docs de domínio** (`docs/**`) — mais profundo
 2. **Regras de agente** (`AGENTS.md`, `CLAUDE.md`, `Agente.md`) — invariantes
-3. **README.md** — overview (por ultimo; ele resume tudo)
+3. **Espelho** `.agents/` — rules e skills
+4. **README.md** — por último, porque resume tudo
 
 > [!WARNING]
-> Nunca atualize o README primeiro. Ele resume os docs profundos.
+> Nunca atualize o README primeiro.
 
-### 4.2 Regras por camada
+### Regras de consistência
 
-- **Docs de dominio (`docs/**`)**: referencia tecnica profunda. Tom preciso,
-  sem marketing. Estrutura sugerida: Objetivo → Visao geral → Arquivos fonte de
-  verdade → Modelo de dados/fluxo → Invariantes criticos → O que revisar antes
-  de alterar → Anti-padroes → Checklist final.
-- **Regras de agente (`AGENTS.md`/`CLAUDE.md`/`Agente.md`)**: imperativo,
-  direto. Ordem de leitura, invariantes ("nunca faca X"), regras por dominio,
-  checklist de saida. Lembre das regras absolutas da base: PostgreSQL+Drizzle,
-  soft delete, colunas de auditoria, optimistic locking, modal block 3s.
-- **README.md**: visao do produto, stack, setup, mapa de pastas (real), padroes,
-  links para os docs de dominio.
+1. **Mesmos termos** em todos os docs. Glossário do produto: "Conversa" (não "ticket"),
+   "Modelo" (não "template"), "Campanha" (não "broadcast"), "Loja" (não "tenant").
+2. **Mesmos paths** — arquivo que moveu, atualiza em TODOS os docs.
+3. **Mesmas contagens** — se são 48 tabelas e 5 papéis, todo doc que citar diz isso.
+4. **Cross-reference** — doc novo em `docs/modulos/` entra no índice de `back.md`/`front.md`.
+5. **PT-BR sempre.** Contrato de biblioteca (shadcn, Better Auth, Drizzle) fica em inglês.
+6. **Nada de segredo, dado de cliente ou senha literal** em doc nenhum.
 
-### 4.3 Regras de consistencia
-
-1. **Mesmos termos** em todos os docs (se a funcao e `criarContrato`, use exato).
-2. **Mesmos paths** — se um arquivo moveu, atualize em TODOS os docs.
-3. **Mesmas contagens** — se ha 30 tabelas, todo doc que citar deve dizer 30.
-4. **Cross-reference** — ao criar `docs/<dominio>.md`, linke nele a partir de
-   `AGENTS.md`, `CLAUDE.md` e README.
-5. **PT-BR sempre** — esta base e PT-BR. Nunca misture idiomas nos docs.
-
-### 4.4 Verificacao (rode SEMPRE no fim)
+### Verificação (rode SEMPRE no fim)
 
 ```bash
-node scripts/docs-check.mjs --strict   # deve sair 0; se sair 1, ainda ha gap
-node scripts/check-compliance.mjs      # garante que nada violou as regras da base
+node scripts/docs-check.mjs --strict
+npm run compliance
+npm run ai-marks
 ```
 
 ---
 
-## Fase 5: Scaffolding — quando falta arquivo
+## Fase 5: Scaffolding
 
-Crie um doc faltante quando: nao ha `README.md`; um dominio existe no codigo mas
-nao tem doc dedicado em `docs/`; ou falta um ADR para uma decisao tomada.
-
-Ordem: docs de dominio → `AGENTS.md`/`CLAUDE.md`/`Agente.md` → `README.md`.
-Minimo viavel para uma base nova: `README.md` + `AGENTS.md` + `docs/` com os
-dominios principais. Sempre seguir a estrutura de pastas definida no `CLAUDE.md`.
+Crie doc faltante quando: um domínio existe no código e não tem `docs/modulos/<x>.md`;
+falta ADR para uma decisão tomada; uma rota nova não tem linha em
+`docs/seguranca/caminhos-de-acesso.md`. Nunca crie doc "para depois".
 
 ---
 
-## Fase 6: Saida — reportar o que foi feito
+## Fase 6: Saída
 
-Produza um relatorio com:
-
-1. **Arquivos alterados** — caminho, linhas antes/depois, resumo
-2. **Arquivos criados** — caminho, proposito
-3. **Gaps resolvidos** — itens do gap report da Fase 3 que foram corrigidos
-4. **Gaps remanescentes** — o que precisa de input do usuario
-5. **Refs corrigidas** — paths/funcoes stale arrumados
-6. **Verificacao** — saida de `docs-check.mjs --strict` e `check-compliance.mjs`
-7. **Riscos** — o que pode estar errado e precisa revisao manual
+1. Arquivos alterados e criados, com o porquê
+2. Gaps resolvidos e gaps remanescentes (o que precisa de decisão do Paulo)
+3. Refs corrigidas
+4. Saída literal de `docs-check --strict`, `compliance` e `ai-marks`
+5. Risco residual
 
 ---
 
-## Erros comuns a evitar
+## Erros comuns
 
-1. **Documentar de memoria** — sempre leia o arquivo fonte real antes.
-2. **Atualizar so um arquivo** — se mudou `AGENTS.md`, provavelmente muda
-   `CLAUDE.md` e talvez o README. Atualize TODOS os afetados.
-3. **Inventar padrao** — nao documente convencao que nao existe no codigo.
-   Se ver inconsistencia, sinalize; nao normalize.
-4. **Referenciar arquivo deletado** — `docs-check.mjs` pega isso; rode antes.
-5. **Pular a verificacao** — sempre rode `docs-check.mjs --strict` no fim.
-6. **README primeiro** — README resume; atualize por ultimo.
-7. **Doc para mudanca trivial** — bug fix / estilo / dep bump raramente precisam.
-8. **Misturar idioma** — esta base e PT-BR. Mantenha PT-BR.
-9. **Usar `grep`/`find` na mao** — use os scripts Node (cross-platform).
-10. **Inventar `.agents/`, `COPILOT.md`, `.cursorrules`** — nao existem aqui.
-
----
-
-## Decision tree
-
-```
-"atualize a documentacao" / "sincronize os docs"
-│
-├─ Fase 1 DESCOBRIR: node project-map.mjs + node docs-check.mjs --json; ler docs reais
-├─ Fase 2 ANALISAR: git log (se repo) OU docs-check + mtime (fallback); classificar
-├─ Fase 3 GAP: consumir docs-check --json; cruzar codigo vs docs; gap report
-├─ Fase 4 EXECUTAR: docs/** -> AGENTS/CLAUDE/Agente -> README; consistencia; verificar
-├─ Fase 5 SCAFFOLD (se faltar arquivo)
-└─ Fase 6 REPORTAR: mudancas + saida de docs-check --strict + check-compliance
-```
+1. Documentar de memória em vez de ler o arquivo.
+2. Atualizar só um arquivo quando a mudança afeta três.
+3. Inventar padrão que não existe no código — sinalize a inconsistência, não normalize.
+4. Documentar o sistema antigo (`5e902d4`) como se fosse o atual.
+5. Editar `docs/PROJECT_MAP.md` à mão, ou o bloco gerenciado do `AGENTS.md`.
+6. Esquecer de espelhar em `.agents/`.
+7. Atualizar o README primeiro.
+8. Misturar idioma.
+9. `grep`/`find` à mão em vez dos scripts.
+10. Pular a verificação final.

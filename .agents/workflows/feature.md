@@ -1,55 +1,53 @@
-# Workflow — nova funcionalidade no MerlostoreChat
+# Workflow — construir funcionalidade no MerlostoreChat
 
-## 1. Ler antes de projetar
+## 1. Confirmar que ela cabe
 
-- `CLAUDE.md` na raiz — **seção "Estado Atual do Projeto"**, que lista honestamente o que ainda diverge do padrão da base
-- `docs/api.md` — as 50 rotas, com validação, efeitos colaterais e desvios conhecidos. **Obrigatório antes de mexer em qualquer rota**
-- `docs/adr/` — 0002 transição Prisma→Drizzle, 0003 multi-loja, 0005 soft delete, 0007 fila no Postgres
-- `docs/regras-negocio.md` e `docs/rbac.md`
-- O arquivo real que você vai alterar
+- Está no **R1**? A lista está em `AGENTS.md` e em `docs/regras-negocio.md`. Item fora do
+  R1 **não tem arquivo**: sem tela, sem rota, sem item de navegação, sem módulo.
+- Precisa de tabela, coluna, permissão, enum ou rota nova? O modelo é **fechado**:
+  **pare e reporte**, com ADR. Nenhum pacote de módulo gera migração.
+- Já existe algo parecido? `npm run map` e `docs/PROJECT_MAP.md` antes de escrever a
+  primeira linha.
 
-A funcionalidade pode já existir com outro nome — confira a documentação antes de escrever.
+## 2. Construir de baixo para cima
 
-## 2. Decidir onde mora
+| Ordem | Onde | Skill |
+|---|---|---|
+| 1 | tabela e migração (só se autorizado) | `/criar-tabela` |
+| 2 | validador Zod em `src/lib/validadores/<dominio>.ts` | `/criar-crud` |
+| 3 | regra de negócio em `src/lib/<dominio>/` — leitura com `vivos()` + `condicaoDeLoja()`, escrita só por `mutacoes.ts` | `/criar-crud` |
+| 4 | Server Action em `src/lib/actions/<dominio>.ts`, `export async function` + `executarAcao` | `/criar-crud` |
+| 5 | tela em `src/app/(app)/<rota>/`, server por padrão | `/criar-componente` |
+| 6 | trava de teste, escrita **junto** | — |
+| 7 | `docs/modulos/<dominio>.md` + linha em `docs/seguranca/caminhos-de-acesso.md` | `/repo-docs-sync` |
 
-| Tipo de mudança | Onde |
-| :--- | :--- |
-| Regra de negócio | `src/lib/` — nunca dentro da rota ou do componente |
-| Tabela ou coluna | **Drizzle**: `src/lib/db/schema/` (não estenda o `prisma/schema.prisma` legado) |
-| Rota HTTP | `src/app/api/<recurso>/route.ts` + a seção correspondente em `docs/api.md` |
-| Tela | `src/app/(dashboard)/<rota>/` |
-| Permissão nova | `src/lib/rbac.ts` + `docs/rbac.md` |
-| Escopo de loja | `src/lib/loja.ts` — toda consulta nova passa por ali |
-| Decisão de arquitetura | nova ADR em `docs/adr/` |
+## 3. O que este sistema cobra e a base genérica não
 
-Regra de negócio fica em **um** lugar e é consumida por todas as telas. Se você está copiando a
-mesma lógica para um segundo arquivo, pare.
+- Escopo de loja em toda consulta; registro de outra loja responde **404**.
+- Server Action é POST alcançável direto: valide tudo, inclusive ids do corpo, contra a
+  loja resolvida. Nunca espalhe o corpo sobre a linha.
+- Trilha na mesma transação — e **antes** do efeito quando ele destrói o estado anterior.
+- Job só é enfileirado **depois do commit**.
+- Nenhuma tela de fachada: se o backend não faz, a tela não existe ou é só leitura.
+- Ação crítica: modal block de 3 s. Reversível e interna: desfazer por toast.
 
-## 3. Implementar respeitando os invariantes
-
-Os da seção "Invariantes" em [../rules/merlostore-chat.md](../rules/merlostore-chat.md) valem todos. Em especial:
-
-- **Escopo de loja em toda consulta** (`src/lib/loja.ts`) — Centro e Cerro Azul não se misturam
-- **Código novo que toca banco nasce em Drizzle** (`src/lib/db/schema/`). O Prisma é legado e convive até a virada — **não introduza Prisma em código novo**
-- **Autoria vem da sessão** (`usuarioDaSessao()` em `src/lib/sessao.ts`), nunca de um usuário default
-- **Middleware exige sessão em `/api/**`**; as 9 exceções têm gate próprio — não crie a décima sem gate
-
-## 4. Testar
+## 4. Provar
 
 ```bash
-npm run typecheck
-npm test
-npm run compliance
-npm run docs:check
+npm run lint && npm run typecheck && npm run compliance
+npm run test:travas && npm run test:unidade && npm run test:componentes
+node scripts/db-teste.mjs --sufixo <pacote> && npm run test:integracao
+npm run map && npm run docs:check
+npm run lixo
 ```
 
-## 5. Documentar na mesma alteração
+`npm run build` só na fundação e na integração — o `.next` é único no diretório.
 
-- Módulo, integração ou invariante novo → a doc de arquitetura do projeto
-- Invariante que os agentes precisam respeitar → `AGENTS.md` **e** `CLAUDE.md` (os dois)
-- Decisão de arquitetura → ADR, se o projeto tiver `docs/adr/`
+## 5. Reportar
 
-## 6. Reportar
+O que foi construído e por quê · arquivos criados e alterados · a **saída real** de cada
+comando de aceite · o que ficou vermelho · o que falta decidir · o que a próxima etapa
+precisa saber.
 
-Arquivos criados/alterados · invariantes tocados · saída dos comandos acima · docs atualizados ·
-o que ficou fora do escopo.
+Commit em Conventional Commits PT-BR, escopo igual ao nome do módulo,
+**sem rodapé de coautoria**. Nunca commite arquivo de outro pacote.

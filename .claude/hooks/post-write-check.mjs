@@ -15,7 +15,15 @@ import { extname, join, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 
 const CODE_EXT = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".sql"]);
-const SKIP_PATH = /(^|[\\/])(node_modules|templates|\.claude)[\\/]/;
+const SKIP_PATH = /(^|[\\/])(node_modules|templates)[\\/]/;
+
+/**
+ * `.claude/` guarda hooks e skills (que citam os padroes proibidos como regra),
+ * mas `.claude/worktrees/` guarda CODIGO DO PROJETO. Casar `.claude` em qualquer
+ * ponto do caminho — como fazia a versao da base — desligaria o auditor em
+ * silencio para quem trabalha dentro de um worktree.
+ */
+const CLAUDE_INTERNO = /(^|[\\/])\.claude[\\/](?!worktrees[\\/])/;
 
 function readStdin() {
   return new Promise((resolve) => {
@@ -44,6 +52,7 @@ async function main() {
   if (!filePath || !existsSync(filePath)) process.exit(0);
   if (!CODE_EXT.has(extname(filePath))) process.exit(0);
   if (SKIP_PATH.test(filePath)) process.exit(0);
+  if (CLAUDE_INTERNO.test(filePath)) process.exit(0);
 
   // So audita arquivos dentro deste projeto.
   if (process.env.CLAUDE_PROJECT_DIR) {
