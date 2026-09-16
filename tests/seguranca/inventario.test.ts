@@ -11,11 +11,9 @@ import { arquivosDe, lerFonte } from "./_fonte";
  * so existe no disco e a que ninguem revisa, ninguem documenta e ninguem
  * lembra de proteger.
  *
- * DIRECAO COBRADA HOJE: "rota existe em `src/app` implica linha em
- * `docs/seguranca/caminhos-de-acesso.md`". A direcao estrita — "linha no doc
- * implica rota no disco" — entra no pacote de INTEGRACAO (onda 3), quando a
- * ultima rota da onda 2 nascer; liga-la agora reprovaria por 40 rotas que
- * ainda nao e hora de existirem. O plano registra isso no commit 41.
+ * AS DUAS DIRECOES: "rota existe em `src/app` implica linha em
+ * `docs/seguranca/caminhos-de-acesso.md`" e, desde a integracao da onda 2,
+ * "linha `entregue` no doc implica rota no disco" — sem estado `pacote Mx`.
  */
 
 const DOC = "docs/seguranca/caminhos-de-acesso.md";
@@ -50,6 +48,27 @@ describe("T2 toda rota do disco esta documentada", () => {
   it("nenhuma rota publica tem segmento [token] (T27)", () => {
     const comToken = rotasNoDisco.filter((r) => /\[token\]/i.test(r));
     expect(comToken).toEqual([]);
+  });
+});
+
+describe("T2 direcao estrita: o documento nao promete rota que nao existe", () => {
+  /** Primeira coluna das tabelas: `| \`/caminho\` ... | ... | estado |`. */
+  const linhas = doc
+    .split(/\r?\n/)
+    .filter((l) => /^\| `\//.test(l))
+    .map((l) => ({ caminho: /^\| `([^`]+)`/.exec(l)![1]!, estado: l.split("|").at(-2)!.trim() }));
+
+  it("toda linha de rota esta entregue", () => {
+    expect(linhas.length).toBeGreaterThanOrEqual(40);
+    expect(linhas.filter((l) => l.estado !== "entregue").map((l) => l.caminho)).toEqual([]);
+  });
+
+  it("toda linha entregue tem arquivo em src/app", () => {
+    const naRaiz = existsSync("src/app/page.tsx") ? ["/"] : [];
+    const ausentes = linhas
+      .map((l) => l.caminho)
+      .filter((c) => !rotasNoDisco.includes(c) && !naRaiz.includes(c));
+    expect(ausentes).toEqual([]);
   });
 });
 

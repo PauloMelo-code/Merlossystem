@@ -7,14 +7,14 @@ Fonte unica de "o que existe e quem alcanca". Sai da arvore canonica de
 **Como ler a coluna `estado`**
 
 - `entregue` — o arquivo existe em `src/app` e o portao esta ligado.
-- `pacote Mx` — a rota e da onda 2. Ainda nao existe no disco, e por isso um
-  link para ela hoje e 404.
 
-**O que a trava cobra hoje**: a direcao "rota existe em `src/app` implica linha
-nesta tabela". A direcao estrita — "linha nesta tabela implica rota em
-`src/app`" — entra no pacote de INTEGRACAO (onda 3), quando a ultima rota da
-onda 2 nascer. Ligar a direcao estrita agora reprovaria o repositorio inteiro
-por 40 rotas que ainda nao e hora de existirem.
+Desde a integracao da onda 2, TODA rota do R1 esta entregue: nao existe mais
+estado `pacote Mx`.
+
+**O que a trava cobra**: as duas direcoes. "Rota existe em `src/app` implica
+linha nesta tabela" e "linha `entregue` nesta tabela implica arquivo em
+`src/app`" (`tests/seguranca/inventario.test.ts`). Rota nova nasce com a linha
+aqui, no mesmo commit.
 
 **Regras que valem para a tabela toda**
 
@@ -49,10 +49,10 @@ Item la sem linha aqui reprova em T2.
 | `/api/saude` | GET | publica | liveness do orquestrador; nao toca dependencia | entregue |
 | `/api/pronto` | GET | maquina | readiness; segredo em cabecalho, comparado em tempo constante | entregue |
 | `/api/csp` | POST | publica | coletor de violacao da CSP em Report-Only | entregue |
-| `/api/webhooks/whatsapp` | GET, POST | maquina | Meta entrega evento; HMAC-SHA256 do corpo cru | pacote M5 |
-| `/api/webhooks/instagram` | GET, POST | maquina | mesmo HMAC, token de challenge proprio do canal | pacote M5 |
-| `/api/webhooks/uazapi/[integracaoId]` | POST | maquina | segredo POR INTEGRACAO, so em cabecalho | pacote M5 |
-| `/api/integracoes/bling/callback` | GET | proprio (OAuth) | redirect do provedor; `state` assinado, uso unico, 5 min | pacote M5 |
+| `/api/webhooks/whatsapp` | GET, POST | maquina | Meta entrega evento; HMAC-SHA256 do corpo cru | entregue |
+| `/api/webhooks/instagram` | GET, POST | maquina | mesmo HMAC, token de challenge proprio do canal | entregue |
+| `/api/webhooks/uazapi/[integracaoId]` | POST | maquina | segredo POR INTEGRACAO, so em cabecalho | entregue |
+| `/api/integracoes/bling/callback` | GET | proprio (OAuth) | redirect do provedor; `state` assinado, uso unico, 5 min | entregue |
 
 **Nao existem, e nunca existiram**: `/login`, `/registrar`, `/api/register`,
 `/primeiro-acesso/[token]`, `/redefinir-senha/[token]`, `/api/media/*`. Rota
@@ -64,12 +64,12 @@ publica com segmento `[token]` reprova em T27.
 
 | Caminho | Permissao | Estado |
 |---|---|---|
-| `/` (redireciona para `/conversas`) | sessao ativa | pacote M1 |
-| `/conversas` | `conversas:ler` | pacote M1 |
-| `/conversas/[id]` | `conversas:ler` | pacote M1 |
-| `/contatos` | `contatos:ler` | pacote M2 |
-| `/contatos/[id]` | `contatos:ler` | pacote M2 |
-| `/api/eventos` (SSE) | sessao ativa, reavaliada a cada 25 s | pacote M1 |
+| `/` (redireciona para `/conversas`) | sessao ativa | entregue |
+| `/conversas` | `conversas:ler` | entregue |
+| `/conversas/[id]` | `conversas:ler` | entregue |
+| `/contatos` | `contatos:ler` | entregue |
+| `/contatos/[id]` | `contatos:ler` | entregue |
+| `/api/eventos` (SSE) | sessao ativa, reavaliada a cada 25 s | entregue |
 
 ---
 
@@ -77,10 +77,10 @@ publica com segmento `[token]` reprova em T27.
 
 | Caminho | Permissao | Estado |
 |---|---|---|
-| `/pedidos` | `pedidos:ler` | pacote M4 |
-| `/pedidos/[id]` | `pedidos:ler` | pacote M4 |
-| `/produtos` | `produtos:ler` | pacote M4 |
-| `/produtos/[id]` | `produtos:ler` | pacote M4 |
+| `/pedidos` | `pedidos:ler` | entregue |
+| `/pedidos/[id]` | `pedidos:ler` | entregue |
+| `/produtos` | `produtos:ler` | entregue |
+| `/produtos/[id]` | `produtos:ler` | entregue |
 
 Nao existe cadastro manual de produto: o catalogo e espelho do Bling (ADR
 0015), e a matriz nao tem `produtos:criar`, `produtos:editar` nem
@@ -92,15 +92,15 @@ Nao existe cadastro manual de produto: o catalogo e espelho do Bling (ADR
 
 | Caminho | Permissao | Estado |
 |---|---|---|
-| `/campanhas` | `campanhas:ler` | pacote M6 |
-| `/campanhas/nova` | `campanhas:criar` | pacote M6 |
-| `/campanhas/[id]` | `campanhas:ler` | pacote M6 |
-| `/modelos` | `modelos:ler` | pacote M6 |
-| `/respostas-rapidas` | `respostas:ler` | pacote M6 |
-| `/agendadas` | `agendamentos:ler` | pacote M6 |
-| `/galeria` | `midia:ler` | pacote M3 |
-| `/api/midias` | `midia:enviar` | pacote M3 |
-| `/api/midias/[id]` | `midia:ler` mais escopo de loja | pacote M3 |
+| `/campanhas` | `campanhas:ler` | entregue |
+| `/campanhas/nova` | `campanhas:criar` | entregue |
+| `/campanhas/[id]` | `campanhas:ler` | entregue |
+| `/modelos` | `modelos:ler` | entregue |
+| `/respostas-rapidas` | `respostas:ler` | entregue |
+| `/agendadas` | `agendamentos:ler` | entregue |
+| `/galeria` | `midia:ler` | entregue |
+| `/api/midias` | `midia:enviar` | entregue |
+| `/api/midias/[id]` | `midia:ler` mais escopo de loja | entregue |
 
 `/api/midias/[id]` aceita `?miniatura=1`. O bucket e privado e esta rota e o
 UNICO endereco de midia do sistema.
@@ -111,12 +111,12 @@ UNICO endereco de midia do sistema.
 
 | Caminho | Permissao | Estado |
 |---|---|---|
-| `/alertas` | `alertas:ler` | pacote M8 |
-| `/relatorios` | `relatorios:ler` | pacote M8 |
-| `/auditoria` | `trilha:ler` | pacote M8 |
-| `/auditoria/qualidade` | `trilha:ler` | pacote M8 |
-| `/auditoria/excluidos` | `trilha:ler` | pacote M8 |
-| `/auditoria/seguranca` | `seguranca:ler_eventos` | pacote M8 |
+| `/alertas` | `alertas:ler` | entregue |
+| `/relatorios` | `relatorios:ler` | entregue |
+| `/auditoria` | `trilha:ler` | entregue |
+| `/auditoria/qualidade` | `trilha:ler` | entregue |
+| `/auditoria/excluidos` | `trilha:ler` | entregue |
+| `/auditoria/seguranca` | `seguranca:ler_eventos` | entregue |
 
 `gerente` alcanca `trilha:ler` e **nao** alcanca `seguranca:ler_eventos`:
 `auth_eventos` carrega IP, agente, meio e alvo de dono e admin. A aba mostra
@@ -133,11 +133,11 @@ lugar onde a pessoa procura.
 |---|---|---|
 | `/perfil` | sessao ativa (sem chave, REQ-G1) | entregue |
 | `/perfil/seguranca` | sessao ativa (sem chave, REQ-G1) | entregue |
-| `/configuracoes` | `configuracao:ler` | pacote M5 |
-| `/configuracoes/lojas` | `lojas:criar` para gravar, `lojas:ler` para ver | pacote M5 |
-| `/configuracoes/integracoes` | `integracoes:ler` | pacote M5 |
-| `/configuracoes/integracoes/[id]` | `integracoes:ler` | pacote M5 |
-| `/configuracoes/usuarios` | `usuarios:ler_detalhe` | pacote M7 |
+| `/configuracoes` | `configuracao:ler` | entregue |
+| `/configuracoes/lojas` | `lojas:criar` para gravar, `lojas:ler` para ver | entregue |
+| `/configuracoes/integracoes` | `integracoes:ler` | entregue |
+| `/configuracoes/integracoes/[id]` | `integracoes:ler` | entregue |
+| `/configuracoes/usuarios` | `usuarios:ler_detalhe` | entregue |
 
 **Nao existem**: `/configuracoes/equipe`, `/configuracoes/auditoria`,
 `/configuracoes/lgpd`, `/configuracoes/sla`, `/configuracoes/seguranca`,
