@@ -16,14 +16,14 @@ vi.mock("node:dns/promises", () => ({
   },
 }));
 
-const { ESTADOS_DE_SISTEMA } = await import("@/lib/db/listas-fechadas");
-const { emTransacao } = await import("@/lib/db/mutacoes");
-const { ErroDeIntegracao } = await import("@/lib/erros");
+const { ATOR_SISTEMA, contextoDeSistema, emTransacao } = await import("@/lib/db/mutacoes");
+const { ErroDeEscopo, ErroDeIntegracao } = await import("@/lib/erros");
 const { fecharConexoes } = await import("@/lib/fila/conexao");
 const { fecharFilas, fila } = await import("@/lib/fila/filas");
 const { lerObjeto } = await import("@/lib/armazenamento/midia");
 const ingestao = await import("@/lib/midias/ingestao");
 const { limparMidiasExpiradas, removerBinarios } = await import("@/lib/midias/limpeza");
+const { lerBinarioDaMidia } = await import("@/lib/midias/leitura");
 const { listarMidias } = await import("@/lib/midias/_consultas");
 const { baixarDeUrl } = await import("@/server/processadores/midia");
 const apoio = await import("./midias-apoio");
@@ -46,7 +46,7 @@ afterAll(async () => {
 });
 
 async function guardar(bytes: Buffer, tipoMime?: string) {
-  const ctx = ingestao.contextoDeSistema(loja);
+  const ctx = contextoDeSistema({ origem: "worker", lojaId: loja });
   return emTransacao(ctx, (tx) =>
     ingestao.guardarMidiaRecebida(tx, { lojaId: loja, origem: "uazapi", bytes, ...(tipoMime ? { tipoMime } : {}) }, ctx),
   );
@@ -61,15 +61,15 @@ describe("guardarMidiaRecebida (costura consumida por M1)", () => {
   it("bytes: grava origem recebida, sem pasta, com trilha de sistema e job de miniatura", async () => {
     const { midiaId } = await guardar(await png(80, 60, "#654321"), "image/png");
     const linha = await linhaDaMidia(midiaId);
-    expect(linha).toMatchObject({ origem: "recebida", pasta: null, enviada_por: null, modified_by: null });
+    expect(linha).toMatchObject({ origem: "recebida", pasta: null, enviada_por: null, modified_by: ATOR_SISTEMA });
     expect(String(linha!.chave_objeto)).toBe(`${loja}/recebida/${midiaId}.png`);
     expect(String(linha!.chave_miniatura)).toBe(`${loja}/recebida/${midiaId}.min.webp`);
 
     const trilha = await banco.query(
-      "select ator_tipo, ator_id from auditoria_eventos where entidade_id = $1",
+      "select acao, ator_tipo, ator_id from auditoria_eventos where entidade_id = $1",
       [midiaId],
     );
-    expect(trilha.rows).toEqual([{ ator_tipo: "sistema", ator_id: null }]);
+    expect(trilha.rows).toEqual([{ acao: "midia_recebida", ator_tipo: "sistema", ator_id: ATOR_SISTEMA }]);
 
     const job = await fila("midia").getJob(`miniatura-${midiaId}`);
     expect(job?.name).toBe("gerar-miniatura");
@@ -89,7 +89,7 @@ describe("guardarMidiaRecebida (costura consumida por M1)", () => {
   });
 
   it("só URL é recusada (URL entra por agendarDownload) e HTML não vira mídia", async () => {
-    const ctx = ingestao.contextoDeSistema(loja);
+    const ctx = contextoDeSistema({ origem: "worker", lojaId: loja });
     await expect(
       emTransacao(ctx, (tx) =>
         ingestao.guardarMidiaRecebida(tx, { lojaId: loja, origem: "uazapi", url: "https://x.invalido/a" }, ctx),
@@ -143,9 +143,7 @@ describe("baixar-de-url", () => {
     expect(job?.data).toEqual(dados);
   });
 
-  // Depende de `conversas_mensagens_midias` em ESTADOS_DE_SISTEMA (bloqueio do M3,
-  // arquivo da fundação). Liga sozinho quando a entrada existir.
-  it.skipIf(!ESTADOS_DE_SISTEMA.conversas_mensagens_midias)(
+  it(
     "sucesso: grava a mídia e, no mesmo UPDATE, preenche midia_id, marca baixada e limpa url_externa",
     async () => {
       const bytes = await png(33, 33, "#0000ff");
@@ -155,11 +153,38 @@ describe("baixar-de-url", () => {
       const depois = await anexo(id);
       expect(depois).toMatchObject({ baixada: true, url_externa: null });
       expect(depois.midia_id).toBeTruthy();
+      const trilha = await banco.query("select acao, ator_id from auditoria_eventos where entidade_id = $1", [
+        depois.midia_id,
+      ]);
+      expect(trilha.rows).toEqual([{ acao: "midia_recebida", ator_id: ATOR_SISTEMA }]);
       expect(
         await ingestao.baixarAnexo({ lojaId: loja, anexoId: id, provedor: "whatsapp_oficial" }),
       ).toBe("ja-baixada");
     },
   );
+});
+
+describe("lerBinarioDaMidia (costura consumida por M1)", () => {
+  it("devolve os bytes e o tipo da mídia viva da loja", async () => {
+    const bytes = await png(21, 13, "#135790");
+    const { midiaId } = await guardar(bytes, "image/png");
+    const lido = await lerBinarioDaMidia(loja, midiaId);
+    expect(lido).toMatchObject({ midiaId, mime: "image/png", nomeOriginal: null, tamanhoBytes: bytes.byteLength });
+    expect(lido.bytes.equals(bytes)).toBe(true);
+  });
+
+  it("outra loja, excluída ou sem objeto: ErroDeEscopo, nunca o binário", async () => {
+    const { midiaId } = await guardar(await png(22, 13, "#246801"));
+    const naoEncontrada = (e: unknown) => e instanceof ErroDeEscopo && e.status === 404;
+    await expect(lerBinarioDaMidia(await criarLoja(), midiaId)).rejects.toSatisfy(naoEncontrada);
+
+    await removerBinarios([midiaId]);
+    await expect(lerBinarioDaMidia(loja, midiaId)).rejects.toSatisfy(naoEncontrada);
+
+    const { midiaId: outra } = await guardar(await png(23, 13, "#975310"));
+    await banco.query("update lojas_midias set is_deleted = true, deleted_at = now() where id = $1", [outra]);
+    await expect(lerBinarioDaMidia(loja, outra)).rejects.toSatisfy(naoEncontrada);
+  });
 });
 
 describe("limpeza de binário", () => {

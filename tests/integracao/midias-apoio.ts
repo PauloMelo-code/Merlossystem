@@ -92,6 +92,14 @@ export async function criarAnexo(
   return anexo.rows[0]!.id;
 }
 
+export async function criarEtiqueta(lojaId: string, nome: string): Promise<string> {
+  const { rows } = await banco.query<{ id: string }>(
+    `insert into lojas_etiquetas (loja_id, nome, slug) values ($1, $2, $3) returning id`,
+    [lojaId, nome, `${nome.toLowerCase()}-${randomUUID()}`],
+  );
+  return rows[0]!.id;
+}
+
 export async function png(largura = 40, altura = 30, cor = "#c0392b"): Promise<Buffer> {
   return sharp({ create: { width: largura, height: altura, channels: 3, background: cor } })
     .png()

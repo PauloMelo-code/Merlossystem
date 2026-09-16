@@ -1,13 +1,13 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { MidiaDto } from "@/lib/midias/dto";
+import type { EtiquetaDaGaleria, MidiaDto } from "@/lib/midias/dto";
 
 /**
  * Galeria (04-ui.md §5.4): a grade só aponta para `/api/midias/[id]` e excluir
  * passa pelo bloqueio de 3 s (§9.1, item 5 "excluir-registro").
  */
 
-const acoes = vi.hoisted(() => ({ excluirMidia: vi.fn() }));
+const acoes = vi.hoisted(() => ({ excluirMidia: vi.fn(), editarMidia: vi.fn() }));
 vi.mock("@/lib/actions/midias", () => acoes);
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn(), replace: vi.fn() }) }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
@@ -28,6 +28,7 @@ function midia(parcial: Partial<MidiaDto> = {}): MidiaDto {
     origem: "upload",
     pasta: "produtos",
     temMiniatura: true,
+    etiquetaIds: [],
     criadaEm: "2026-09-01T12:00:00.000Z",
     updatedAt: "2026-09-01T12:00:00.000Z",
     ...parcial,
@@ -37,6 +38,7 @@ function midia(parcial: Partial<MidiaDto> = {}): MidiaDto {
 beforeEach(() => {
   vi.useFakeTimers();
   acoes.excluirMidia.mockReset();
+  acoes.editarMidia.mockReset();
 });
 
 afterEach(() => {
@@ -48,6 +50,8 @@ describe("grade de mídias", () => {
     render(
       <GradeMidias
         midias={[midia(), midia({ id: "33333333-3333-4333-8333-333333333333", tipoArquivo: "documento", nomeOriginal: null })]}
+        etiquetas={[]}
+        podeEditar={false}
         podeExcluir={false}
       />,
     );
@@ -62,13 +66,13 @@ describe("grade de mídias", () => {
   });
 
   it("sem midia:excluir, o botão de excluir não existe", () => {
-    render(<GradeMidias midias={[midia()]} podeExcluir={false} />);
+    render(<GradeMidias midias={[midia()]} etiquetas={[]} podeEditar={false} podeExcluir={false} />);
     expect(screen.queryByRole("button", { name: /Excluir/ })).toBeNull();
   });
 
   it("excluir: block de 3 s com resumo, Esc não fecha, erro mantém o modal", async () => {
     acoes.excluirMidia.mockResolvedValueOnce({ ok: false, codigo: "COLISAO", mensagem: "Alterado por outra pessoa." });
-    render(<GradeMidias midias={[midia()]} podeExcluir />);
+    render(<GradeMidias midias={[midia()]} etiquetas={[]} podeEditar={false} podeExcluir />);
 
     fireEvent.click(screen.getByRole("button", { name: "Excluir vestido-azul.png" }));
     const modal = screen.getByRole("alertdialog");
@@ -101,7 +105,7 @@ describe("grade de mídias", () => {
 
   it("excluir com sucesso fecha o modal", async () => {
     acoes.excluirMidia.mockResolvedValueOnce({ ok: true, dados: null });
-    render(<GradeMidias midias={[midia()]} podeExcluir />);
+    render(<GradeMidias midias={[midia()]} etiquetas={[]} podeEditar={false} podeExcluir />);
     fireEvent.click(screen.getByRole("button", { name: "Excluir vestido-azul.png" }));
     act(() => {
       vi.advanceTimersByTime(3000);
@@ -110,6 +114,59 @@ describe("grade de mídias", () => {
       fireEvent.click(screen.getByRole("button", { name: "Excluir" }));
     });
     expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+});
+
+describe("organizar mídia (midia:editar)", () => {
+  const LOJA = "22222222-2222-4222-8222-222222222222";
+  const etiquetas: EtiquetaDaGaleria[] = [
+    { id: "44444444-4444-4444-8444-444444444444", lojaId: LOJA, nome: "Verão", cor: null },
+    { id: "55555555-5555-4555-8555-555555555555", lojaId: LOJA, nome: "Inverno", cor: null },
+    { id: "66666666-6666-4666-8666-666666666666", lojaId: "77777777-7777-4777-8777-777777777777", nome: "Alheia", cor: null },
+  ];
+
+  function abrir(m: MidiaDto, podeEditar: boolean) {
+    render(<GradeMidias midias={[m]} etiquetas={etiquetas} podeEditar={podeEditar} podeExcluir={false} />);
+    fireEvent.click(screen.getByRole("button", { name: `Abrir ${m.nomeOriginal ?? "Imagem sem nome"}` }));
+  }
+
+  it("sem midia:editar: só mostra os nomes das etiquetas, sem formulário", () => {
+    abrir(midia({ etiquetaIds: [etiquetas[0]!.id] }), false);
+    expect(screen.getByText("Etiquetas: Verão")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Salvar organização" })).toBeNull();
+  });
+
+  it("salva o conjunto inteiro de etiquetas da loja da mídia, sem block, e erro fica na tela", async () => {
+    acoes.editarMidia.mockResolvedValueOnce({ ok: false, codigo: "COLISAO", mensagem: "Alterado por outra pessoa." });
+    abrir(midia({ etiquetaIds: [etiquetas[0]!.id] }), true);
+    expect(screen.queryByLabelText("Alheia")).toBeNull();
+    expect(screen.getByRole("combobox", { name: "Pasta" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Inverno" }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Salvar organização" }));
+    });
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(acoes.editarMidia).toHaveBeenCalledWith({
+      id: "11111111-1111-4111-8111-111111111111",
+      updated_at: "2026-09-01T12:00:00.000Z",
+      loja: LOJA,
+      pasta: "produtos",
+      etiquetaIds: [etiquetas[0]!.id, etiquetas[1]!.id],
+    });
+    expect(screen.getByRole("alert").textContent).toBe("Alterado por outra pessoa.");
+    expect(screen.getByRole("button", { name: "Salvar organização" })).toBeTruthy();
+  });
+
+  it("mídia recebida não oferece pasta; salvar com sucesso fecha o visualizador", async () => {
+    acoes.editarMidia.mockResolvedValueOnce({ ok: true, dados: { id: "x", updatedAt: "2026-09-02T00:00:00.000Z" } });
+    abrir(midia({ origem: "recebida", pasta: null }), true);
+    expect(screen.queryByRole("combobox", { name: "Pasta" })).toBeNull();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Salvar organização" }));
+    });
+    expect(acoes.editarMidia.mock.calls[0]![0]).not.toHaveProperty("pasta");
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });
 

@@ -26,10 +26,10 @@ vi.mock("next/cache", () => ({ revalidatePath: () => undefined }));
 
 const { POST } = await import("@/app/api/midias/route");
 const { GET, HEAD } = await import("@/app/api/midias/[id]/route");
-const { excluirMidia } = await import("@/lib/actions/midias");
+const { editarMidia, excluirMidia, listarGaleria } = await import("@/lib/actions/midias");
 const { lerObjeto } = await import("@/lib/armazenamento/midia");
 const apoio = await import("./midias-apoio");
-const { banco, criarAnexo, criarLoja, criarPessoa, jpeg, linhaDaMidia, parametros, pedidoDeLeitura, pedidoDeUpload, png } =
+const { banco, criarAnexo, criarEtiqueta, criarLoja, criarPessoa, jpeg, linhaDaMidia, parametros, pedidoDeLeitura, pedidoDeUpload, png } =
   apoio;
 
 let lojaA: string;
@@ -206,6 +206,94 @@ describe("GET /api/midias/[id]", () => {
     const r = await GET(pedidoDeLeitura(corpo.id!), parametros(corpo.id!));
     expect(r.headers.get("content-disposition")).toMatch(/^attachment;.*nota%20fiscal\.pdf/);
     await r.arrayBuffer();
+  });
+});
+
+describe("organizar: pasta e etiquetas (midia:editar)", () => {
+  let verao: string;
+  let inverno: string;
+  let deOutraLoja: string;
+
+  beforeAll(async () => {
+    verao = await criarEtiqueta(lojaA, "Verao");
+    inverno = await criarEtiqueta(lojaA, "Inverno");
+    deOutraLoja = await criarEtiqueta(lojaB, "Alheia");
+  });
+
+  async function editar(id: string, extra: Record<string, unknown>) {
+    const linha = await linhaDaMidia(id);
+    // `loja` no corpo: fora do Next não há cookie para a action ler.
+    return editarMidia({ id, updated_at: (linha!.updated_at as Date).toISOString(), loja: lojaA, ...extra });
+  }
+
+  const vinculos = async (id: string) =>
+    (
+      await banco.query(
+        "select etiqueta_id, is_deleted from lojas_midias_etiquetas where midia_id = $1 order by created_at",
+        [id],
+      )
+    ).rows;
+
+  it("vendedora troca pasta e etiquetas da própria loja; tudo na trilha como midia_alterada", async () => {
+    const id = (await subir(await png(18, 18))).corpo.id!;
+    const r = await editar(id, { pasta: "lookbooks", etiquetaIds: [verao, inverno] });
+    expect(r.ok).toBe(true);
+    const linha = await linhaDaMidia(id);
+    expect(linha).toMatchObject({ pasta: "lookbooks", modified_by: vendedoraA.usuarioId });
+    expect(r.ok && r.dados.updatedAt).toBe((linha!.updated_at as Date).toISOString());
+
+    // Tira uma, mantém outra: a que saiu é exclusão LÓGICA.
+    expect((await editar(id, { pasta: "lookbooks", etiquetaIds: [inverno] })).ok).toBe(true);
+    expect(await vinculos(id)).toEqual(
+      expect.arrayContaining([
+        { etiqueta_id: verao, is_deleted: true },
+        { etiqueta_id: inverno, is_deleted: false },
+      ]),
+    );
+
+    const trilha = await banco.query(
+      `select entidade, acao from auditoria_eventos
+        where entidade_id = $1 or entidade_id in (select id::text from lojas_midias_etiquetas where midia_id = $2)`,
+      [id, id],
+    );
+    const alteracoes = trilha.rows.filter((t) => t.acao === "midia_alterada");
+    expect(alteracoes.filter((t) => t.entidade === "lojas_midias")).toHaveLength(1);
+    expect(alteracoes.filter((t) => t.entidade === "lojas_midias_etiquetas")).toHaveLength(3);
+
+    const pagina = await listarGaleria({ origem: "upload", pasta: "lookbooks", loja: lojaA });
+    expect(pagina.ok && pagina.dados.itens.find((m) => m.id === id)?.etiquetaIds).toEqual([inverno]);
+    expect(pagina.ok && pagina.dados.etiquetas.map((e) => e.id).sort()).toEqual([verao, inverno].sort());
+  });
+
+  it("etiqueta de outra loja: NAO_ENCONTRADO e nada gravado", async () => {
+    const id = (await subir(await png(19, 19))).corpo.id!;
+    const r = await editar(id, { pasta: "geral", etiquetaIds: [deOutraLoja] });
+    expect(r).toMatchObject({ ok: false, codigo: "NAO_ENCONTRADO" });
+    expect(await vinculos(id)).toEqual([]);
+  });
+
+  it("pasta com updated_at velho: COLISAO; viewer: SEM_PERMISSAO; outra loja: NAO_ENCONTRADO", async () => {
+    const id = (await subir(await png(20, 20))).corpo.id!;
+    const velho = await editarMidia({ id, updated_at: "2020-01-01T00:00:00.000Z", loja: lojaA, pasta: "stories" });
+    expect(velho).toMatchObject({ ok: false, codigo: "COLISAO" });
+
+    atual.sessao = viewerA;
+    expect(await editar(id, { etiquetaIds: [verao] })).toMatchObject({ ok: false, codigo: "SEM_PERMISSAO" });
+
+    atual.sessao = vendedoraB;
+    expect(await editar(id, { etiquetaIds: [] })).toMatchObject({ ok: false, codigo: "NAO_ENCONTRADO" });
+  });
+
+  it("mídia recebida não ganha pasta, mas aceita etiqueta", async () => {
+    const { rows } = await banco.query<{ id: string }>(
+      `insert into lojas_midias (loja_id, chave_objeto, tipo_arquivo, mime_type, tamanho_bytes, origem)
+       values ($1, $2, 'imagem', 'image/png', 10, 'recebida') returning id`,
+      [lojaA, `${lojaA}/recebida/${crypto.randomUUID()}.png`],
+    );
+    const id = rows[0]!.id;
+    expect(await editar(id, { pasta: "geral" })).toMatchObject({ ok: false, codigo: "VALIDACAO" });
+    expect((await editar(id, { etiquetaIds: [verao] })).ok).toBe(true);
+    expect((await linhaDaMidia(id))?.pasta).toBeNull();
   });
 });
 
