@@ -9,8 +9,6 @@ export type PontoNaTela = { dia: string; valor: number; rotulo: string };
  * Barras por dia com `--chart-*` (04-ui.md §3). O gráfico é DECORATIVO para o
  * leitor de tela e some no celular: a informação completa está na tabela
  * alternativa que acompanha cada gráfico (`TabelaDiaria`).
- *
- * `globals.css` ainda não declara `--chart-1..5`; o fallback é a cor primária.
  */
 export function GraficoDiario({
   pontos,
@@ -21,7 +19,7 @@ export function GraficoDiario({
   nome: string;
   variavel: `--chart-${1 | 2 | 3 | 4 | 5}`;
 }) {
-  const config: ChartConfig = { valor: { label: nome, color: `var(${variavel}, var(--primary))` } };
+  const config: ChartConfig = { valor: { label: nome, color: `var(${variavel})` } };
   return (
     <div aria-hidden="true" className="hidden md:block">
       <ChartContainer config={config} className="h-56 w-full">
