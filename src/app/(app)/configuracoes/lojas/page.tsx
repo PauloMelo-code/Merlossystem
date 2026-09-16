@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import { exigirSessao, pode } from "@/lib/auth/guard";
 import { listarLojas } from "@/lib/actions/lojas";
+import { ErroDoAplicativo } from "@/lib/erros";
+import { listarDepositosBling, type DepositoBling } from "@/lib/integracoes/bling/depositos";
+import { logger } from "@/lib/logger";
 import { CabecalhoPagina } from "@/components/comum/cabecalho-pagina";
 import { EstadoErro } from "@/components/comum/estado-erro";
 import { PainelLojas } from "./_components/painel-lojas";
@@ -12,13 +15,32 @@ export const metadata: Metadata = { title: "Lojas" };
  * (04-ui.md §5.6). Ver é `lojas:ler`; gravar é de dono e admin. O portão roda
  * aqui E em cada action: o layout não cobre Server Action (N1/N5).
  */
+/**
+ * Lista de depósitos da conta Bling da rede. Qualquer falha (Bling
+ * desconectado, fora do ar, sem permissão) vira `null` e o formulário pede o
+ * número digitado: a tela de lojas não pode depender do Bling para abrir.
+ */
+async function depositosOuNada(): Promise<DepositoBling[] | null> {
+  try {
+    return await listarDepositosBling();
+  } catch (erro) {
+    const motivo = erro instanceof ErroDoAplicativo ? erro.codigo : String(erro);
+    logger.warn({ motivo }, "lista de depósitos do Bling indisponível na tela de lojas");
+    return null;
+  }
+}
+
 export default async function PaginaLojas() {
   const sessao = await exigirSessao();
   if (!pode(sessao.papel, "lojas", "ler")) {
     return <EstadoErro titulo="Você não tem acesso a esta área." descricao="Fale com o administrador." />;
   }
 
-  const resultado = await listarLojas();
+  const podeGravar = pode(sessao.papel, "lojas", "criar") || pode(sessao.papel, "lojas", "editar");
+  const [resultado, depositos] = await Promise.all([
+    listarLojas(),
+    podeGravar ? depositosOuNada() : Promise.resolve(null),
+  ]);
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-4 md:p-6">
@@ -30,6 +52,7 @@ export default async function PaginaLojas() {
       {resultado.ok ? (
         <PainelLojas
           lojas={resultado.dados.map((l) => ({ ...l, updatedAt: l.updatedAt.toISOString() }))}
+          depositos={depositos}
           pode={{
             criar: pode(sessao.papel, "lojas", "criar"),
             editar: pode(sessao.papel, "lojas", "editar"),

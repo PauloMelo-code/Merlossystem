@@ -158,7 +158,7 @@ export function PainelIntegracoes({
       />
 
       <Dialog open={conectando} onOpenChange={setConectando}>
-        <DialogContent className="max-h-[90dvh] overflow-y-auto">
+        <DialogContent className="max-h-dvh overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Conectar número ou conta</DialogTitle>
             <DialogDescription>Escolha o canal, a loja e cole as credenciais.</DialogDescription>

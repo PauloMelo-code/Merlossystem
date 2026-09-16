@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Campo, idsDeApoio } from "@/components/comum/campo";
@@ -19,7 +19,13 @@ export type LojaEditavel = {
   updatedAt: string;
 };
 
+/** Depósito da conta Bling da rede (costura `listarDepositosBling`, do M4). */
+export type DepositoDaOpcao = { id: string; descricao: string; padrao: boolean; ativo: boolean };
+
 type Campos = { nome: string; slug: string; sigla: string; blingDepositoId: string };
+
+const CLASSE_SELECT =
+  "h-9 w-full rounded-md border border-input bg-background px-3 text-corpo focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:w-80";
 
 const INICIAL: Resultado<never> = { ok: false, codigo: "", mensagem: "" };
 const ROTULOS: Record<keyof Campos, string> = {
@@ -47,15 +53,69 @@ function lerCampos(form: FormData): Campos {
 }
 
 /**
+ * Depósito do Bling: com a lista da conta da rede, escolhe; sem ela (Bling
+ * desconectado ou fora do ar), digita o número. O depósito atual que sumiu do
+ * Bling continua na lista, marcado, para a edição não apagá-lo em silêncio.
+ */
+function CampoDeposito({
+  depositos,
+  valor,
+  erro,
+}: {
+  depositos: readonly DepositoDaOpcao[] | null;
+  valor: string;
+  erro?: string;
+}) {
+  const comLista = depositos !== null && depositos.length > 0;
+  const ajuda = comLista
+    ? "Depósito desta loja no Bling. Sem ele, a loja não mostra estoque."
+    : "Número do depósito desta loja no Bling. Sem ele, a loja não mostra estoque." +
+      (depositos === null ? " A lista do Bling não está disponível agora." : "");
+  const apoio = { "aria-invalid": Boolean(erro), "aria-describedby": idsDeApoio("blingDepositoId", { ajuda, erro }) };
+
+  let controle: ReactNode;
+  if (comLista) {
+    const opcoes = depositos.filter((d) => d.ativo || d.id === valor);
+    if (valor && !opcoes.some((d) => d.id === valor)) {
+      opcoes.push({ id: valor, descricao: "não encontrado no Bling", padrao: false, ativo: false });
+    }
+    controle = (
+      <select id="blingDepositoId" name="blingDepositoId" defaultValue={valor} className={CLASSE_SELECT} {...apoio}>
+        <option value="">Sem depósito</option>
+        {opcoes.map((d) => (
+          <option key={d.id} value={d.id}>
+            {`${d.descricao} (nº ${d.id})${d.padrao ? " · padrão" : ""}${d.ativo ? "" : " · inativo"}`}
+          </option>
+        ))}
+      </select>
+    );
+  } else {
+    controle = (
+      <Input id="blingDepositoId" name="blingDepositoId" defaultValue={valor}
+        inputMode="numeric" maxLength={20} className="w-48" {...apoio} />
+    );
+  }
+
+  return (
+    <Campo nome="blingDepositoId" rotulo="Depósito do Bling" opcional ajuda={ajuda} {...(erro ? { erro } : {})}>
+      {controle}
+    </Campo>
+  );
+}
+
+/**
  * Criar/editar loja (04-ui.md §5.6). O envio passa pelo block de 3 s com o
  * diff; o formulário nunca é limpo em erro, e `updatedAt` vai oculto (§7.4).
  */
 export function FormularioLoja({
   loja,
+  depositos = null,
   onConcluido,
   onCancelar,
 }: {
   loja: LojaEditavel | null;
+  /** `null` = lista do Bling indisponível: o número é digitado. */
+  depositos?: readonly DepositoDaOpcao[] | null;
   onConcluido: () => void;
   onCancelar: () => void;
 }) {
@@ -132,14 +192,11 @@ export function FormularioLoja({
           aria-describedby={idsDeApoio("sigla", { ajuda: "sim", erro: erroDe("sigla") })} />
       </Campo>
 
-      <Campo nome="blingDepositoId" rotulo="Depósito do Bling" opcional
-        ajuda="Número do depósito desta loja no Bling. Sem ele, a loja não mostra estoque."
-        {...(erroDe("blingDepositoId") ? { erro: erroDe("blingDepositoId")! } : {})}>
-        <Input id="blingDepositoId" name="blingDepositoId" defaultValue={valorDe("blingDepositoId")}
-          inputMode="numeric" maxLength={20} className="w-48"
-          aria-invalid={Boolean(erroDe("blingDepositoId"))}
-          aria-describedby={idsDeApoio("blingDepositoId", { ajuda: "sim", erro: erroDe("blingDepositoId") })} />
-      </Campo>
+      <CampoDeposito
+        depositos={depositos}
+        valor={valorDe("blingDepositoId")}
+        {...(erroDe("blingDepositoId") ? { erro: erroDe("blingDepositoId")! } : {})}
+      />
 
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <Button type="button" variant="outline" onClick={onCancelar}>Cancelar</Button>

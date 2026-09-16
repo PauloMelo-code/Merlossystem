@@ -124,6 +124,35 @@ describe("lojas", () => {
     expect(screen.queryByRole("button", { name: /Nova loja|Editar|Desativar/ })).toBeNull();
   });
 
+  it("depósito: com a lista do Bling escolhe; sem ela, digita o número", () => {
+    const depositos = [
+      { id: "123", descricao: "Centro", padrao: true, ativo: true },
+      { id: "456", descricao: "Antigo", padrao: false, ativo: false },
+      { id: "789", descricao: "Praia", padrao: false, ativo: true },
+    ];
+    const comLista = render(<PainelLojas lojas={[{ ...LOJA, blingDepositoId: "999" }]} pode={PODE_TUDO} depositos={depositos} />);
+    fireEvent.click(screen.getAllByRole("button", { name: "Editar" })[0]!);
+    const lista = screen.getByLabelText(/Depósito do Bling/) as HTMLSelectElement;
+    expect(lista.tagName).toBe("SELECT");
+    const opcoes = [...lista.options].map((o) => o.textContent);
+    // O inativo some; o atual que o Bling não tem mais continua, marcado.
+    expect(opcoes).toEqual([
+      "Sem depósito",
+      "Centro (nº 123) · padrão",
+      "Praia (nº 789)",
+      "não encontrado no Bling (nº 999) · inativo",
+    ]);
+    expect(lista.value).toBe("999");
+    comLista.unmount();
+
+    render(<PainelLojas lojas={[LOJA]} pode={PODE_TUDO} depositos={null} />);
+    fireEvent.click(screen.getAllByRole("button", { name: "Editar" })[0]!);
+    const digitado = screen.getByLabelText(/Depósito do Bling/) as HTMLInputElement;
+    expect(digitado.tagName).toBe("INPUT");
+    expect(digitado.value).toBe("123");
+    expect(screen.getByText(/A lista do Bling não está disponível agora/)).toBeTruthy();
+  });
+
   it("sem loja: estado vazio com a próxima ação", () => {
     render(<PainelLojas lojas={[]} pode={PODE_TUDO} />);
     expect(screen.getByText("Nenhuma loja cadastrada.")).toBeTruthy();

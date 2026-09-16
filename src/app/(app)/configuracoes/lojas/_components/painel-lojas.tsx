@@ -10,7 +10,7 @@ import { FaixaAviso } from "@/components/comum/faixa-aviso";
 import { ModalConfirmacaoBlock } from "@/components/comum/modal-confirmacao-block";
 import { TabelaDados, type Coluna } from "@/components/comum/tabela-dados";
 import { desativarLoja } from "@/lib/actions/lojas";
-import { FormularioLoja, type LojaEditavel } from "./formulario-loja";
+import { FormularioLoja, type DepositoDaOpcao, type LojaEditavel } from "./formulario-loja";
 
 export type Permissoes = { criar: boolean; editar: boolean; excluir: boolean };
 
@@ -45,7 +45,15 @@ function AcoesDaLoja({
  * Lista de lojas com criar, editar e desativar (04-ui.md §5.6). Os botões só
  * aparecem para quem a matriz deixa — e o servidor confere de novo.
  */
-export function PainelLojas({ lojas, pode }: { lojas: readonly LojaEditavel[]; pode: Permissoes }) {
+export function PainelLojas({
+  lojas,
+  pode,
+  depositos = null,
+}: {
+  lojas: readonly LojaEditavel[];
+  pode: Permissoes;
+  depositos?: readonly DepositoDaOpcao[] | null;
+}) {
   const router = useRouter();
   const [editando, setEditando] = useState<LojaEditavel | "nova" | null>(null);
   const [desativando, setDesativando] = useState<LojaEditavel | null>(null);
@@ -150,6 +158,7 @@ export function PainelLojas({ lojas, pode }: { lojas: readonly LojaEditavel[]; p
             <FormularioLoja
               key={editando === "nova" ? "nova" : editando.id}
               loja={editando === "nova" ? null : editando}
+              depositos={depositos}
               onConcluido={concluido}
               onCancelar={fechar}
             />

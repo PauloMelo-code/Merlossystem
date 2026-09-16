@@ -50,8 +50,9 @@ function QrDoUazapi({
   return (
     <div className="flex flex-col items-center gap-3">
       {pareamento.qr && !expirado ? (
+        // O QR já vem com fundo branco e zona de silêncio (lib/qr.ts), fora do tema.
         // eslint-disable-next-line @next/next/no-img-element -- data URL gerada no servidor; next/image não se aplica
-        <img src={pareamento.qr} alt="QR code para parear o aparelho no WhatsApp" className="size-64 bg-white p-2" />
+        <img src={pareamento.qr} alt="QR code para parear o aparelho no WhatsApp" className="size-64 rounded-md border" />
       ) : (
         <p className="text-corpo text-muted-foreground">
           {pareamento.qr ? "O QR expirou." : "O uazapi não devolveu QR: a sessão pode já estar conectada."}
