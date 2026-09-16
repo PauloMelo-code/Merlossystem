@@ -1,7 +1,13 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import type { Contexto } from "@/lib/auth/guard";
-import { atualizarEstado, emTransacao, inserirAuditado, type Transacao } from "@/lib/db/mutacoes";
+import {
+  atualizarEstado,
+  contextoDeSistema,
+  emTransacao,
+  inserirAuditado,
+  type ContextoDeGravacao,
+  type Transacao,
+} from "@/lib/db/mutacoes";
 import { conversas_mensagens_midias } from "@/lib/db/schema/conversas/mensagens-midias";
 import { lojas_midias } from "@/lib/db/schema/midias";
 import { ErroDeIntegracao } from "@/lib/erros";
@@ -50,17 +56,6 @@ export type MidiaRecebida = {
   nomeOriginal?: string;
 };
 
-/** O Contexto do worker: sem sessão, sem pessoa. A trilha grava `ator_tipo = 'sistema'`. */
-export function contextoDeSistema(lojaId: string): Contexto {
-  return {
-    sessao: undefined as never,
-    escopo: { tipo: "uma", lojaId },
-    // `modified_by` e `ator_id` nulos: não há pessoa por trás do job.
-    autorId: null as unknown as string,
-    origem: "worker",
-  };
-}
-
 /** Provedor de canal → allowlist de host da busca externa. */
 export function provedorDeBusca(origem: string): Provedor {
   if (origem === "uazapi") return "uazapi";
@@ -78,7 +73,7 @@ type EntradaBytes = {
 async function gravarBytes(
   tx: Transacao,
   entrada: EntradaBytes,
-  ctx: Contexto,
+  ctx: ContextoDeGravacao,
 ): Promise<{ midiaId: string; imagem: boolean }> {
   if (entrada.bytes.byteLength === 0) throw new ErroDeArquivo({ status: 400, motivo: "Mídia vazia." });
   const mime = detectarMime(entrada.bytes, entrada.tipoMime);
@@ -119,8 +114,7 @@ async function gravarBytes(
       enviada_por: null,
     },
     ctx,
-    // ponytail: a lista fechada de ações não tem "midia_recebida" (bloqueio registrado pelo M3).
-    "midia_enviada",
+    "midia_recebida",
   );
   return { midiaId: id, imagem };
 }
@@ -132,7 +126,7 @@ async function agendarMiniatura(lojaId: string, midiaId: string): Promise<void> 
 export async function guardarMidiaRecebida(
   tx: Transacao,
   midia: MidiaRecebida,
-  ctx: Contexto,
+  ctx: ContextoDeGravacao,
 ): Promise<{ midiaId: string }> {
   if (!midia.bytes) {
     // URL não vira linha de `lojas_midias` antes do download (tamanho e tipo
@@ -183,7 +177,7 @@ export async function baixarAnexo(dados: DadosDownload): Promise<"baixada" | "ja
     throw new ErroDeIntegracao(`Provedor respondeu ${resposta.status}.`, resposta.status < 500);
   }
 
-  const ctx = contextoDeSistema(dados.lojaId);
+  const ctx = contextoDeSistema({ origem: "worker", lojaId: dados.lojaId });
   const gravada = await emTransacao(ctx, async (tx) => {
     const nova = await gravarBytes(
       tx,
