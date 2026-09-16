@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { exigirAlvoPermitido, exigirPapelConvidavel, ordemDePrivilegio } from "@/lib/auth/permissoes/alvo";
-import type { Sessao } from "@/lib/auth/guard";
+import type { Contexto, Sessao } from "@/lib/auth/guard";
 import { PAPEIS, type Papel } from "@/lib/db/schema/_enums/auth";
 
 /**
@@ -11,13 +13,29 @@ import { PAPEIS, type Papel } from "@/lib/db/schema/_enums/auth";
  * passa. Sem isto, `admin` reseta, desativa, destrava, encerra sessões, troca
  * e-mail e recupera fator de outro `admin` e do `dono`.
  *
- * As partes que dependem de `src/lib/actions/usuarios.ts` — motivo obrigatório,
- * trilha ANTES do efeito, corrida de `FOR UPDATE` deixando zero dono — são do
- * pacote M7, que é dono daquele arquivo. A escada, que é o que pode ser
- * contornado em silêncio, está provada aqui.
+ * A segunda metade (pacote M7) prova no BANCO, pelas funções que
+ * `src/lib/actions/usuarios.ts` chama: 403 COM trilha e sem efeito; `dono`
+ * sobre `admin` passando; corrida de `FOR UPDATE` que não deixa zero dono nem
+ * três donos; sessões do alvo revogadas; trilha ANTES do efeito e fail-closed;
+ * e nenhuma action administrativa recebendo senha (E8).
  */
 
-function sessao(papel: Papel, id = randomUUID()): Sessao {
+const trilhaFora = vi.hoisted(() => ({ ligado: false }));
+
+vi.mock("@/lib/auth/emails", () => ({ enfileirarEmailSeguranca: () => undefined }));
+
+vi.mock("@/lib/auth/trilha", async (original) => {
+  const real = await original<typeof import("@/lib/auth/trilha")>();
+  return {
+    ...real,
+    gravarEventoAuth: async (...args: Parameters<typeof real.gravarEventoAuth>) => {
+      if (trilhaFora.ligado) throw new Error("trilha indisponível (simulada)");
+      return real.gravarEventoAuth(...args);
+    },
+  };
+});
+
+function sessao(papel: Papel, id: string = randomUUID()): Sessao {
   return {
     usuarioId: id,
     sessaoId: randomUUID(),
@@ -110,5 +128,236 @@ describe("guarda de alvo", () => {
       expect((erro as { status: number }).status).toBe(403);
       expect((erro as { codigo: string }).codigo).toBe("SEM_PERMISSAO");
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// No banco (pacote M7)
+// ---------------------------------------------------------------------------
+
+const apoio = await import("./_apoio");
+const { emTransacao } = await import("@/lib/db/mutacoes");
+const adm = await import("@/lib/usuarios/administracao");
+const acesso = await import("@/lib/usuarios/acesso");
+const trocas = await import("@/lib/usuarios/trocas-email");
+
+type Dados = { alvoId: string; motivo: string; updatedAt?: Date; emailNovo?: string };
+type Operacao = (tx: never, ctx: Contexto, dados: never) => Promise<unknown>;
+
+const MOTIVO = "motivo administrativo de teste";
+
+function ctxDe(id: string, papel: Papel): Contexto {
+  return {
+    sessao: { ...sessao(papel, id), lojaId: null },
+    escopo: { tipo: "todas" },
+    autorId: id,
+    origem: "ui",
+  };
+}
+
+function rodar(ctx: Contexto, fn: Operacao, dados: object): Promise<unknown> {
+  return emTransacao(ctx, (tx) => fn(tx as never, ctx, dados as never));
+}
+
+async function comVersao(id: string, extra: object = {}): Promise<Dados> {
+  const { updated_at } = await apoio.lerUsuario(id);
+  return { alvoId: id, motivo: MOTIVO, updatedAt: updated_at as Date, ...extra };
+}
+
+async function darFatores(id: string): Promise<void> {
+  await apoio.poolDeTeste.query(
+    `insert into usuarios_passkeys (usuario_id, nome, chave_publica, credential_id)
+     values ($1::uuid, 'Aparelho', 'chave-sem-valor', gen_random_uuid()::text)`,
+    [id],
+  );
+  await apoio.poolDeTeste.query(
+    `insert into usuarios_totp (usuario_id, secret, verificado) values ($1::uuid, 'x', true)`,
+    [id],
+  );
+}
+
+async function abrirSessao(usuarioId: string): Promise<void> {
+  await apoio.poolDeTeste.query(
+    `insert into usuarios_sessoes (token, usuario_id, expira_em)
+     values ($1, $2, now() + interval '1 hour')`,
+    [randomUUID(), usuarioId],
+  );
+}
+
+async function contar(consulta: string, parametros: unknown[] = []): Promise<number> {
+  const { rows } = await apoio.poolDeTeste.query<{ n: number }>(consulta, parametros);
+  return rows[0]!.n;
+}
+
+const sessoesDe = (id: string) =>
+  contar("select count(*)::int as n from usuarios_sessoes where usuario_id = $1", [id]);
+const recusasSobre = (id: string) =>
+  contar(
+    "select count(*)::int as n from auth_eventos where tipo = 'recusa_403' and alvo_id = $1",
+    [id],
+  );
+const donosAtivos = () =>
+  contar("select count(*)::int as n from usuarios where papel = 'dono' and ativo and not is_deleted");
+
+let n = 0;
+const novoEmail = (p: string) => `${p}-${String((n += 1))}@t14.local`;
+
+describe("T14 no banco", () => {
+  beforeAll(async () => {
+    await apoio.limparAuth();
+  });
+
+  afterAll(async () => {
+    await apoio.fecharApoio();
+  });
+
+  it("admin A sobre admin B e sobre o dono → 403, com trilha e sem efeito", async () => {
+    const dono = await apoio.criarUsuario(novoEmail("dono"), { papel: "dono" });
+    const a = await apoio.criarUsuario(novoEmail("admin-a"), { papel: "admin" });
+    const b = await apoio.criarUsuario(novoEmail("admin-b"), { papel: "admin" });
+    const ctx = ctxDe(a.id, "admin");
+
+    for (const alvo of [b, dono]) {
+      const tentativas: [Operacao, Dados][] = [
+        [adm.desativarUsuario as Operacao, await comVersao(alvo.id)],
+        [adm.trocarPapel as Operacao, await comVersao(alvo.id, { papel: "gerente", lojaId: null })],
+        [acesso.iniciarResetDeSenha as Operacao, { alvoId: alvo.id, motivo: MOTIVO }],
+        [
+          trocas.iniciarTrocaDeEmail as Operacao,
+          { alvoId: alvo.id, motivo: MOTIVO, emailNovo: novoEmail("tomado") },
+        ],
+        [acesso.recuperarAcessoAssistido as Operacao, { alvoId: alvo.id, motivo: MOTIVO }],
+        [acesso.encerrarSessoesDe as Operacao, { alvoId: alvo.id, motivo: MOTIVO }],
+        [acesso.destravarConta as Operacao, { alvoId: alvo.id, motivo: MOTIVO }],
+      ];
+      const antes = await apoio.lerUsuario(alvo.id);
+      for (const [fn, dados] of tentativas) {
+        await expect(rodar(ctx, fn, dados)).rejects.toMatchObject({
+          codigo: "SEM_PERMISSAO",
+          status: 403,
+        });
+      }
+      expect(await recusasSobre(alvo.id)).toBe(tentativas.length);
+      expect(await apoio.lerUsuario(alvo.id)).toEqual(antes);
+    }
+  });
+
+  it("dono sobre admin → passa e revoga as sessões; auto-alvo → 403", async () => {
+    const dono = await apoio.criarUsuario(novoEmail("dono"), { papel: "dono" });
+    const alvo = await apoio.criarUsuario(novoEmail("admin"), { papel: "admin" });
+    await apoio.criarUsuario(novoEmail("admin-reserva"), { papel: "admin" });
+    await abrirSessao(alvo.id);
+    await abrirSessao(alvo.id);
+
+    const ctx = ctxDe(dono.id, "dono");
+    await rodar(ctx, adm.desativarUsuario as Operacao, await comVersao(alvo.id));
+    expect((await apoio.lerUsuario(alvo.id)).ativo).toBe(false);
+    expect(await sessoesDe(alvo.id)).toBe(0);
+
+    await expect(
+      rodar(ctx, adm.desativarUsuario as Operacao, await comVersao(dono.id)),
+    ).rejects.toMatchObject({ codigo: "SEM_PERMISSAO" });
+  });
+
+  it("rebaixamento cruzado de dois donos não deixa zero dono", async () => {
+    await apoio.limparAuth();
+    const d1 = await apoio.criarUsuario(novoEmail("d1"), { papel: "dono" });
+    const d2 = await apoio.criarUsuario(novoEmail("d2"), { papel: "dono" });
+    const papel = { papel: "admin", lojaId: null };
+
+    const resultados = await Promise.allSettled([
+      rodar(ctxDe(d1.id, "dono"), adm.trocarPapel as Operacao, await comVersao(d2.id, papel)),
+      rodar(ctxDe(d2.id, "dono"), adm.trocarPapel as Operacao, await comVersao(d1.id, papel)),
+    ]);
+    expect(resultados.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    expect(await donosAtivos()).toBe(1);
+  });
+
+  it("duas transferências simultâneas não criam dois donos novos", async () => {
+    await apoio.limparAuth();
+    const dono = await apoio.criarUsuario(novoEmail("dono"), { papel: "dono" });
+    const a1 = await apoio.criarUsuario(novoEmail("a1"), { papel: "admin" });
+    const a2 = await apoio.criarUsuario(novoEmail("a2"), { papel: "admin" });
+    await darFatores(a1.id);
+    await darFatores(a2.id);
+    const ctx = ctxDe(dono.id, "dono");
+
+    const resultados = await Promise.allSettled([
+      rodar(ctx, adm.transferirPosse as Operacao, await comVersao(a1.id)),
+      rodar(ctx, adm.transferirPosse as Operacao, await comVersao(a2.id)),
+    ]);
+    expect(resultados.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    expect(await donosAtivos()).toBe(1);
+    // Quem transferiu virou admin.
+    expect((await apoio.lerUsuario(dono.id)).papel).toBe("admin");
+  });
+
+  it("terceiro dono é recusado mesmo pelo dono", async () => {
+    await apoio.limparAuth();
+    const d1 = await apoio.criarUsuario(novoEmail("d1"), { papel: "dono" });
+    await apoio.criarUsuario(novoEmail("d2"), { papel: "dono" });
+    const inativo = await apoio.criarUsuario(novoEmail("d3"), { papel: "dono", ativo: false });
+    await darFatores(inativo.id);
+    await apoio.poolDeTeste.query("update usuarios set two_factor_enabled = true where id = $1", [
+      inativo.id,
+    ]);
+    await expect(
+      rodar(ctxDe(d1.id, "dono"), adm.reativarUsuario as Operacao, await comVersao(inativo.id)),
+    ).rejects.toMatchObject({ codigo: "VALIDACAO" });
+    expect(await donosAtivos()).toBe(2);
+  });
+
+  it("trilha fora do ar = efeito nenhum (fail-closed, na mesma transação)", async () => {
+    const dono = await apoio.criarUsuario(novoEmail("dono"), { papel: "dono" });
+    const alvo = await apoio.criarUsuario(novoEmail("gerente"), { papel: "gerente" });
+    await darFatores(alvo.id);
+    trilhaFora.ligado = true;
+    try {
+      await expect(
+        rodar(ctxDe(dono.id, "dono"), adm.promoverAAdmin as Operacao, await comVersao(alvo.id)),
+      ).rejects.toThrow(/trilha/);
+    } finally {
+      trilhaFora.ligado = false;
+    }
+    expect((await apoio.lerUsuario(alvo.id)).papel).toBe("gerente");
+  });
+
+  it("dono não é convidável: o CHECK do banco recusa", async () => {
+    await expect(
+      apoio.criarConvite(novoEmail("dono-convite"), { papel: "dono" }),
+    ).rejects.toMatchObject({ code: "23514" });
+  });
+});
+
+describe("fonte das actions administrativas", () => {
+  const RAIZ = process.cwd();
+  const ler = (caminho: string) => readFileSync(join(RAIZ, caminho), "utf8");
+
+  it("a trilha vem ANTES do efeito em toda função que troca papel, posse ou acesso", () => {
+    const efeitos = ["atualizarComTrava(", "gravarPapel(", "revogarSessoesDe(", "removerFatores("];
+    for (const arquivo of ["src/lib/usuarios/administracao.ts", "src/lib/usuarios/acesso.ts"]) {
+      const funcoes = ler(arquivo).split(/\nexport async function /).slice(1);
+      expect(funcoes.length, arquivo).toBeGreaterThanOrEqual(4);
+      for (const corpo of funcoes) {
+        const trilha = corpo.indexOf("gravarEventoAuth(");
+        if (trilha === -1) continue;
+        const nome = corpo.slice(0, corpo.indexOf("("));
+        for (const efeito of efeitos) {
+          const posicao = corpo.indexOf(efeito);
+          if (posicao !== -1) expect(trilha, `${nome}: ${efeito}`).toBeLessThan(posicao);
+        }
+      }
+    }
+  });
+
+  it("toda ação exige sessão fresca e nenhuma recebe senha (E8) nem espalha o corpo (H12)", () => {
+    const actions = ler("src/lib/actions/usuarios.ts") + ler("src/lib/actions/convites.ts");
+    const exportadas = actions.match(/^export async function /gm) ?? [];
+    const frescas = actions.match(/^\s+fresca: true,$/gm) ?? [];
+    expect(exportadas.length).toBeGreaterThanOrEqual(12);
+    expect(frescas.length).toBe(exportadas.length);
+    expect(actions).not.toMatch(/novaSenha|newPassword|senhaSchema|setPassword/);
+    expect(ler("src/lib/validadores/usuarios.ts")).not.toMatch(/\bsenha\s*:/i);
+    expect(actions).not.toMatch(/\.\.\.(dados|entrada|input)\b/);
   });
 });
