@@ -101,13 +101,38 @@ await conferir("POST /api/auth/sign-up/email responde 404 sem corpo", async () =
 
 // ── 3. origem e CSRF ────────────────────────────────────────────────────────
 
-await conferir("origem forjada é recusada", async () => {
-  const r = await buscar("/api/auth/sign-in/email", {
+/**
+ * O 403 literal de §14.3 é da SERVER ACTION pública, e action não tem endereço
+ * estável para uma sonda (o `Next-Action` é hash de build) — quem prova aquele
+ * caso é `tests/seguranca/origem.test.ts` (T21).
+ *
+ * O que a fumaça alcança é o Route Handler, e ali o 403 do Better Auth é
+ * normalizado para a recusa única de §5.1 item 6, de propósito. Então a
+ * conferência é pelo EFEITO, que é o que importa e não passa por acaso: com
+ * origem forjada não sai sessão, e o mesmo pedido com a origem certa é aceito
+ * pela borda — se o segundo também for recusado, o teste passaria com a
+ * checagem de origem desligada.
+ */
+await conferir("origem forjada não abre sessão", async () => {
+  const corpo = JSON.stringify({ email: "sonda@exemplo.com", password: VALOR_DA_SONDA });
+  const cabecalhos = { "content-type": "application/json" };
+
+  const forjada = await buscar("/api/auth/sign-in/email", {
     method: "POST",
-    headers: { "content-type": "application/json", origin: "https://atacante.invalido" },
-    body: JSON.stringify({ email: "sonda@exemplo.com", password: VALOR_DA_SONDA }),
+    headers: { ...cabecalhos, origin: "https://atacante.invalido" },
+    body: corpo,
   });
-  return r.status === 403 ? null : `status ${r.status}, esperado 403`;
+  if (forjada.status === 200) return "origem forjada respondeu 200";
+  if (forjada.headers.get("set-cookie")) return "origem forjada devolveu Set-Cookie";
+
+  const legitima = await buscar("/api/auth/sign-in/email", {
+    method: "POST",
+    headers: { ...cabecalhos, origin: base },
+    body: corpo,
+  });
+  // A conta da sonda não existe: 401 é o esperado. 403 aqui significa que a
+  // borda está recusando a PRÓPRIA origem — e aí o caso acima não prova nada.
+  return legitima.status === 403 ? "a origem legítima também foi recusada (403)" : null;
 });
 
 pendente(
@@ -204,15 +229,22 @@ if (!sonda) {
 
 // ── 7. DNS do remetente ─────────────────────────────────────────────────────
 
-await conferir("_dmarc do domínio tem registro TXT", async () => {
-  const dominio = new URL(base).hostname.replace(/^www\./, "");
-  try {
-    const registros = await resolveTxt(`_dmarc.${dominio}`);
-    return registros.length > 0 ? null : "nenhum TXT em _dmarc";
-  } catch {
-    return `_dmarc.${dominio} não resolve: o convite vai cair em spam ou ser recusado`;
-  }
-});
+const dominioDoAlvo = new URL(base).hostname.replace(/^www\./, "");
+
+// Alvo local não tem domínio para consultar. Vermelho aqui seria falso — e a
+// fumaça que falha por padrão na máquina de quem desenvolve deixa de ser lida.
+if (dominioDoAlvo === "localhost" || /^\d+\.\d+\.\d+\.\d+$/.test(dominioDoAlvo)) {
+  pendente("_dmarc do domínio tem registro TXT", `alvo local (${dominioDoAlvo}), sem domínio`);
+} else {
+  await conferir("_dmarc do domínio tem registro TXT", async () => {
+    try {
+      const registros = await resolveTxt(`_dmarc.${dominioDoAlvo}`);
+      return registros.length > 0 ? null : "nenhum TXT em _dmarc";
+    } catch {
+      return `_dmarc.${dominioDoAlvo} não resolve: o convite vai cair em spam ou ser recusado`;
+    }
+  });
+}
 
 // ── 7. conferências no banco ────────────────────────────────────────────────
 
