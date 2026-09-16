@@ -92,7 +92,7 @@ O modelo de dados é **fechado**: as 48 tabelas nascem nas migrações `0000` a 
 - SQLite, Prisma, `pgEnum`, `db.delete(` / `tx.delete(` / `DELETE FROM`.
 - Tabela sem as 5 colunas de auditoria e sem FK.
 - `casing: "snake_case"` no lugar do nome explícito da coluna.
-- `.insert(` / `.update(` fora de `src/lib/db/mutacoes.ts`.
+- `.insert(` / `.update(` fora de `src/lib/db/mutacoes.ts` (implementação em `src/lib/db/mutacoes/`).
 - Coluna de contador ou de estado de sistema sem entrar em `CONTADORES` /
   `ESTADOS_DE_SISTEMA`.
 

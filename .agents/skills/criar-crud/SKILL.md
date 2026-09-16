@@ -23,7 +23,7 @@ só chama a action. Se a regra muda, muda num arquivo só (SOLID-S).
 
 2. **Domínio** — `src/lib/<dominio>/`. É o único lugar que importa `db` e que conhece a
    regra. Leitura por `<dominio>/_consultas.ts`, sempre com `vivos(t)` e
-   `condicaoDeLoja(t, escopo)`. Escrita **só** pelos cinco de `src/lib/db/mutacoes.ts`:
+   `condicaoDeLoja(t, escopo)`. Escrita **só** pelos cinco de `src/lib/db/mutacoes.ts` (implementação em `src/lib/db/mutacoes/`):
 
    ```ts
    inserirAuditado(tx, tabela, dados, ctx, acao)

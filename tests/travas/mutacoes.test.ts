@@ -8,19 +8,23 @@ import * as schema from "@/lib/db/schema";
 /**
  * Trava das mutações (01-dados.md §4.7, 03-arquitetura.md §6.4).
  *
- * `src/lib/db/mutacoes.ts` é o ÚNICO arquivo com `.insert(` e `.update(` sobre
- * tabela de domínio, e nenhum delete físico existe em lugar nenhum — nem em
+ * `src/lib/db/mutacoes.ts` é o reexportador ÚNICO; a implementação mora em
+ * `src/lib/db/mutacoes/`, a ÚNICA pasta com `.insert(` e `.update(` sobre
+ * tabela de domínio. Nenhum delete físico existe em lugar nenhum — nem em
  * teste, nem em script (T25).
  */
 
 const RAIZ = process.cwd();
 const MUTACOES = "src/lib/db/mutacoes.ts";
-/** A extensão reexportada por mutacoes.ts: ON CONFLICT e lotes da LGPD. */
-const MUTACOES_SISTEMA = "src/lib/db/mutacoes-sistema.ts";
+/** A implementação: todo arquivo desta pasta é reexportado por mutacoes.ts. */
+const MUTACOES_DIR = "src/lib/db/mutacoes/";
+const BASE = `${MUTACOES_DIR}base.ts`;
+const SISTEMA = `${MUTACOES_DIR}sistema.ts`;
 const PASTAS = ["src", "tests", "scripts"];
 
 /** Este arquivo cita os padrões proibidos como DEFINIÇÃO da regra. */
-const ISENTOS = new Set([MUTACOES, MUTACOES_SISTEMA, "tests/travas/mutacoes.test.ts"]);
+const ISENTOS_FIXOS = new Set([MUTACOES, "tests/travas/mutacoes.test.ts"]);
+const isento = (caminho: string) => ISENTOS_FIXOS.has(caminho) || caminho.startsWith(MUTACOES_DIR);
 
 function varrer(pasta: string): string[] {
   let entradas;
@@ -59,11 +63,22 @@ describe("mutações", () => {
   it("varre um repositório de verdade (piso mínimo)", () => {
     expect(arquivos.length).toBeGreaterThanOrEqual(40);
     expect(arquivos.some((a) => a.caminho === MUTACOES)).toBe(true);
+    expect(arquivos.some((a) => a.caminho === BASE)).toBe(true);
   });
 
-  it("`.insert(` e `.update(` só existem em mutacoes.ts", () => {
+  it("mutacoes.ts só reexporta a pasta (sem `.insert(`/`.update(` e sem index.ts)", () => {
+    const texto = readFileSync(join(RAIZ, MUTACOES), "utf8");
+    expect(linhasDeCodigo(texto).filter((l) => /\.(insert|update)\s*\(/.test(l.texto))).toEqual([]);
+    for (const a of arquivos.filter((x) => x.caminho.startsWith(MUTACOES_DIR))) {
+      const nome = a.caminho.slice(MUTACOES_DIR.length).replace(/\.ts$/, "");
+      expect(nome).not.toBe("index");
+      expect(texto, `reexporta ${nome}`).toContain(`export * from "./mutacoes/${nome}";`);
+    }
+  });
+
+  it("`.insert(` e `.update(` só existem na pasta de mutações", () => {
     const achados = arquivos
-      .filter((a) => !ISENTOS.has(a.caminho))
+      .filter((a) => !isento(a.caminho))
       .flatMap((a) =>
         linhasDeCodigo(a.texto)
           .filter((l) => /\b(db|tx|sp)\s*\.\s*(insert|update)\s*\(/.test(l.texto))
@@ -74,7 +89,7 @@ describe("mutações", () => {
 
   it("nenhum delete físico em lugar nenhum (T25)", () => {
     const achados = arquivos
-      .filter((a) => !ISENTOS.has(a.caminho))
+      .filter((a) => !isento(a.caminho))
       .flatMap((a) =>
         linhasDeCodigo(a.texto)
           .filter((l) =>
@@ -85,8 +100,11 @@ describe("mutações", () => {
     expect(achados).toEqual([]);
   });
 
-  it("mutacoes.ts exporta os helpers nomeados em 03-arquitetura.md §6.4", () => {
-    const texto = readFileSync(join(RAIZ, MUTACOES), "utf8");
+  it("a pasta de mutações exporta os helpers nomeados em 03-arquitetura.md §6.4", () => {
+    const texto = arquivos
+      .filter((a) => a.caminho.startsWith(MUTACOES_DIR))
+      .map((a) => a.texto)
+      .join("\n");
     for (const nome of [
       "emTransacao",
       "inserirAuditado",
@@ -106,26 +124,28 @@ describe("mutações", () => {
     }
   });
 
-  it("mutacoes-sistema.ts tem os helpers de sistema e é reexportado por mutacoes.ts", () => {
-    const extensao = readFileSync(join(RAIZ, MUTACOES_SISTEMA), "utf8");
-    const principal = readFileSync(join(RAIZ, MUTACOES), "utf8");
+  it("mutacoes/sistema.ts tem os helpers de sistema e é reexportado por mutacoes.ts", () => {
+    const extensao = readFileSync(join(RAIZ, SISTEMA), "utf8");
     const nomes = ["registrarEventoDeIngestao", "abrirAlerta", "inserirDestinatariosEmLote", "anonimizarTitular"];
-    for (const nome of nomes) {
-      expect(extensao).toContain(`export async function ${nome}`);
-      expect(principal).toContain(nome);
+    for (const nome of nomes) expect(extensao).toContain(`export async function ${nome}`);
+    expect(readFileSync(join(RAIZ, MUTACOES), "utf8")).toContain('export * from "./mutacoes/sistema";');
+  });
+
+  it("nenhum arquivo da pasta importa valor de ../mutacoes (a reexportação não pode virar ciclo)", () => {
+    for (const a of arquivos.filter((x) => x.caminho.startsWith(MUTACOES_DIR))) {
+      expect(a.texto, a.caminho).not.toMatch(/^import \{[^}]*\} from "\.\.\/mutacoes";/m);
+      expect(a.texto, a.caminho).not.toMatch(/from "@\/lib\/db\/mutacoes"/);
     }
-    // Sem import de valor de mutacoes.ts: a reexportação não pode virar ciclo.
-    expect(extensao).not.toMatch(/^import \{[^}]*\} from "\.\/mutacoes";/m);
   });
 
   it("atualizarComTrava e excluirLogico passam por travaDeColisao e condicaoDeLoja", () => {
-    const texto = readFileSync(join(RAIZ, MUTACOES), "utf8");
+    const texto = readFileSync(join(RAIZ, BASE), "utf8");
     expect([...texto.matchAll(/travaDeColisao\(tabela/g)]).toHaveLength(2);
     expect([...texto.matchAll(/condicaoDeLoja\(tabela/g)].length).toBeGreaterThanOrEqual(4);
   });
 
   it("atualizarContador não escreve updated_at nem modified_by", () => {
-    const texto = readFileSync(join(RAIZ, MUTACOES), "utf8");
+    const texto = readFileSync(join(RAIZ, BASE), "utf8");
     const corpo = texto.slice(
       texto.indexOf("export async function atualizarContador"),
       texto.indexOf("export async function atualizarEstado"),

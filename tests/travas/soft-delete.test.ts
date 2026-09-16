@@ -101,7 +101,7 @@ describe("T25 nenhum delete fisico", () => {
   });
 
   it("os helpers de exclusao logica existem e sao a unica porta", () => {
-    const mutacoes = readFileSync(join(RAIZ, "src/lib/db/mutacoes.ts"), "utf8");
+    const mutacoes = readFileSync(join(RAIZ, "src/lib/db/mutacoes/base.ts"), "utf8");
     expect(mutacoes).toContain("export async function excluirLogico");
     const consultas = readFileSync(join(RAIZ, "src/lib/db/consultas.ts"), "utf8");
     expect(consultas).toMatch(/export const marcaDeExclusao/);
@@ -127,7 +127,7 @@ describe("T25 a trilha nunca e alvo de exclusao", () => {
     // A barreira real e o TIPO: `TabelaDominio` exige `is_deleted`, `deleted_at`
     // e `modified_by`, e nenhuma trilha tem essas colunas. Este caso existe para
     // o dia em que alguem for tentado a acrescenta-las.
-    const mutacoes = readFileSync(join(RAIZ, "src/lib/db/mutacoes.ts"), "utf8");
+    const mutacoes = readFileSync(join(RAIZ, "src/lib/db/mutacoes/base.ts"), "utf8");
     expect(mutacoes).toMatch(/is_deleted:\s*PgColumn/);
     expect(mutacoes).toMatch(/deleted_at:\s*PgColumn/);
   });

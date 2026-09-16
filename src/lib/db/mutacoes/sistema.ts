@@ -1,25 +1,26 @@
 import { sql, type SQL } from "drizzle-orm";
 import { registrarAuditoria } from "@/lib/auditoria/gravador";
 import { ErroDeEscopo } from "@/lib/erros";
-import { db } from "./client";
-import type { Transacao } from "./mutacoes";
-import type { AcaoAuditada } from "./schema/_enums/auditoria";
-import type { Provedor, Severidade, TipoAlerta, TipoEventoIntegracao } from "./schema/_enums/plataforma";
-import { alertas } from "./schema/alertas";
-import { campanhas_destinatarios } from "./schema/campanhas";
-import type { CabecalhosEvento } from "./schema/integracoes";
-import { ATOR_SISTEMA, type ContextoDeGravacao } from "./sistema";
+import { db } from "../client";
+import type { AcaoAuditada } from "../schema/_enums/auditoria";
+import type { Provedor, Severidade, TipoAlerta, TipoEventoIntegracao } from "../schema/_enums/plataforma";
+import { alertas } from "../schema/alertas";
+import { campanhas_destinatarios } from "../schema/campanhas";
+import type { CabecalhosEvento } from "../schema/integracoes";
+import { ATOR_SISTEMA, type ContextoDeGravacao } from "../sistema";
+import type { Transacao } from "./base";
 
 /**
- * Extensão de `mutacoes.ts` (reexportada de lá; importe de `@/lib/db/mutacoes`).
+ * Gravações de sistema da porta única (reexportadas por `src/lib/db/mutacoes.ts`;
+ * importe de `@/lib/db/mutacoes`).
  *
  * Gravações que nenhum helper por linha expressa: INSERT com `ON CONFLICT`
  * sobre índice único parcial (diário, alerta, destinatários) e as atualizações
- * EM LOTE da anonimização LGPD. É o segundo — e último — arquivo liberado pela
- * trava `tests/travas/mutacoes.test.ts`. Não importa nada em tempo de execução
- * de `mutacoes.ts`, para a reexportação não virar ciclo.
+ * EM LOTE da anonimização LGPD. Não importa valor de `../mutacoes`, para a
+ * reexportação não virar ciclo.
  */
 
+export { ATOR_SISTEMA, contextoDeSistema, type ContextoDeGravacao, type ContextoDeSistema } from "../sistema";
 type Executor = Pick<Transacao, "execute">;
 
 const linhas = (r: unknown) => (r as { rowCount?: number | null }).rowCount ?? 0;

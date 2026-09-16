@@ -134,7 +134,7 @@ describe("T13 escopo que nao resolve FECHA", () => {
   });
 
   it("escopo 'nenhuma' aborta a transacao antes de qualquer gravacao", () => {
-    const mutacoes = semComentarios(lerFonte("src/lib/db/mutacoes.ts"));
+    const mutacoes = semComentarios(lerFonte("src/lib/db/mutacoes/base.ts"));
     expect(mutacoes).toMatch(/escopo\.tipo === "nenhuma"[\s\S]{0,80}ErroDeEscopo/);
   });
 });

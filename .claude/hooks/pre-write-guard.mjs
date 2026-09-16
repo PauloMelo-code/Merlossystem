@@ -67,7 +67,7 @@ const RULES = [
     // Vale tambem em `tests/` e `scripts/` — a limpeza de banco de teste e por
     // transacao com rollback e por TRUNCATE no globalSetup (03-arquitetura §20).
     re: /\bdb\.delete\s*\(|\btx\.delete\s*\(|\.deleteMany\s*\(|\bdrizzle[\w.]*\.delete\s*\(|\bDELETE\s+FROM\b/i,
-    msg: "Delete fisico detectado. Use soft delete: is_deleted=true, deleted_at=now() (excluirLogico em src/lib/db/mutacoes.ts).",
+    msg: "Delete fisico detectado. Use soft delete: is_deleted=true, deleted_at=now() (excluirLogico em src/lib/db/mutacoes.ts, implementacao em src/lib/db/mutacoes/).",
   },
 ];
 

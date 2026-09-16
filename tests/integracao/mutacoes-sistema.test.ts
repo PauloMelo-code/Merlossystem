@@ -18,7 +18,7 @@ import { lojas_integracoes_eventos } from "@/lib/db/schema/integracoes";
 import { banco, criarConta, criarContatoDeCrm, criarLoja, fecharBanco } from "./conversas-apoio";
 
 /**
- * Helpers de sistema de `mutacoes-sistema.ts`, com efeito real: conflito do
+ * Helpers de sistema de `mutacoes/sistema.ts`, com efeito real: conflito do
  * índice parcial, uma linha de trilha por lote e o alcance da anonimização.
  */
 
