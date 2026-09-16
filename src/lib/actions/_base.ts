@@ -6,7 +6,7 @@ import { ErroDeValidacao, paraResultado, type Resultado } from "@/lib/erros";
 import { logger } from "@/lib/logger";
 import { emTransacao, type Transacao } from "@/lib/db/mutacoes";
 import { exigirPermissao, exigirSessao, exigirSessaoFresca, type Contexto, type Sessao } from "@/lib/auth/guard";
-import { contextoDe, resolverLojaPedida } from "@/lib/auth/loja";
+import { COOKIE_LOJA, contextoDe, resolverLojaPedida } from "@/lib/auth/loja";
 import type { ChavePermissao } from "@/lib/auth/permissoes";
 import { conferirOrigem } from "@/lib/seguranca/origem";
 import { chaveDeIp, ipDoCliente } from "@/lib/seguranca/ip";
@@ -27,7 +27,7 @@ import { ErroDoAplicativo } from "@/lib/erros";
  * dentro de `exigirSessao()` como única casa.
  */
 
-export const COOKIE_LOJA = "loja_ativa";
+export { COOKIE_LOJA };
 
 /** `"grava"` exige loja resolvida; `"le"` aceita `todas`; `"nenhuma"` ignora. */
 export type ModoDeLoja = "grava" | "le" | "nenhuma";

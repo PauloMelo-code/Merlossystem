@@ -80,7 +80,12 @@ describe("T13 uma implementacao so de escopo de loja", () => {
 
 describe("T13 o cookie de loja e preferencia, nunca autorizacao", () => {
   /** Quem LE o cookie tem de passar por `resolverLojaPedida` logo depois. */
-  const PODEM_LER_O_COOKIE = ["src/lib/actions/_base.ts", "src/app/(app)/layout.tsx"];
+  const PODEM_LER_O_COOKIE = [
+    "src/lib/actions/_base.ts",
+    "src/app/(app)/layout.tsx",
+    // `escopoDoCookie()`: a porta de página e de Route Handler.
+    "src/lib/auth/loja.ts",
+  ];
 
   it("nenhum outro arquivo le o cookie loja_ativa", () => {
     const achados = FONTES.filter((f) => !PODEM_LER_O_COOKIE.includes(f)).filter((f) =>

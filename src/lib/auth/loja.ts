@@ -1,4 +1,5 @@
 import "server-only";
+import { cookies } from "next/headers";
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { ErroDeEscopo, ErroFaltaLoja } from "@/lib/erros";
@@ -95,4 +96,24 @@ export async function resolverLojaPedida(
   if (!lojaPedida) return undefined;
   await conferirLojaViva(lojaPedida);
   return lojaPedida;
+}
+
+/** Cookie de PREFERÊNCIA de loja (§2.4). Nunca autorização. */
+export const COOKIE_LOJA = "loja_ativa";
+
+/**
+ * Porta única de leitura do cookie fora das actions: página de servidor e
+ * Route Handler (SSE) chamam isto, nunca `cookies().get(COOKIE_LOJA)` (T13).
+ * A loja pedida passa por `resolverLojaPedida`; cookie de loja que morreu cai
+ * no escopo padrão do papel em vez de derrubar a tela.
+ */
+export async function escopoDoCookie(s: Sessao): Promise<EscopoLoja> {
+  const pedida = (await cookies()).get(COOKIE_LOJA)?.value;
+  let resolvida: string | undefined;
+  try {
+    resolvida = await resolverLojaPedida(s, pedida);
+  } catch (erro) {
+    if (!(erro instanceof ErroDeEscopo)) throw erro;
+  }
+  return escopoDeLoja(s, resolvida);
 }
