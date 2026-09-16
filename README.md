@@ -40,7 +40,7 @@ npm run db:up        # Postgres 5437, Redis 6382, MinIO 9002 (console 9003)
 npm run db:migrate   # aplica as migrações com o papel merlo_migracao
 npm run db:verificar # confere auditoria, timestamptz(3), FK RESTRICT, únicos parciais
 npm run db:seed      # lojas, etiquetas e catálogo de exemplo — NUNCA cria credencial
-npm run primeiro-dono  # emite o convite do primeiro dono e imprime o link UMA vez
+npm run primeiro-dono -- dono@exemplo.com  # convite do primeiro dono; o link aparece UMA vez
 
 npm run dev          # app em http://localhost:3005
 npm run worker       # worker da fila, em outro terminal
@@ -56,6 +56,40 @@ npm run worker       # worker da fila, em outro terminal
 Variáveis de ambiente: copie `.env.example` para `.env` e preencha. O `.env` **nunca** é
 versionado nem editado por agente; a fonte da verdade das variáveis é `src/lib/env.ts`,
 que valida tudo com Zod e falha no boot se faltar algo.
+
+### E-mail: ainda sem provedor
+
+O provedor transacional **não foi escolhido** (pendência do Paulo, antes do primeiro
+convite real). Até lá, **nenhum e-mail de segurança sai** — convite, redefinição de senha
+e avisos de conta:
+
+| Situação | O que acontece |
+|---|---|
+| Dev/teste, `EMAIL_PROVEDOR` vazio | o worker registra um aviso **sem o link** e o job falha: retentativas, depois a DLQ `bull:emails:dlq`, com `email_seguranca_falhou` na trilha |
+| HML/PRD, `EMAIL_PROVEDOR` com qualquer valor | o `env.ts` exige as três chaves, o app sobe, e o transporte recusa o provedor desconhecido: mesma DLQ, mais o alerta |
+
+**O link do convite nunca vai para o log**, nem em dev: ele carrega o token, e token em log
+é proibido pela régua de segurança. Em dev, o link sai por dois caminhos só:
+
+- **primeiro dono**: `npm run primeiro-dono -- <e-mail>` imprime o link uma vez no terminal;
+- **demais convites**: a emissão (`emitirConvite`, em `src/lib/auth/convites.ts`) devolve
+  o link para quem emitiu.
+
+O convite vale **24 horas**. Convite que morreu na DLQ provavelmente já venceu: emita outro
+em vez de reenfileirar.
+
+**Quando o provedor for escolhido**, nesta ordem:
+
+1. **Domínio** do remetente com SPF, DKIM e DMARC (`p=quarantine` no mínimo).
+2. **Ambiente** de app e worker, por ambiente, nunca o mesmo valor em HML e PRD:
+   - `EMAIL_PROVEDOR` — o nome do provedor, igual ao `case` do passo 3;
+   - `EMAIL_REMETENTE` — `seguranca@<domínio>`, separado do remetente de campanhas;
+   - `EMAIL_API_KEY` — a chave do provedor.
+3. **Código**: escrever o `case` do provedor em `entregar()`
+   (`src/server/processadores/emails.ts`), conferindo o **retorno** — provedor que responde
+   `200 { success: false }` sem lançar é a armadilha registrada — e acrescentar o host da
+   API à allowlist de `src/lib/rede/buscarExterno.ts`. Nenhuma outra linha muda.
+4. **Conferir** com um convite real em HML antes de liberar PRD.
 
 ## Verificar
 
@@ -100,7 +134,7 @@ templates/     arquivos-ouro para copiar
 | [docs/modulos/](docs/modulos/) | um documento por domínio |
 | [docs/definition-of-done.md](docs/definition-of-done.md) | o checklist que fecha uma entrega |
 | [docs/git-commits.md](docs/git-commits.md) | Conventional Commits em PT-BR |
-| [docs/deploy.md](docs/deploy.md) | HML, PRD, backup obrigatório e rollback |
+| [docs/deploy.md](docs/deploy.md) | EasyPanel por webhook, secrets, backup obrigatório e rollback |
 
 ## Fluxo de trabalho
 
