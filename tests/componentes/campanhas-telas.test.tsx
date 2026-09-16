@@ -25,6 +25,7 @@ const acoes = vi.hoisted(() => ({
     criarModeloWhatsapp: vi.fn(),
     editarModeloWhatsapp: vi.fn(),
     excluirModeloWhatsapp: vi.fn(),
+    enviarModeloAprovacao: vi.fn(),
   },
   agendadas: { agendarMensagem: vi.fn(), reagendarMensagem: vi.fn(), cancelarMensagem: vi.fn() },
   push: vi.fn(),
@@ -200,17 +201,18 @@ describe("respostas rápidas e modelos", () => {
     expect(screen.getByRole("status").textContent).toContain("sem pular número");
   });
 
+  const base = {
+    categoria: "marketing",
+    cabecalho: null,
+    corpo: "Oi",
+    rodape: null,
+    variaveisContagem: 0,
+    motivoRejeicao: null,
+    atualizadoEm: "2026-09-16T10:00:00.000Z",
+    conta: "Oficial",
+  };
+
   it("modelo enviado à Meta não tem Editar; rejeitado mostra o motivo", () => {
-    const base = {
-      categoria: "marketing",
-      cabecalho: null,
-      corpo: "Oi",
-      rodape: null,
-      variaveisContagem: 0,
-      motivoRejeicao: null,
-      atualizadoEm: "2026-09-16T10:00:00.000Z",
-      conta: "Oficial",
-    };
     render(
       <ListaModelos
         modelos={[
@@ -221,11 +223,38 @@ describe("respostas rápidas e modelos", () => {
         podeCriar={false}
         podeEditar
         podeExcluir={false}
+        podeEnviar={false}
       />,
     );
     expect(screen.getAllByRole("button", { name: "Editar" })).toHaveLength(1);
     expect(screen.getByText("Conteúdo promocional no utility")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /aprovar/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /aprovar|aprovação/i })).toBeNull();
+  });
+
+  it("enviar para aprovação só aparece no rascunho/rejeitado e mostra a recusa", async () => {
+    acoes.conteudo.enviarModeloAprovacao.mockResolvedValue({
+      ok: false,
+      codigo: "INTEGRACAO",
+      mensagem: "A Meta recusou a conexão.",
+    });
+    render(
+      <ListaModelos
+        modelos={[
+          { ...base, id: "a", nome: "em_analise", status: "enviado" },
+          { ...base, id: "b", nome: "rascunho_novo", status: "rascunho" },
+        ]}
+        contas={[]}
+        podeCriar={false}
+        podeEditar={false}
+        podeExcluir={false}
+        podeEnviar
+      />,
+    );
+    const botoes = screen.getAllByRole("button", { name: "Enviar para aprovação" });
+    expect(botoes).toHaveLength(1);
+    fireEvent.click(botoes[0]!);
+    await waitFor(() => expect(screen.getByText("A Meta recusou a conexão.")).toBeTruthy());
+    expect(acoes.conteudo.enviarModeloAprovacao).toHaveBeenCalledWith({ id: "b" });
   });
 });
 

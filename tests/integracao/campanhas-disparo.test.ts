@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { Pool } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Contexto } from "@/lib/auth/guard";
+import type { ContextoDeGravacao } from "@/lib/db/mutacoes";
 
 /**
  * Disparo de campanha e mensagem agendada contra Postgres REAL (pacote M6).
@@ -44,33 +44,18 @@ vi.mock("@/lib/fila/filas", () => ({
 }));
 vi.mock("@/lib/tempo-real/publicar", () => ({ publicarNaLoja: vi.fn() }));
 
-const { emTransacao } = await import("@/lib/db/mutacoes");
+const { ATOR_SISTEMA, emTransacao } = await import("@/lib/db/mutacoes");
 const { pool: poolDoApp } = await import("@/lib/db/client");
 const disparo = await import("@/lib/campanhas/disparo");
 const { processarLoteDeCampanha } = await import("@/lib/campanhas/lote");
 const { criarAgendamento, reagendar } = await import("@/lib/agendamentos/gravacao");
 const { enviarAgendamento } = await import("@/lib/agendamentos/envio");
+const { conferirEnviavel } = await import("@/lib/conteudo/gravacao");
 const { ErroDeValidacao } = await import("@/lib/erros");
 
 const banco = new Pool({ connectionString: process.env.DATABASE_URL_TESTE, max: 3 });
 
 type Loja = { lojaId: string; usuarioId: string; uazapi: string; oficial: string; contatos: string[] };
-
-/**
- * BLOQUEIO registrado pelo M6: o CHECK `lojas_integracoes_templates_nome`
- * (migração 0011) usa `{1,512}`, e o Postgres recusa repetição acima de 255
- * ("invalid repetition count(s)") — NENHUM modelo é gravável até a fundação
- * corrigir o CHECK. Enquanto isso, os casos de modelo ficam PULADOS com o
- * motivo à vista; no dia da correção eles voltam a rodar sozinhos.
- */
-const regraDoNome = (
-  await banco.query<{ def: string }>(
-    `select pg_get_constraintdef(oid) def from pg_constraint where conname = 'lojas_integracoes_templates_nome'`,
-  )
-).rows[0]?.def;
-const modeloGravavel = await banco
-  .query(`select 'abc' ~ $1 ok`, [/'(\^[^']*)'/.exec(regraDoNome ?? "")?.[1] ?? "^$"])
-  .then(() => true, () => false);
 
 async function q<T extends Record<string, unknown>>(texto: string, valores: unknown[] = []) {
   return (await banco.query<T>(texto, valores)).rows;
@@ -89,10 +74,10 @@ async function novaLoja(n: number): Promise<Loja> {
     }
   }
   const usuarioId = randomUUID();
-  await q(`insert into usuarios (id, nome, email, papel, loja_id, ativo) values ($1, 'Pessoa', $2, 'vendedor', $3, true)`, [
+  // `campanhas:criar|disparar` é de gerente para cima; gerente não tem loja no cadastro.
+  await q(`insert into usuarios (id, nome, email, papel, loja_id, ativo) values ($1, 'Pessoa', $2, 'gerente', null, true)`, [
     usuarioId,
     `g-${usuarioId}@teste.invalido`,
-    lojaId,
   ]);
   const [uazapi] = await q<{ id: string }>(
     `insert into lojas_integracoes (loja_id, provedor, rotulo, status) values ($1, 'uazapi', 'Vendas', 'conectado') returning id`,
@@ -116,8 +101,15 @@ async function novaLoja(n: number): Promise<Loja> {
   return { lojaId, usuarioId, uazapi: uazapi!.id, oficial: oficial!.id, contatos: contatos.map((c) => c.id) };
 }
 
-function ctxDe(l: Loja): Contexto {
-  return { sessao: undefined as never, escopo: { tipo: "uma", lojaId: l.lojaId }, autorId: l.usuarioId, origem: "ui" };
+function ctxDe(l: Loja): ContextoDeGravacao {
+  return { escopo: { tipo: "uma", lojaId: l.lojaId }, autorId: l.usuarioId, origem: "ui" };
+}
+
+async function trilha(entidadeId: string) {
+  return q<{ acao: string; entidade: string; ator_tipo: string; ator_id: string | null; depois: unknown }>(
+    `select acao, entidade, ator_tipo, ator_id, depois from auditoria_eventos where entidade_id = $1 order by criado_em, id`,
+    [entidadeId],
+  );
 }
 
 async function atualizadoEm(tabela: string, id: string): Promise<Date> {
@@ -194,6 +186,23 @@ describe("disparo em lote", () => {
       [id],
     );
     expect(sem!.n).toBe("0");
+    // uma linha de trilha pelo lote, não uma por destinatário; a conclusão é do sistema
+    // (iniciar e o lote dividem a transação, logo o mesmo `criado_em`: a ordem entre eles não conta)
+    const linhas = await trilha(id);
+    expect(linhas.map((t) => t.acao).sort()).toEqual([
+      "campanha_concluida",
+      "campanha_criada",
+      "campanha_iniciada",
+      "campanha_iniciada",
+    ]);
+    expect(linhas.map((t) => t.depois)).toContainEqual({ destinatarios_pedidos: 500, destinatarios_inseridos: 500 });
+    expect(linhas.at(-1)).toMatchObject({ acao: "campanha_concluida", ator_tipo: "sistema", ator_id: ATOR_SISTEMA });
+    const [porDestinatario] = await q<{ n: string }>(
+      `select count(*) n from auditoria_eventos where entidade = 'campanhas_destinatarios'
+          and entidade_id in (select id::text from campanhas_destinatarios where campanha_id = $1)`,
+      [id],
+    );
+    expect(porDestinatario!.n).toBe("0");
   });
 
   it("iniciar duas vezes com o mesmo updated_at não materializa em dobro", async () => {
@@ -269,7 +278,7 @@ describe("disparo em lote", () => {
   });
 });
 
-describe.skipIf(!modeloGravavel)("modelo e variáveis (bloqueado: CHECK do nome do modelo)", () => {
+describe("modelo e variáveis", () => {
   async function modelo(l: Loja, corpo: string, contagem: number, status = "aprovado") {
     const [m] = await q<{ id: string }>(
       `insert into lojas_integracoes_templates (loja_id, integracao_id, nome, categoria, corpo, variaveis_contagem, status)
@@ -335,6 +344,20 @@ describe.skipIf(!modeloGravavel)("modelo e variáveis (bloqueado: CHECK do nome 
       ),
     ).rejects.toBeInstanceOf(ErroDeValidacao);
   });
+
+  it("nome de 300 caracteres grava (CHECK da 0018) e só rascunho/rejeitado vai para a Meta", async () => {
+    const l = await novaLoja(1);
+    const [longo] = await q<{ id: string }>(
+      `insert into lojas_integracoes_templates (loja_id, integracao_id, nome, categoria, corpo, variaveis_contagem)
+       values ($1, $2, $3, 'marketing', 'Oi', 0) returning id`,
+      [l.lojaId, l.oficial, "a".repeat(300)],
+    );
+    await emTransacao(ctxDe(l), (tx, ctx) => conferirEnviavel(tx, ctx, longo!.id));
+    const enviado = await modelo(l, "Oi", 0, "enviado");
+    await expect(emTransacao(ctxDe(l), (tx, ctx) => conferirEnviavel(tx, ctx, enviado))).rejects.toBeInstanceOf(
+      ErroDeValidacao,
+    );
+  });
 });
 
 describe("ritmo por conta", () => {
@@ -391,6 +414,11 @@ describe("mensagem agendada", () => {
     );
     expect(linha!.status).toBe("enviada");
     expect(linha!.mensagem_id).not.toBeNull();
+    expect((await trilha(promo.id)).map((t) => [t.acao, t.ator_tipo])).toEqual([
+      ["agendamento_criado", "usuario"],
+      ["agendamento_cancelado", "sistema"],
+    ]);
+    expect((await trilha(manual.id)).map((t) => t.acao)).toEqual(["agendamento_criado", "mensagem_enviada"]);
     // reprocessar não duplica
     expect(await enviarAgendamento({ lojaId: l.lojaId, agendamentoId: manual.id })).toBe("ignorada");
     expect(envios).toHaveLength(1);
@@ -405,5 +433,6 @@ describe("mensagem agendada", () => {
     const antigo = { lojaId: l.lojaId, agendamentoId: a.id, agendadaPara: a.agendadaPara.toISOString() };
     expect(await enviarAgendamento(antigo)).toBe("ignorada");
     expect(envios).toHaveLength(0);
+    expect((await trilha(a.id)).map((t) => t.acao)).toEqual(["agendamento_criado", "agendamento_reagendado"]);
   });
 });
