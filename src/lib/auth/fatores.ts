@@ -358,6 +358,26 @@ export async function removerPasskey(sessao: Sessao, passkeyId: string): Promise
   await avisar(sessao, "passkey-removida", "passkey_removida", { fator: "passkey" });
 }
 
+/**
+ * Recuperação assistida (§9.3, E7): a pessoa perdeu TODOS os fatores. Remove
+ * as linhas de TOTP e passkey pelo ADAPTADOR do Better Auth — o único delete
+ * físico de auth é o que a biblioteca faz por dentro (S-09, ADR 0029); as duas
+ * tabelas são `compliance:framework`, sem soft delete. Uma passkey esquecida
+ * aqui continuaria abrindo sessão para quem está com o aparelho perdido.
+ *
+ * Quem chama grava a trilha ANTES (fail-closed) e revoga as sessões. Roda FORA
+ * da transação do chamador: o adaptador usa a própria conexão.
+ */
+export async function removerTodosOsFatores(
+  usuarioId: string,
+): Promise<{ totp: number; passkeys: number }> {
+  const adaptador = (await auth.$context).adapter;
+  const onde = [{ field: "userId", value: usuarioId }];
+  const passkeys = await adaptador.deleteMany({ model: "passkey", where: onde });
+  const totp = await adaptador.deleteMany({ model: "twoFactor", where: onde });
+  return { totp, passkeys };
+}
+
 // ---------------------------------------------------------------------------
 
 type AssuntoDeFator =

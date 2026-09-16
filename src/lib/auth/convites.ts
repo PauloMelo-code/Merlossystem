@@ -3,14 +3,21 @@ import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { env } from "@/lib/env";
 import { ErroDoAplicativo } from "@/lib/erros";
-import { emTransacao, inserirAuditado, type Transacao } from "@/lib/db/mutacoes";
+import {
+  emTransacao,
+  excluirLogico,
+  inserirAuditado,
+  type ContextoDeGravacao,
+  type Transacao,
+} from "@/lib/db/mutacoes";
+import { usuarios_convites } from "@/lib/db/schema/auth/convites";
 import { usuarios } from "@/lib/db/schema/auth/usuarios";
 import { usuarios_contas } from "@/lib/db/schema/auth/contas";
 import type { Papel } from "@/lib/db/schema/_enums/auth";
 import type { Contexto } from "./guard";
 import { enfileirarEmailSeguranca } from "./emails";
 import { kdf } from "./kdf";
-import { gravarEventoAuth, registrarEventoAuth } from "./trilha";
+import { gravarEventoAuth } from "./trilha";
 import {
   CIENCIA_ADMIN_V1,
   VALIDADE_CONVITE_HORAS,
@@ -52,75 +59,117 @@ type LinhaConvite = {
   ciencia_versao: string | null;
 };
 
+type DadosDoConvite = {
+  email: string;
+  papel: Papel;
+  lojaId?: string | null;
+  cienciaVersao?: string | null;
+  motivo?: string | null;
+};
+
 /**
- * Emite o convite. `criado_por` é nulo SÓ no bootstrap — o CHECK
- * `usuarios_convites_bootstrap` é quem garante isso, não esta função.
+ * Emite o convite DENTRO da transação de quem chama (reenvio, convite que
+ * aposenta o anterior): o índice único parcial de e-mail aberto só aceita os
+ * dois passos na MESMA transação.
  *
- * Convite com papel `admin` grava a trilha FAIL-CLOSED antes de existir: a
- * ciência versionada não pode ficar sem prova (§17.2).
+ * Grava `convite_emitido` fail-closed na transação — convite sem prova de quem
+ * emitiu não existe (§17.2). NÃO enfileira o e-mail: quem chama enfileira
+ * DEPOIS do commit (`enviarConvite`), senão um rollback deixaria um link morto
+ * na caixa da pessoa.
+ *
+ * `criado_por` é nulo SÓ no bootstrap — o CHECK `usuarios_convites_bootstrap`
+ * é quem garante isso, não esta função.
  */
-export async function emitirConvite(
-  dados: {
-    email: string;
-    papel: Papel;
-    lojaId?: string | null;
-    cienciaVersao?: string | null;
-    motivo?: string | null;
-  },
-  ctx: Contexto,
-): Promise<ConviteEmitido> {
+export async function emitirConviteEm(
+  tx: Transacao,
+  dados: DadosDoConvite,
+  ctx: ContextoDeGravacao,
+): Promise<ConviteEmitido & { email: string }> {
   const email = dados.email.trim().toLowerCase();
   const { token, hash } = novoToken();
 
-  const emitido = await emTransacao(ctx, async (tx) => {
-    const linhas = await tx.execute<{ id: string; expira_em: Date }>(sql`
-      insert into usuarios_convites
-        (email, papel, loja_id, token_hash, expira_em, criado_por, ciencia_versao,
-         motivo, created_at, updated_at, modified_by)
-      values (
-        ${email}, ${dados.papel}, ${dados.lojaId ?? null}, ${hash},
-        now() + make_interval(hours => ${VALIDADE_CONVITE_HORAS}),
-        ${ctx.autorId}::uuid, ${dados.cienciaVersao ?? null}, ${dados.motivo ?? null},
-        now(), now(), ${ctx.autorId}::uuid
-      )
-      returning id, expira_em
-    `);
-    const linha = linhas.rows[0];
-    if (!linha) throw new ErroDeConvite();
+  const linhas = await tx.execute<{ id: string; expira_em: Date }>(sql`
+    insert into usuarios_convites
+      (email, papel, loja_id, token_hash, expira_em, criado_por, ciencia_versao,
+       motivo, created_at, updated_at, modified_by)
+    values (
+      ${email}, ${dados.papel}, ${dados.lojaId ?? null}, ${hash},
+      now() + make_interval(hours => ${VALIDADE_CONVITE_HORAS}),
+      ${ctx.autorId}::uuid, ${dados.cienciaVersao ?? null}, ${dados.motivo ?? null},
+      now(), now(), ${ctx.autorId}::uuid
+    )
+    returning id, expira_em
+  `);
+  const linha = linhas.rows[0];
+  if (!linha) throw new ErroDeConvite();
 
-    if (dados.papel === "admin") {
-      await gravarEventoAuth(
-        {
-          tipo: "convite_emitido",
-          atorId: ctx.autorId,
-          email,
-          meio: "convite",
-          motivo: dados.motivo ?? null,
-          detalhes: { papel: dados.papel },
-        },
-        tx,
-      );
-    }
-    return linha;
-  });
-
-  if (dados.papel !== "admin") {
-    void registrarEventoAuth({
+  await gravarEventoAuth(
+    {
       tipo: "convite_emitido",
       atorId: ctx.autorId,
       email,
       meio: "convite",
-      detalhes: { papel: dados.papel },
-    });
-  }
-  enfileirarEmailSeguranca("convite", ctx.autorId, linkDoConvite(token), { paraEmail: email });
+      motivo: dados.motivo ?? null,
+      detalhes: {
+        papel: dados.papel,
+        ...(dados.cienciaVersao ? { ciencia_versao: dados.cienciaVersao } : {}),
+      },
+    },
+    tx,
+  );
 
   return {
-    id: emitido.id,
+    id: linha.id,
+    email,
     token,
     link: linkDoConvite(token),
-    expiraEm: new Date(emitido.expira_em),
+    expiraEm: new Date(linha.expira_em),
   };
+}
+
+/** O e-mail do convite, SÓ depois do commit. O token nunca vai para o log. */
+export function enviarConvite(convite: { link: string; email: string }, autorId: string): void {
+  enfileirarEmailSeguranca("convite", autorId, convite.link, { paraEmail: convite.email });
+}
+
+/** Emissão avulsa: abre a própria transação e envia depois do commit. */
+export async function emitirConvite(dados: DadosDoConvite, ctx: Contexto): Promise<ConviteEmitido> {
+  const emitido = await emTransacao(ctx, (tx) => emitirConviteEm(tx, dados, ctx));
+  enviarConvite(emitido, ctx.autorId);
+  return { id: emitido.id, token: emitido.token, link: emitido.link, expiraEm: emitido.expiraEm };
+}
+
+/**
+ * Fecha (exclusão LÓGICA) o convite aberto que já venceu, com a trilha
+ * `convite_expirado`. Vencido já não é aceito (`consumirToken`), mas continua
+ * segurando `uq_usuarios_convites_email_aberto` e impede um convite novo para a
+ * mesma pessoa. Com `email`, fecha só o daquele endereço (quem vai reemitir);
+ * sem, varre a rede (job `expirar-convites`, com `contextoDeSistema`).
+ *
+ * `SKIP LOCKED`: duas execuções do job não brigam pela mesma linha.
+ */
+export async function fecharConviteVencido(
+  tx: Transacao,
+  ctx: ContextoDeGravacao,
+  filtro: { email?: string } = {},
+): Promise<number> {
+  const email = filtro.email?.trim().toLowerCase();
+  const vencidos = await tx.execute<{ id: string; updated_at: Date | string }>(sql`
+    select id, updated_at from usuarios_convites
+    where usado_em is null and is_deleted = false and expira_em <= now()
+      ${email === undefined ? sql`` : sql`and lower(email) = ${email}`}
+    for update skip locked
+  `);
+  for (const convite of vencidos.rows) {
+    await excluirLogico(
+      tx,
+      usuarios_convites,
+      { id: convite.id, escopo: { tipo: "todas" }, updatedAtOriginal: new Date(convite.updated_at) },
+      ctx,
+      "convite_expirado",
+    );
+  }
+  return vencidos.rows.length;
 }
 
 /**

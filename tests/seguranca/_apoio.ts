@@ -4,7 +4,7 @@ import { GET, POST } from "@/app/api/auth/[...all]/route";
 import { kdf } from "@/lib/auth/kdf";
 import { hashToken, novoToken } from "@/lib/auth/tokens";
 import { redisDoLimitador } from "@/lib/seguranca/limite";
-import type { Papel } from "@/lib/db/schema/_enums/auth";
+import { ATOR_SISTEMA, type Papel } from "@/lib/db/schema/_enums/auth";
 
 /**
  * Apoio dos testes de EFEITO de segurança (02-seguranca.md §4.4, §20).
@@ -32,7 +32,14 @@ function urlDoBanco(): string {
 /** Conexão de DONO: só os testes usam, e só para preparar e limpar. */
 export const poolDeTeste = new Pool({ connectionString: urlDoBanco(), max: 4 });
 
-/** Tabelas que todo teste de auth suja. `TRUNCATE`, nunca `delete` (T25). */
+/**
+ * Tabelas que todo teste de auth suja. `TRUNCATE`, nunca `delete` (T25).
+ *
+ * SEM `usuarios` e SEM `CASCADE`: todas as tabelas de domínio apontam para
+ * `usuarios` (`modified_by`), e o `TRUNCATE usuarios CASCADE` apagava
+ * `contatos` das outras suítes, deixava `consentimentos` órfão e levava junto o
+ * ATOR_SISTEMA semeado pela migração 0018. Nenhuma tabela aponta para estas.
+ */
 const TABELAS = [
   "auth_eventos",
   "auditoria_eventos",
@@ -44,11 +51,25 @@ const TABELAS = [
   "usuarios_convites",
   "usuarios_trocas_email",
   "usuarios_contas",
-  "usuarios",
 ].join(", ");
 
+/**
+ * `usuarios` não é truncável sem cascata: a pessoa de teste de um arquivo
+ * anterior é APOSENTADA — e-mail único em domínio reservado, inativa, sem loja
+ * e sem papel de posse — e deixa de colidir com o e-mail, a contagem de donos e
+ * a lista de ativos do arquivo seguinte. A linha fica (as FKs a exigem).
+ */
+const APOSENTAR_USUARIOS = `
+  update usuarios set
+    email = 'aposentado-' || id || '@teste.invalid',
+    papel = 'gerente', loja_id = null, ativo = false,
+    two_factor_enabled = false, precisa_trocar_senha = false,
+    precisa_configurar_fator = false
+  where id <> '${ATOR_SISTEMA}' and email not like 'aposentado-%'`;
+
 export async function limparAuth(): Promise<void> {
-  await poolDeTeste.query(`truncate table ${TABELAS} restart identity cascade`);
+  await poolDeTeste.query(`truncate table ${TABELAS} restart identity`);
+  await poolDeTeste.query(APOSENTAR_USUARIOS);
   // Sem o flush, o teto do arquivo anterior vazaria para este e o teste
   // falharia por 429 que não é do caso em prova.
   await redisDoLimitador().flushdb().catch(() => undefined);
