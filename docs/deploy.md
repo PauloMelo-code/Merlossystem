@@ -134,7 +134,7 @@ Um projeto por ambiente (`merlostore-hml`, `merlostore-prd`), cada um com:
 
 | Servico | Origem | Observacao |
 |---|---|---|
-| `app` | GitHub, `Dockerfile`, **alvo `app`** | porta 3005; `HEALTHCHECK` em `/api/saude` ja esta na imagem |
+| `app` | GitHub, `Dockerfile`, alvo `app` (o padrao) | porta 3005; `HEALTHCHECK` em `/api/saude` ja esta na imagem |
 | `worker` | GitHub, `Dockerfile`, **alvo `worker`** | sem porta publica; mesmo ambiente do app, menos `PORT` |
 | `postgres` | servico gerenciado, Postgres 16 | papeis `merlo_app` e `merlo_migracao` (runbook) |
 | `redis` | servico gerenciado, Redis 7 | com persistencia ligada (a fila nao pode viver so em memoria) |
@@ -147,9 +147,11 @@ Regras que o painel nao impoe sozinho:
    pipeline inteiro vira enfeite. Quem publica e o webhook, chamado pelo CI.
 2. **Branch do servico** = a do ambiente: `develop` em HML, `master` em PRD.
 3. **Alvo do build conferido**. O `Dockerfile` tem dois alvos, e o ULTIMO e o
-   `worker`: build sem alvo explicito entrega o worker no lugar do app. Se o
-   painel nao oferecer o campo de alvo, o deploy NAO sobe — registrar como
-   pendencia antes de seguir (ver secao 10).
+   `app`: build sem alvo explicito entrega o app. O servico `worker` PRECISA do
+   alvo `worker` explicito; sem ele, o painel sobe um segundo app no lugar do
+   worker e a fila fica sem consumidor. Se o painel nao oferecer o campo de
+   alvo, o worker NAO sobe — registrar como pendencia antes de seguir (ver
+   secao 10).
 4. **Ambiente de cada servico** preenchido a partir de `.env.example`, com os
    segredos gerados para aquele ambiente (nunca os de outro).
 5. **Webhook de deploy** de `app` e de `worker` copiado para os secrets da
@@ -163,9 +165,10 @@ Regras que o painel nao impoe sozinho:
 
 Uma imagem, dois alvos (`Dockerfile`):
 
-- **`app`** — Next em modo standalone, porta 3005, `HEALTHCHECK` em
-  `/api/saude`.
-- **`worker`** — `dist/worker.mjs`, empacotado com esbuild no mesmo build.
+- **`app`** — o ultimo estagio, portanto o padrao. Next em modo standalone,
+  porta 3005, `HEALTHCHECK` em `/api/saude`.
+- **`worker`** — so com `--target worker`. `dist/worker.mjs`, empacotado com
+  esbuild no mesmo build.
   Roda com `node --conditions=react-server`, porque o bundle mantem
   `import "server-only"` como externo e esse pacote lanca no import fora do
   runtime do Next.
@@ -241,7 +244,7 @@ Portas em desenvolvimento: Postgres 5437, Redis 6382, MinIO 9002 com console
 
 | Pendencia | Dono | Sem ela |
 |---|---|---|
-| Conferir se o EasyPanel aceita o **alvo** do `Dockerfile` por servico | Paulo | o servico `app` sobe com a imagem do worker |
+| Conferir se o EasyPanel aceita o **alvo** do `Dockerfile` por servico | Paulo | o servico `worker` sobe com a imagem do app e a fila fica sem consumidor |
 | Medir `EASYPANEL_ESPERA_S` no primeiro deploy de HML | Paulo | a fumaca testa a versao anterior |
 | Escolher o provedor de e-mail e o dominio com SPF/DKIM/DMARC | Paulo | nenhum convite chega por e-mail (secao 7) |
 | Medir se o Traefik do EasyPanel apenda ou sobrescreve o `x-forwarded-for` | Paulo + infra | o IP canonico de `src/lib/seguranca/ip.ts` cai para o socket, com alerta |
