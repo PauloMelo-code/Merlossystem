@@ -29,7 +29,7 @@ export {
   type FiltrosDaLista,
   type OpcoesDeFiltro,
 } from "./leitura";
-export { agendarEnvio, registrarEnvio, type DadosDoEnvio } from "./saida";
+export { agendarEnvio, agendarReenvio, registrarEnvio, type DadosDoEnvio } from "./saida";
 export type * from "./dto";
 export { motivoParaFecharFluxo } from "./sessao-do-fluxo";
 

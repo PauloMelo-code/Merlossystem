@@ -6,6 +6,7 @@ import { logger } from "@/lib/logger";
 import {
   abrirAtendimento,
   agendarEnvio,
+  agendarReenvio,
   arquivarConversa as arquivarNoDominio,
   avisarConversa,
   enviarPelaTela,
@@ -57,7 +58,7 @@ type Enviado = { mensagemId: string; conversaId: string };
 /** Depois do commit: fila + tempo real. Fila fora = a mensagem vira `falhou` com motivo. */
 async function depoisDoEnvio(r: RespostaDoEnvio, tipo: "mensagem-nova" | "mensagem-atualizada"): Promise<void> {
   if (r.envio) {
-    const id = await agendarEnvio(r.envio);
+    const id = r.reenvio ? await agendarReenvio(r.envio, Date.now()) : await agendarEnvio(r.envio);
     if (id === null) {
       logger.error({ mensagemId: r.mensagemId }, "envio não entrou na fila");
       await marcarFalhaDeEnvio(r.lojaId, r.mensagemId, "A fila de envio está fora do ar. Tente de novo.").catch(

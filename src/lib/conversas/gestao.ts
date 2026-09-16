@@ -134,6 +134,8 @@ export type RespostaDoEnvio = {
   lojaId: string;
   /** Presente quando há algo para a fila levar ao provedor. */
   envio: DadosDoEnvio | null;
+  /** `true` no reenvio: vai para o job `reenviar`, com id próprio. */
+  reenvio?: boolean;
 };
 
 /**
@@ -271,5 +273,6 @@ export async function reenviarMensagem(
     conversaId: mensagem.conversaId,
     lojaId: mensagem.lojaId,
     envio: { lojaId: mensagem.lojaId, mensagemId: mensagem.id, integracaoId: mensagem.integracaoId },
+    reenvio: true,
   };
 }

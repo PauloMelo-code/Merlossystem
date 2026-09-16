@@ -63,10 +63,9 @@ export async function paginaDeConversas(
   filtros: FiltrosDaLista,
   cursor: string | null,
 ): Promise<PaginaDeConversas> {
-  const [linhas, semResposta] = await Promise.all([
-    listarConversas(leitor, escopo, usuarioId, filtros, decodificarCursor(cursor), PAGINA_CONVERSAS),
-    contarSemResposta(leitor, escopo),
-  ]);
+  // Em sequência: na transação da action a conexão é uma só.
+  const linhas = await listarConversas(leitor, escopo, usuarioId, filtros, decodificarCursor(cursor), PAGINA_CONVERSAS);
+  const semResposta = await contarSemResposta(leitor, escopo);
   const temMais = linhas.length > PAGINA_CONVERSAS;
   const pagina = linhas.slice(0, PAGINA_CONVERSAS);
   const ultima = pagina.at(-1);
@@ -162,7 +161,7 @@ export async function paginaDeMensagens(
       autorTipo: "sistema",
       autorNome: e.atorNome,
       doAparelho: false,
-      conteudo: textoDoEvento(e.acao, e.atorNome, e.depois as Record<string, unknown> | null, nomes),
+      conteudo: textoDoEvento(e.acao, e.atorNome, e.depois as Record<string, unknown> | null, nomes, e.atorId),
       tipo: "sistema",
       status: null,
       falhaMotivo: null,
@@ -187,12 +186,14 @@ export function textoDoEvento(
   ator: string | null,
   depois: Record<string, unknown> | null,
   nomes: Map<string, string>,
+  atorId: string | null = null,
 ): string {
   const quem = ator ?? "O sistema";
   switch (acao) {
     case "conversa_transferida": {
       const alvo = depois?.responsavel_id;
       if (typeof alvo !== "string") return `${quem} deixou a conversa sem responsável`;
+      if (alvo === atorId) return `${quem} assumiu a conversa`;
       return `${quem} transferiu para ${nomes.get(alvo) ?? "outra pessoa"}`;
     }
     case "conversa_resolvida":
@@ -211,13 +212,12 @@ export async function abrirAtendimento(leitor: Leitor, ctx: Contexto, conversaId
   if (!c) throw new ErroDeEscopo();
   const papel = ctx.sessao.papel;
 
-  const [mensagens, painel, colegas, modelos, respostas] = await Promise.all([
-    paginaDeMensagens(leitor, ctx.escopo, c.id, null),
-    lerContatoDoPainel(leitor, ctx.escopo, c.contatoId, c.id),
-    listarColegas(leitor, c.lojaId),
-    c.provedor === "whatsapp_oficial" ? listarModelosAprovados(leitor, c.lojaId, c.integracaoId) : Promise.resolve([]),
-    listarRespostasRapidas(leitor, c.lojaId),
-  ]);
+  const mensagens = await paginaDeMensagens(leitor, ctx.escopo, c.id, null);
+  const painel = await lerContatoDoPainel(leitor, ctx.escopo, c.contatoId, c.id);
+  const colegas = await listarColegas(leitor, c.lojaId);
+  const modelos =
+    c.provedor === "whatsapp_oficial" ? await listarModelosAprovados(leitor, c.lojaId, c.integracaoId) : [];
+  const respostas = await listarRespostasRapidas(leitor, c.lojaId);
   if (!painel) throw new ErroDeEscopo();
 
   const podeEscrever = pode(papel, "conversas", "escrever");

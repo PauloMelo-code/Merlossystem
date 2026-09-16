@@ -64,7 +64,12 @@ export function Chat({
   const [painel, setPainel] = useState(true);
   const [transferindo, setTransferindo] = useState(false);
   const [anuncio, setAnuncio] = useState("");
-  const [naoLidasAoAbrir] = useState(inicial.conversa.naoLidas);
+  // O divisor "Novas mensagens" fica preso à primeira não lida DA ABERTURA.
+  const [primeiraNova] = useState(() =>
+    inicial.conversa.naoLidas > 0
+      ? (inicial.mensagens.itens.filter((m) => m.direcao === "entrada").slice(-inicial.conversa.naoLidas)[0]?.id ?? null)
+      : null,
+  );
   const podeEscrever = conversa.bloqueio?.caso !== "somente_leitura";
 
   useEffect(() => {
@@ -233,7 +238,7 @@ export function Chat({
         </p>
         <LinhaDoTempo
           mensagens={mensagens}
-          naoLidasAoAbrir={naoLidasAoAbrir}
+          primeiraNova={primeiraNova}
           temAnteriores={Boolean(anterior)}
           carregandoAnteriores={carregandoAnteriores}
           aoCarregarAnteriores={() => void carregarAnteriores()}

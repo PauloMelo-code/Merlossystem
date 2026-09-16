@@ -29,7 +29,7 @@ function mesmoAutor(a: MensagemNaTela | undefined, b: MensagemNaTela): boolean {
 
 export function LinhaDoTempo({
   mensagens,
-  naoLidasAoAbrir,
+  primeiraNova,
   temAnteriores,
   carregandoAnteriores,
   aoCarregarAnteriores,
@@ -37,7 +37,7 @@ export function LinhaDoTempo({
   aoReenviar,
 }: {
   mensagens: MensagemNaTela[];
-  naoLidasAoAbrir: number;
+  primeiraNova: string | null;
   temAnteriores: boolean;
   carregandoAnteriores: boolean;
   aoCarregarAnteriores: () => void;
@@ -74,8 +74,6 @@ export function LinhaDoTempo({
     return () => el.removeEventListener("scroll", aoRolar);
   }, []);
 
-  const indiceNovas = naoLidasAoAbrir > 0 ? Math.max(0, mensagens.length - naoLidasAoAbrir) : -1;
-
   return (
     <div className="relative min-h-0 flex-1">
       <div ref={caixa} className="h-full overflow-y-auto bg-chat-fundo px-3 py-2 [overflow-anchor:auto] md:px-6">
@@ -101,7 +99,7 @@ export function LinhaDoTempo({
             const novoDia = !anterior || diaDe(anterior.ocorridaEm) !== diaDe(m.ocorridaEm);
             const colado = !novoDia && mesmoAutor(anterior, m);
             return (
-              <FragmentoDoDia key={m.id} dia={novoDia ? diaDe(m.ocorridaEm) : null} novas={i === indiceNovas}>
+              <FragmentoDoDia key={m.id} dia={novoDia ? diaDe(m.ocorridaEm) : null} novas={m.id === primeiraNova}>
                 {m.tipo === "sistema" ? (
                   <EventoSistema texto={m.conteudo ?? ""} quando={m.ocorridaEm} />
                 ) : (

@@ -48,6 +48,18 @@ export async function agendarEnvio(dados: DadosDoEnvio, atrasoMs = 0): Promise<s
   });
 }
 
+/**
+ * Reenvio: job `reenviar` com id PRÓPRIO por tentativa. Com o id do envio
+ * original, o BullMQ reconhece o job já concluído e descarta o novo — a
+ * mensagem ficaria em `pendente` para sempre. Quem impede reenvio duplo é o
+ * claim atômico (`reivindicarReenvio`), não o id do job.
+ */
+export async function agendarReenvio(dados: DadosDoEnvio, tentativa: number): Promise<string | null> {
+  return enfileirar("mensagens-saida", "reenviar", dados, {
+    jobId: jobId("reenvio", dados.mensagemId, String(tentativa)),
+  });
+}
+
 /** `{{1}}`, `{{2}}`… pelo valor da posição. Variável que falta fica visível. */
 export function resolverCorpoDoModelo(corpo: string, variaveis: readonly string[]): string {
   return corpo.replace(/\{\{(\d+)\}\}/g, (marca, n: string) => variaveis[Number(n) - 1] ?? marca);

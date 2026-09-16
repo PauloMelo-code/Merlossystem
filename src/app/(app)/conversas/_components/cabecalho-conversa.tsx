@@ -61,7 +61,7 @@ export function CabecalhoConversa({
       <AvatarContato nome={c.contatoNome} url={c.contatoAvatar} canal={c.provedor} tamanho="pequeno" />
       <div className="flex min-w-0 flex-1 flex-col">
         <h2 className="truncate text-corpo font-semibold">{c.contatoNome}</h2>
-        <p className="flex min-w-0 items-center gap-1.5 text-legenda text-muted-foreground">
+        <p className="flex min-w-0 items-center gap-1.5 overflow-hidden text-legenda whitespace-nowrap text-muted-foreground">
           <IconeCanal canal={c.provedor} tamanho="pequeno" />
           <span className="truncate">
             {rotuloDoCanal(c.provedor)} · {c.contaRotulo}
@@ -69,8 +69,10 @@ export function CabecalhoConversa({
           {c.provedor === "uazapi" ? (
             <span className="rounded border border-aviso-borda bg-aviso-fundo px-1 text-aviso">não oficial</span>
           ) : null}
-          <SeloStatus dominio="status_conversa" valor={c.status} />
-          <span className="hidden items-center gap-1 truncate sm:inline-flex">
+          <span className="hidden shrink-0 xl:inline-flex">
+            <SeloStatus dominio="status_conversa" valor={c.status} />
+          </span>
+          <span className="hidden items-center gap-1 truncate xl:inline-flex">
             <UserRound aria-hidden="true" className="size-3" />
             {c.responsavelNome ?? "Sem responsável"}
           </span>
@@ -79,7 +81,7 @@ export function CabecalhoConversa({
 
       {c.podeGerir ? (
         <>
-          <Button type="button" variant="outline" size="sm" onClick={aoTransferir} className="hidden sm:inline-flex">
+          <Button type="button" variant="outline" size="sm" onClick={aoTransferir} className="hidden xl:inline-flex">
             Transferir
           </Button>
           {encerrada ? (
@@ -100,7 +102,7 @@ export function CabecalhoConversa({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuItem className="sm:hidden" onSelect={aoTransferir}>
+              <DropdownMenuItem className="xl:hidden" onSelect={aoTransferir}>
                 Transferir
               </DropdownMenuItem>
               <DropdownMenuLabel>Prioridade</DropdownMenuLabel>

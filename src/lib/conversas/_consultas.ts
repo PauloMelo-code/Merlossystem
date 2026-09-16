@@ -244,14 +244,15 @@ export async function lerContatoDoPainel(leitor: Leitor, escopo: EscopoLoja, con
     .limit(1);
   if (!contato) return null;
 
-  const [etiquetas, outras] = await Promise.all([
-    leitor
+  // Em sequência: dentro da transação o cliente é UM só, e o pg não aceita
+  // consultas simultâneas na mesma conexão.
+  const etiquetas = await leitor
       .select({ id: lojas_etiquetas.id, nome: lojas_etiquetas.nome, cor: lojas_etiquetas.cor })
       .from(contatos_etiquetas)
       .innerJoin(lojas_etiquetas, eq(lojas_etiquetas.id, contatos_etiquetas.etiqueta_id))
       .where(vivosE(contatos_etiquetas, eq(contatos_etiquetas.contato_id, contatoId), vivos(lojas_etiquetas)))
-      .orderBy(asc(lojas_etiquetas.nome)),
-    leitor
+      .orderBy(asc(lojas_etiquetas.nome));
+  const outras = await leitor
       .select({
         id: conversas.id,
         contaRotulo: lojas_integracoes.rotulo,
@@ -269,8 +270,7 @@ export async function lerContatoDoPainel(leitor: Leitor, escopo: EscopoLoja, con
         ),
       )
       .orderBy(desc(conversas.created_at))
-      .limit(10),
-  ]);
+      .limit(10);
   return { ...contato, etiquetas, outras };
 }
 
@@ -339,6 +339,7 @@ export async function listarEventosDaConversa(leitor: Leitor, conversaId: string
       acao: auditoria_eventos.acao,
       criadoEm: auditoria_eventos.criado_em,
       depois: auditoria_eventos.depois,
+      atorId: auditoria_eventos.ator_id,
       atorNome: usuarios.nome,
     })
     .from(auditoria_eventos)
@@ -389,8 +390,7 @@ export async function listarRespostasRapidas(leitor: Leitor, lojaId: string) {
 
 /** Opções dos filtros da lista: contas de canal e etiquetas no escopo. */
 export async function listarOpcoesDeFiltro(leitor: Leitor, escopo: EscopoLoja) {
-  const [contas, etiquetas] = await Promise.all([
-    leitor
+  const contas = await leitor
       .select({ id: lojas_integracoes.id, rotulo: lojas_integracoes.rotulo, provedor: lojas_integracoes.provedor })
       .from(lojas_integracoes)
       .where(
@@ -400,12 +400,11 @@ export async function listarOpcoesDeFiltro(leitor: Leitor, escopo: EscopoLoja) {
           escopo.tipo === "uma" ? eq(lojas_integracoes.loja_id, escopo.lojaId) : escopo.tipo === "nenhuma" ? sql`false` : undefined,
         ),
       )
-      .orderBy(asc(lojas_integracoes.rotulo)),
-    leitor
+      .orderBy(asc(lojas_integracoes.rotulo));
+  const etiquetas = await leitor
       .select({ id: lojas_etiquetas.id, nome: lojas_etiquetas.nome })
       .from(lojas_etiquetas)
       .where(vivosE(lojas_etiquetas, condicaoDeLoja(lojas_etiquetas, escopo)))
-      .orderBy(asc(lojas_etiquetas.nome)),
-  ]);
+      .orderBy(asc(lojas_etiquetas.nome));
   return { contas, etiquetas };
 }
