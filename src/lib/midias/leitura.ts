@@ -1,5 +1,7 @@
 import "server-only";
-import { naoImplementado } from "@/lib/erros";
+import { lerBytes } from "@/lib/armazenamento/midia";
+import { ErroDeEscopo } from "@/lib/erros";
+import { midiaParaLeitura } from "./_consultas";
 
 /**
  * COSTURA — dono: M3, consumida por M1 (envio de mídia de saída). Assinatura
@@ -20,7 +22,16 @@ export type BinarioDaMidia = {
 };
 
 export async function lerBinarioDaMidia(lojaId: string, midiaId: string): Promise<BinarioDaMidia> {
-  void lojaId;
-  void midiaId;
-  throw naoImplementado("leitura do binário de mídia da loja (M3)");
+  // Só linha viva: a exceção de RN-M06 é da rota de leitura, não do envio.
+  const midia = await midiaParaLeitura(midiaId, { tipo: "uma", lojaId });
+  if (!midia) throw new ErroDeEscopo("Mídia não encontrada.");
+  const bytes = await lerBytes(midia.chaveObjeto);
+  if (!bytes) throw new ErroDeEscopo("Mídia sem arquivo.");
+  return {
+    midiaId: midia.id,
+    bytes,
+    mime: midia.mimeType,
+    nomeOriginal: midia.nomeOriginal,
+    tamanhoBytes: bytes.byteLength,
+  };
 }
