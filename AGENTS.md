@@ -10,6 +10,9 @@ Atendimento multicanal (WhatsApp oficial, uazapi, Instagram) + CRM + catálogo +
 da **Merlo Store**, **multi-loja** (Centro e Cerro Azul). Em **reconstrução completa** na
 branch `refactor/reconstrucao-estrutura-base`.
 
+> **Continuando a reconstrução?** Leia agora `docs/reconstrucao/HANDOFF-CODEX.md`: onde
+> parou, onde está a especificação (`docs/reconstrucao/`) e o que falta, na ordem.
+
 O sistema antigo vive no commit `5e902d4` e é referência de **domínio** — nunca de
 implementação. Não replique nada dele: Prisma, NextAuth, as ~69 rotas de API, delete
 físico e ausência de escopo de loja foram exatamente o que se veio reconstruir. Banco
