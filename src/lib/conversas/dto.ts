@@ -112,6 +112,8 @@ export type ConversaDto = {
   aviso: string | null;
   podeGerir: boolean;
   limiteTexto: number;
+  /** O número sobe anexo E a pessoa pode enviar mídia (`midia:enviar`). */
+  aceitaAnexo: boolean;
 };
 
 export type AtendimentoAberto = {

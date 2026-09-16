@@ -27,8 +27,9 @@ import type {
  * própria página ecoando o que mandou e vira DESCARTE registrado (nunca
  * contato). Vários anexos no mesmo `mid` são UMA mensagem com N mídias.
  *
- * Sem `enviarModelo` (modelo aprovado é do WhatsApp) e sem `enviarMidia` no R1
- * (mesmo motivo do WhatsApp oficial: upload multipart fora da porta HTTP).
+ * Sem `enviarModelo` (modelo aprovado é do WhatsApp) e sem `enviarMidia` no R1:
+ * o Direct pede o anexo por URL pública, e a mídia da loja é privada
+ * (03-arquitetura.md §13.3). A tela não oferece anexo nesta conta.
  */
 
 const ANEXOS: Record<string, TipoNormalizado> = {

@@ -122,6 +122,23 @@ export function colunaDoCanal(provedor: string): "whatsapp_id" | "instagram_id" 
   return null;
 }
 
+/** Tipos de mensagem que carregam anexo (o `tipo` de `MidiaParaEnvio`). */
+const TIPOS_DE_MIDIA = ["imagem", "video", "audio", "documento", "sticker"] as const;
+export type TipoDeMidia = (typeof TIPOS_DE_MIDIA)[number];
+
+export function ehTipoDeMidia(tipo: string): tipo is TipoDeMidia {
+  return (TIPOS_DE_MIDIA as readonly string[]).includes(tipo);
+}
+
+/**
+ * Conta que sobe anexo — espelho da capacidade `enviarMidia` dos adaptadores,
+ * para a tela decidir sem abrir credencial. O envio confere o adaptador de novo.
+ * ponytail: Instagram fica sem anexo até a Graph aceitar upload por binário lá.
+ */
+export function aceitaAnexo(provedor: string): boolean {
+  return provedor === "whatsapp_oficial" || provedor === "uazapi";
+}
+
 /** Texto do anúncio `aria-live`: só nome e 80 caracteres (04-ui.md §5.2). */
 export function anuncioDeMensagem(nome: string, conteudo: string | null): string {
   const corpo = (conteudo ?? "").replace(/\s+/g, " ").trim().slice(0, 80);

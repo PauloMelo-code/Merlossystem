@@ -4,7 +4,6 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
-  abrirConversa,
   arquivarConversa,
   carregarMensagensAnteriores,
   enviarMensagem,
@@ -12,6 +11,7 @@ import {
   mudarPrioridadeDaConversa,
   reabrirConversa,
   reenviarMensagemFalha,
+  relerConversa,
   resolverConversa,
   transferirConversa,
 } from "@/lib/actions/conversas";
@@ -81,8 +81,9 @@ export function Chat({
     return r.mensagem;
   }
 
+  // Releitura sem renovar a inatividade: roda sozinha a cada evento e no polling.
   async function recarregar() {
-    const r = await abrirConversa({ conversaId: conversa.id });
+    const r = await relerConversa({ conversaId: conversa.id });
     if (!r.ok) return;
     const antes = new Set(mensagens.map((m) => m.id));
     const chegou = r.dados.mensagens.itens.filter((m) => !antes.has(m.id) && m.direcao === "entrada");
@@ -118,8 +119,9 @@ export function Chat({
   }
 
   async function enviar(p: PedidoDeEnvio, chave = crypto.randomUUID()): Promise<string | null> {
-    const comModelo = Boolean(p.modeloId);
-    if (!comModelo) {
+    // Modelo e anexo não têm bolha otimista: a falha volta ao próprio composer.
+    const semOtimista = Boolean(p.modeloId || p.midiaId);
+    if (!semOtimista) {
       const otimista: MensagemNaTela = {
         id: chave,
         direcao: "saida",
@@ -144,11 +146,12 @@ export function Chat({
       chaveIdempotencia: chave,
       notaInterna: p.nota,
       modeloId: p.modeloId,
+      midiaId: p.midiaId,
       variaveis: p.variaveis ?? [],
     });
     if (!r.ok) {
       const motivo = tratarFalha(r);
-      if (comModelo) return motivo;
+      if (semOtimista) return motivo;
       setMensagens((atuais) =>
         atuais.map((m) => (m.id === chave ? { ...m, status: "falhou", falhaMotivo: motivo } : m)),
       );
@@ -247,6 +250,8 @@ export function Chat({
         />
         <Composer
           conversaId={conversa.id}
+          lojaId={conversa.lojaId}
+          aceitaAnexo={conversa.aceitaAnexo}
           bloqueio={bloqueio}
           aviso={conversa.aviso}
           limite={conversa.limiteTexto}

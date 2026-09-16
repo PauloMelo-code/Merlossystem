@@ -1,3 +1,5 @@
+// O arquivo puro do M2, não o índice `@/lib/contatos` (que traz o banco).
+import { normalizarTelefone } from "@/lib/contatos/telefone";
 import type {
   ClienteHttp,
   InterpretacaoDeWebhook,
@@ -75,17 +77,15 @@ export function paraData(valor: unknown, agora: Date = new Date()): Date {
   return agora;
 }
 
-/** Telefone canônico: E.164 só dígitos, o mesmo CHECK de `contatos.telefone`. */
-export const REGEX_E164 = /^[1-9][0-9]{9,14}$/;
-
 /**
- * O id de remetente do WhatsApp é o telefone com sufixo (`@s.whatsapp.net`).
- * Só vira `telefone` quando casa com o CHECK — senão o insert do contato
- * falharia e a mensagem se perderia.
+ * O id de remetente do WhatsApp é o telefone COM país e com sufixo
+ * (`@s.whatsapp.net`). Passa pela mesma normalização do cadastro (M2), com o
+ * `+` na frente: sem ele, um número estrangeiro de 10–11 dígitos ganharia o
+ * `55`. Só vira `telefone` quando casa com o CHECK — senão o insert do
+ * contato falharia e a mensagem se perderia.
  */
 export function telefoneDoRemetente(id: string): string | undefined {
-  const digitos = id.replace(/@.*$/, "").replace(/\D/g, "");
-  return REGEX_E164.test(digitos) ? digitos : undefined;
+  return normalizarTelefone(`+${id.replace(/@.*$/, "")}`) ?? undefined;
 }
 
 /** Tamanho da prévia da lista (`conversas.ultima_mensagem_previa`). */

@@ -55,15 +55,21 @@ export const enviarMensagemSchema = z
     chaveIdempotencia: uuidSchema,
     notaInterna: marcador,
     modeloId: opcionalUuid,
+    /** Anexo já guardado na galeria (`POST /api/midias`); o texto vira legenda. */
+    midiaId: opcionalUuid,
     variaveis: z.array(z.string().trim().min(1, "Preencha a variável.").max(1000)).max(20).default([]),
   })
-  .refine((d) => d.modeloId !== undefined || d.conteudo.length > 0, {
+  .refine((d) => d.modeloId !== undefined || d.midiaId !== undefined || d.conteudo.length > 0, {
     path: ["conteudo"],
     message: "Escreva a mensagem antes de enviar.",
   })
   .refine((d) => !(d.notaInterna && d.modeloId), {
     path: ["modeloId"],
     message: "Nota interna não usa modelo.",
+  })
+  .refine((d) => !(d.midiaId && (d.notaInterna || d.modeloId)), {
+    path: ["midiaId"],
+    message: "O anexo vai só em resposta à cliente.",
   });
 
 export type EnviarMensagem = z.output<typeof enviarMensagemSchema>;

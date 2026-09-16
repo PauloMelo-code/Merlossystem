@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { EstadoVazio } from "@/components/comum/estado-vazio";
 import { Button } from "@/components/ui/button";
-import { listarConversas } from "@/lib/actions/conversas";
+import { listarConversas, resumoDoAtendimento } from "@/lib/actions/conversas";
 import type { PaginaDeConversas } from "@/lib/conversas/dto";
 import { LinhaConversa } from "./linha-conversa";
 import { useTempoReal } from "./tempo-real";
@@ -37,11 +37,12 @@ export function ListaConversas({
 
   const filtros = () => Object.fromEntries(parametros.entries());
 
+  // Releitura pelo resumo: é automática (evento ou polling) e não renova a inatividade.
   async function recarregar() {
-    const r = await listarConversas(filtros());
+    const r = await resumoDoAtendimento(filtros());
     if (!r.ok) return;
-    setItens(r.dados.itens);
-    setProximo(r.dados.proximo);
+    setItens(r.dados.lista.itens);
+    setProximo(r.dados.lista.proximo);
     setPendentes(0);
   }
 

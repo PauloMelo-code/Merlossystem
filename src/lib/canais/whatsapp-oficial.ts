@@ -16,6 +16,7 @@ import type {
   ClienteHttp,
   InterpretacaoDeWebhook,
   MensagemNormalizada,
+  MidiaParaEnvio,
   ModeloParaEnvio,
   ResultadoEnvio,
   StatusRecebido,
@@ -29,9 +30,9 @@ import type {
  * diferentes, e cada mensagem sai com a SUA `contaExterna` (o antigo roteava o
  * lote inteiro pela primeira entrada).
  *
- * Sem `enviarMidia` no R1: a Graph exige upload multipart, e a porta única de
- * saída HTTP (`rede/buscarExterno.ts`) só aceita corpo texto. Capacidade
- * ausente = a tela não oferece anexo por este número (registrado no módulo).
+ * Mídia de saída em dois passos: upload multipart (`/{phone-number-id}/media`,
+ * pela porta única `buscarExterno`) devolve o id; a mensagem cita o id. O
+ * binário vem do MinIO — nunca uma URL pública (03-arquitetura.md §13.3).
  */
 
 const STATUS: Record<string, StatusRecebido> = {
@@ -177,12 +178,28 @@ function resultadoDoEnvio(r: { status: number; corpo: Bruto }): ResultadoEnvio {
   return { ok: false, motivo, permanente: ehPermanente(r.status) };
 }
 
+/** Tipo da Graph por tipo de anexo; áudio e figurinha não levam legenda. */
+const TIPO_GRAPH: Record<MidiaParaEnvio["tipo"], string> = {
+  imagem: "image",
+  video: "video",
+  audio: "audio",
+  documento: "document",
+  sticker: "sticker",
+};
+
+/** Corpo do upload: o arquivo, o tipo e o produto, como a Cloud API pede. */
+export function formularioDeUpload(m: MidiaParaEnvio): FormData {
+  const form = new FormData();
+  form.append("messaging_product", "whatsapp");
+  form.append("type", m.mime);
+  form.append("file", new Blob([new Uint8Array(m.bytes)], { type: m.mime }), m.nome ?? "arquivo");
+  return form;
+}
+
 export function criarWhatsappOficial(deps: DepsWhatsappOficial): AdaptadorDeCanal {
   const base = `https://graph.facebook.com/${deps.versaoGraph}`;
-  const cabecalhos = {
-    authorization: `Bearer ${deps.accessToken}`,
-    "content-type": "application/json",
-  };
+  const autorizacao = { authorization: `Bearer ${deps.accessToken}` };
+  const cabecalhos = { ...autorizacao, "content-type": "application/json" };
 
   async function postarMensagem(corpo: Bruto): Promise<ResultadoEnvio> {
     const r = await chamar(deps.http, `${base}/${deps.phoneNumberId}/messages`, {
@@ -221,6 +238,30 @@ export function criarWhatsappOficial(deps: DepsWhatsappOficial): AdaptadorDeCana
             : {}),
         },
       }),
+
+    async enviarMidia(destino, m) {
+      // Multipart: só a autorização; o `content-type` com boundary é do `fetch`.
+      const subida = await chamar(deps.http, `${base}/${deps.phoneNumberId}/media`, {
+        provedor: "meta",
+        metodo: "POST",
+        corpo: formularioDeUpload(m),
+        cabecalhos: autorizacao,
+      });
+      if (!subida.ok) return subida.resultado;
+      const id = texto(subida.corpo.id);
+      if (subida.status < 200 || subida.status >= 300 || !id) {
+        const erro = comoObjeto(subida.corpo.error);
+        return {
+          ok: false,
+          motivo: primeiro(erro?.error_user_msg, erro?.message) ?? `Upload do anexo recusado (HTTP ${subida.status}).`,
+          permanente: subida.status >= 300 && ehPermanente(subida.status),
+        };
+      }
+      const tipo = TIPO_GRAPH[m.tipo];
+      const legenda = m.legenda && tipo !== "audio" && tipo !== "sticker" ? { caption: m.legenda } : {};
+      const nome = tipo === "document" && m.nome ? { filename: m.nome } : {};
+      return postarMensagem({ to: destino, type: tipo, [tipo]: { id, ...legenda, ...nome } });
+    },
 
     async baixarMidia(ref) {
       const meta = await deps.http(`${base}/${encodeURIComponent(ref)}`, {

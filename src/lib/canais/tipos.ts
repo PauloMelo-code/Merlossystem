@@ -157,7 +157,8 @@ export type ClienteHttp = (
   opcoes: {
     provedor: "meta" | "uazapi";
     metodo?: "GET" | "POST";
-    corpo?: string;
+    /** `FormData` = upload multipart da Graph (sem `content-type`: o boundary é do `fetch`). */
+    corpo?: string | FormData;
     cabecalhos?: Record<string, string>;
   },
 ) => Promise<{ status: number; tipo: string | null; bytes: Buffer }>;

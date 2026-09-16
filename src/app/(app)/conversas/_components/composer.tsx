@@ -10,6 +10,7 @@ import { hora } from "@/lib/formato";
 import { cn } from "cn";
 import type { ModeloDto, RespostaRapidaDto } from "@/lib/conversas/dto";
 import type { BloqueioDoComposer } from "@/lib/conversas/regras";
+import { BotaoAnexar, motivoDeRecusa, PreviaDoAnexo, subirAnexo } from "./anexos";
 import { EscolherModelo } from "./escolher-modelo";
 import { MenuRespostasRapidas } from "./menu-respostas-rapidas";
 
@@ -17,13 +18,22 @@ import { MenuRespostasRapidas } from "./menu-respostas-rapidas";
  * Composer (04-ui.md §5.2). Segmentado Responder | Nota interna; Enter envia
  * no desktop e quebra linha no celular; rascunho por conversa em
  * `sessionStorage` (com try/catch); contador a partir de 90% do limite.
+ * Anexo por botão, colar ou arrastar, com prévia e legenda antes de enviar
+ * (só na resposta à cliente, e só em número que sobe anexo).
  *
  * Bloqueado em EXATAMENTE quatro casos, sempre com explicação e saída:
  * janela de 24 h, número desconectado, papel sem escrita e sem conexão.
  * Opt-out NÃO bloqueia (é de marketing).
  */
 
-export type PedidoDeEnvio = { conteudo: string; nota: boolean; modeloId?: string; variaveis?: string[] };
+export type PedidoDeEnvio = {
+  conteudo: string;
+  nota: boolean;
+  modeloId?: string;
+  variaveis?: string[];
+  /** Mídia já guardada pela rota de upload; `conteudo` é a legenda. */
+  midiaId?: string;
+};
 
 function lerRascunho(chave: string): string {
   try {
@@ -44,6 +54,8 @@ function gravarRascunho(chave: string, valor: string): void {
 
 export function Composer({
   conversaId,
+  lojaId,
+  aceitaAnexo,
   bloqueio,
   aviso,
   limite,
@@ -52,6 +64,8 @@ export function Composer({
   aoEnviar,
 }: {
   conversaId: string;
+  lojaId: string;
+  aceitaAnexo: boolean;
   bloqueio: BloqueioDoComposer | null;
   aviso: string | null;
   limite: number;
@@ -65,6 +79,8 @@ export function Composer({
   const [erro, setErro] = useState("");
   const [menu, setMenu] = useState(false);
   const [modelo, setModelo] = useState(false);
+  const [anexo, setAnexo] = useState<File | null>(null);
+  const [progresso, setProgresso] = useState<number | null>(null);
   const campo = useRef<HTMLTextAreaElement>(null);
 
   // O rascunho mora no navegador: lido depois da hidratação, fora do render.
@@ -91,6 +107,9 @@ export function Composer({
   const soNota = desconectado || janela;
   const emNota = nota || soNota;
   const perto = texto.length >= limite * 0.9;
+  const podeAnexar = aceitaAnexo && !emNota && !semConexao;
+  const comAnexo = anexo !== null && podeAnexar;
+  const subindo = progresso !== null;
 
   function mudar(valor: string) {
     setTexto(valor);
@@ -98,9 +117,34 @@ export function Composer({
     setMenu(valor.startsWith("/") && !emNota && !valor.includes("\n"));
   }
 
+  function escolher(arquivo: File) {
+    if (!podeAnexar) return;
+    const recusa = motivoDeRecusa(arquivo);
+    setErro(recusa ?? "");
+    setAnexo(recusa ? null : arquivo);
+  }
+
+  /** Sobe o arquivo e só então registra a mensagem; falha mantém anexo e legenda. */
+  async function enviarAnexo(arquivo: File, legenda: string) {
+    setErro("");
+    setProgresso(0);
+    const subida = await subirAnexo(arquivo, lojaId, (f) => setProgresso(Math.round(f * 100)));
+    const falha = subida.ok ? await aoEnviar({ conteudo: legenda, nota: false, midiaId: subida.id }) : subida.motivo;
+    setProgresso(null);
+    if (falha) {
+      setErro(falha);
+      return;
+    }
+    setAnexo(null);
+    mudar("");
+    campo.current?.focus();
+  }
+
   async function enviar() {
     const conteudo = texto.trim();
-    if (!conteudo || semConexao || conteudo.length > limite) return;
+    if (semConexao || subindo || conteudo.length > limite) return;
+    if (comAnexo) return enviarAnexo(anexo, conteudo);
+    if (!conteudo) return;
     setErro("");
     setTexto("");
     gravarRascunho(chave, "");
@@ -122,8 +166,22 @@ export function Composer({
     }
   }
 
+  // Arrastar um arquivo sobre o composer: o primeiro vira o anexo.
+  function soltar(e: React.DragEvent<HTMLDivElement>) {
+    const arquivo = e.dataTransfer.files[0];
+    if (!arquivo || !podeAnexar) return;
+    e.preventDefault();
+    escolher(arquivo);
+  }
+
   return (
-    <div className={cn("border-t border-border p-3", emNota && "bg-nota-interna-fundo")}>
+    <div
+      className={cn("border-t border-border p-3", emNota && "bg-nota-interna-fundo")}
+      onDragOver={(e) => {
+        if (podeAnexar) e.preventDefault();
+      }}
+      onDrop={soltar}
+    >
       {desconectado && bloqueio.caso === "desconectado" ? (
         <FaixaAviso
           tom="perigo"
@@ -169,7 +227,11 @@ export function Composer({
           <button
             type="button"
             aria-pressed={emNota}
-            onClick={() => setNota(true)}
+            disabled={subindo}
+            onClick={() => {
+              setNota(true);
+              setAnexo(null);
+            }}
             className={cn("inline-flex items-center gap-1 rounded px-2.5 py-1 text-denso", emNota && "bg-card font-medium")}
           >
             <StickyNote aria-hidden="true" className="size-3.5" />
@@ -206,31 +268,47 @@ export function Composer({
           value={texto}
           onChange={(e) => mudar(e.target.value)}
           onKeyDown={aoTeclar}
-          placeholder={emNota ? "Escreva uma nota para a equipe (a cliente não vê)" : "Escreva a mensagem ( / para respostas rápidas)"}
+          onPaste={(e) => {
+            const arquivo = e.clipboardData.files[0];
+            if (!arquivo || !podeAnexar) return;
+            e.preventDefault();
+            escolher(arquivo);
+          }}
+          placeholder={
+            emNota
+              ? "Escreva uma nota para a equipe (a cliente não vê)"
+              : comAnexo
+                ? "Legenda (opcional)"
+                : "Escreva a mensagem ( / para respostas rápidas)"
+          }
           aria-invalid={erro ? true : undefined}
           aria-describedby={erro ? `composer-erro-${conversaId}` : undefined}
           className={cn("max-h-48 min-h-10 resize-none field-sizing-content", emNota && "bg-card")}
         />
       </div>
+      {comAnexo ? <PreviaDoAnexo arquivo={anexo} progresso={progresso} aoRemover={() => setAnexo(null)} /> : null}
 
       <div className="mt-2 flex items-center justify-between gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          disabled={emNota}
-          onClick={() => {
-            mudar("/");
-            campo.current?.focus();
-          }}
-        >
-          <MessageSquareQuote aria-hidden="true" />
-          Resposta rápida
-        </Button>
+        <div className="flex items-center gap-1">
+          {aceitaAnexo ? <BotaoAnexar desabilitado={!podeAnexar || subindo} aoEscolher={escolher} /> : null}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={emNota}
+            onClick={() => {
+              mudar("/");
+              campo.current?.focus();
+            }}
+          >
+            <MessageSquareQuote aria-hidden="true" />
+            Resposta rápida
+          </Button>
+        </div>
         <Button
           type="button"
           variant={emNota ? "outline" : "default"}
-          disabled={!texto.trim() || semConexao || texto.length > limite}
+          disabled={(!texto.trim() && !comAnexo) || semConexao || subindo || texto.length > limite}
           onClick={() => void enviar()}
           className="min-w-28"
         >

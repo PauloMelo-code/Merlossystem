@@ -30,6 +30,7 @@ import {
   type PaginaDeMensagens,
 } from "./dto";
 import {
+  aceitaAnexo,
   avisoDoComposer,
   bloqueioDoComposer,
   codificarCursor,
@@ -249,6 +250,7 @@ export async function abrirAtendimento(leitor: Leitor, ctx: Contexto, conversaId
     aviso: podeEscrever ? avisoDoComposer(c.status, c.responsavelId !== null) : null,
     podeGerir: pode(papel, "conversas", "gerir"),
     limiteTexto: c.provedor === "instagram" ? 1000 : 4096,
+    aceitaAnexo: podeEscrever && pode(papel, "midia", "enviar") && aceitaAnexo(c.provedor),
   };
 
   const contato: ContatoDoPainel = {

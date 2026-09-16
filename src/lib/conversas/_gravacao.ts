@@ -1,14 +1,12 @@
-import type { Contexto } from "@/lib/auth/guard";
 import {
   atualizarComTrava,
   atualizarContador,
-  atualizarEstado,
   inserirAuditado,
+  type ContextoDeGravacao,
   type Transacao,
 } from "@/lib/db/mutacoes";
 import { conversas } from "@/lib/db/schema/conversas/conversas";
 import { conversas_mensagens, type MetadadosMensagem } from "@/lib/db/schema/conversas/mensagens";
-import { lojas_integracoes_eventos } from "@/lib/db/schema/integracoes";
 import { ErroDeColisao } from "@/lib/erros";
 import { previa as textoDaPrevia } from "@/lib/canais/normalizacao";
 import { conversaDoPar, ultimaEncerradaDoPar } from "./_consultas-canal";
@@ -60,7 +58,7 @@ export type ConversaResolvida = {
  */
 export async function obterConversa(
   tx: Transacao,
-  ctx: Contexto,
+  ctx: ContextoDeGravacao,
   alvo: { lojaId: string; contatoId: string; integracaoId: string; agora: Date },
 ): Promise<ConversaResolvida> {
   const { lojaId, contatoId, integracaoId, agora } = alvo;
@@ -134,11 +132,11 @@ export type NovaMensagem = {
   chaveIdempotencia: string | null;
   respondeAId: string | null;
   ocorridaEm: Date;
-  metadados: MetadadosMensagem & Record<string, unknown>;
+  metadados: MetadadosMensagem;
 };
 
 /** Insere a mensagem. `null` = já existia (id externo ou chave de idempotência). */
-export async function inserirMensagem(tx: Transacao, ctx: Contexto, m: NovaMensagem): Promise<string | null> {
+export async function inserirMensagem(tx: Transacao, ctx: ContextoDeGravacao, m: NovaMensagem): Promise<string | null> {
   const conteudo = m.conteudo === null ? null : m.conteudo.slice(0, TETO_CONTEUDO);
   const linha = await emSavepoint(tx, (sp) =>
     inserirAuditado(
@@ -192,27 +190,4 @@ export async function atualizarCacheDaConversa(
   if (extras.primeiraResposta) cache.primeira_resposta_em = m.ocorridaEm;
   if (Object.keys(cache).length === 0) return;
   await atualizarContador(tx, conversas, { id: alvo.conversaId, escopo: { tipo: "uma", lojaId: alvo.lojaId } }, cache);
-}
-
-/**
- * `registrarProcessamentoEvento()` (01-dados.md §6.4), via `atualizarEstado`:
- * no MESMO `UPDATE` grava `processado_em` e SUBSTITUI o corpo cru pela
- * projeção mascarada. A PII do webhook tem prazo curto, não 30 dias.
- *
- * PENDÊNCIA: o plano cita esta função em `mutacoes.ts`, onde ela não existe.
- * Ela nasce aqui, sobre o helper que existe, sem nenhum `.update(` novo.
- */
-export async function registrarProcessamentoEvento(
-  tx: Transacao,
-  eventoId: string,
-  resultado: { tipo: "processado" | "descartado" | "falhou"; erro?: string | null; projecao?: unknown },
-): Promise<void> {
-  const estado: Record<string, unknown> = {
-    tipo: resultado.tipo,
-    processado_em: new Date(),
-    erro: resultado.erro ?? null,
-  };
-  // O corpo cru sobrevive enquanto serve de prova: só em `falhou`.
-  if (resultado.tipo !== "falhou") estado.corpo = resultado.projecao ?? { mascarado: true };
-  await atualizarEstado(tx, lojas_integracoes_eventos, { id: eventoId, escopo: { tipo: "todas" } }, estado);
 }

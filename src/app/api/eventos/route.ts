@@ -1,7 +1,5 @@
-import { cookies } from "next/headers";
-import { COOKIE_LOJA } from "@/lib/actions/_base";
 import { exigirSessao } from "@/lib/auth/guard";
-import { escopoDeLoja, resolverLojaPedida } from "@/lib/auth/loja";
+import { escopoDoCookie } from "@/lib/auth/loja";
 import { motivoParaFecharFluxo } from "@/lib/conversas";
 import { ErroDoAplicativo } from "@/lib/erros";
 import { abrirFluxo } from "@/server/sse";
@@ -32,13 +30,8 @@ export async function GET(req: Request): Promise<Response> {
     throw erro;
   }
 
-  let lojaPedida: string | undefined;
-  try {
-    lojaPedida = await resolverLojaPedida(sessao, (await cookies()).get(COOKIE_LOJA)?.value);
-  } catch {
-    lojaPedida = undefined; // cookie de loja morta: cai para o escopo padrão do papel
-  }
-  const escopo = escopoDeLoja(sessao, lojaPedida);
+  // Porta única do cookie de loja (T13): loja morta cai no escopo padrão do papel.
+  const escopo = await escopoDoCookie(sessao);
   const abertaEm = new Date();
 
   return abrirFluxo(req, sessao, {

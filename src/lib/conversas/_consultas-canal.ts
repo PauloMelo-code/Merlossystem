@@ -1,10 +1,12 @@
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import type { EscopoLoja } from "@/lib/auth/loja";
 import { condicaoDeLoja, vivos, vivosE } from "@/lib/db/consultas";
 import { contatos } from "@/lib/db/schema/contatos";
 import { conversas } from "@/lib/db/schema/conversas/conversas";
 import { conversas_mensagens } from "@/lib/db/schema/conversas/mensagens";
+import { conversas_mensagens_midias } from "@/lib/db/schema/conversas/mensagens-midias";
 import { lojas_integracoes, lojas_integracoes_eventos, lojas_integracoes_templates } from "@/lib/db/schema/integracoes";
+import { lojas_midias } from "@/lib/db/schema/midias";
 import type { Leitor } from "./_consultas";
 
 /**
@@ -213,7 +215,6 @@ export async function lerMensagemDoEscopo(leitor: Leitor, escopo: EscopoLoja, me
   return linha ?? null;
 }
 
-
 /** O contato é desta loja? (a FK composta é a segunda linha, INV-10). */
 export async function contatoDaLoja(leitor: Leitor, lojaId: string, contatoId: string): Promise<boolean> {
   const [linha] = await leitor
@@ -240,26 +241,40 @@ export async function mensagemPorChave(leitor: Leitor, conversaId: string, chave
 }
 
 /**
- * Contato do CRM com o MESMO telefone e SEM o id deste canal (passo 2 do
- * casamento, 01-dados-dominio.md §2.1).
+ * Mídia VIVA da galeria da loja, para anexar a uma mensagem de saída. Só os
+ * metadados: o binário é da costura do M3 (`midias/leitura.ts`), lido no envio.
  */
-export async function contatoSemCanalPorTelefone(
-  leitor: Leitor,
-  lojaId: string,
-  telefone: string,
-  coluna: "whatsapp_id" | "instagram_id",
-) {
+export async function midiaDaLoja(leitor: Leitor, lojaId: string, midiaId: string) {
   const [linha] = await leitor
-    .select({ id: contatos.id, updatedAt: contatos.updated_at })
-    .from(contatos)
-    .where(
-      vivosE(
-        contatos,
-        eq(contatos.loja_id, lojaId),
-        eq(contatos.telefone, telefone),
-        isNull(contatos[coluna]),
-      ),
-    )
+    .select({
+      id: lojas_midias.id,
+      tipo: lojas_midias.tipo_arquivo,
+      mime: lojas_midias.mime_type,
+      tamanhoBytes: lojas_midias.tamanho_bytes,
+      nomeOriginal: lojas_midias.nome_original,
+    })
+    .from(lojas_midias)
+    .where(vivosE(lojas_midias, eq(lojas_midias.id, midiaId), eq(lojas_midias.loja_id, lojaId)))
     .limit(1);
   return linha ?? null;
+}
+
+/** Anexos guardados de uma mensagem (envio): nunca a URL externa. */
+export async function anexosDaMensagem(leitor: Leitor, lojaId: string, mensagemId: string) {
+  return leitor
+    .select({
+      midiaId: conversas_mensagens_midias.midia_id,
+      tipo: conversas_mensagens_midias.tipo_arquivo,
+      legenda: conversas_mensagens_midias.legenda,
+    })
+    .from(conversas_mensagens_midias)
+    .where(
+      vivosE(
+        conversas_mensagens_midias,
+        eq(conversas_mensagens_midias.mensagem_id, mensagemId),
+        eq(conversas_mensagens_midias.loja_id, lojaId),
+        isNotNull(conversas_mensagens_midias.midia_id),
+      ),
+    )
+    .orderBy(asc(conversas_mensagens_midias.created_at));
 }

@@ -125,6 +125,7 @@ export type EnvioDaTela = {
   chaveIdempotencia: string;
   notaInterna: boolean;
   modeloId?: string | undefined;
+  midiaId?: string | undefined;
   variaveis: string[];
 };
 
@@ -218,6 +219,7 @@ export async function enviarPelaTela(
       conteudo,
       chaveIdempotencia: dados.chaveIdempotencia,
       ...(dados.modeloId ? { modelo: { templateId: dados.modeloId, variaveis: dados.variaveis } } : {}),
+      ...(dados.midiaId ? { midiaId: dados.midiaId } : {}),
     },
     ctx,
   );

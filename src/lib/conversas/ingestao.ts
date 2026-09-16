@@ -1,38 +1,25 @@
-import type { Contexto } from "@/lib/auth/guard";
 import { db } from "@/lib/db/client";
 import {
-  atualizarComTrava,
   atualizarEstado,
   avancarStatusDeEntrega,
+  contextoDeSistema,
   emTransacao,
   inserirAuditado,
+  registrarProcessamentoEvento,
   upsertContatoPorCanal,
+  type ContextoDeGravacao,
   type Transacao,
 } from "@/lib/db/mutacoes";
-import { contatos } from "@/lib/db/schema/contatos";
 import { conversas_mensagens } from "@/lib/db/schema/conversas/mensagens";
 import { conversas_mensagens_midias } from "@/lib/db/schema/conversas/mensagens-midias";
-import { ErroDeColisao } from "@/lib/erros";
 import { logger } from "@/lib/logger";
 import { guardarMidiaRecebida } from "@/lib/midias/ingestao";
 import { mimePadrao, telefoneDoRemetente, tipoDeArquivo } from "@/lib/canais/normalizacao";
 import { abrirCredenciais, criarAdaptador, ehProvedorDeCanal, interpretarPorProvedor } from "@/lib/canais/registro";
 import type { AtualizacaoDeStatus, InterpretacaoDeWebhook, MensagemNormalizada } from "@/lib/canais/tipos";
-import {
-  contatoSemCanalPorTelefone,
-  lerConta,
-  lerContaPorReferencia,
-  lerEvento,
-  mensagemPorExterno,
-} from "./_consultas-canal";
-import {
-  atualizarCacheDaConversa,
-  emSavepoint,
-  inserirMensagem,
-  obterConversa,
-  registrarProcessamentoEvento,
-} from "./_gravacao";
-import { ACAO, contextoDoSistema } from "./_sistema";
+import { lerConta, lerContaPorReferencia, lerEvento, mensagemPorExterno } from "./_consultas-canal";
+import { atualizarCacheDaConversa, inserirMensagem, obterConversa } from "./_gravacao";
+import { ACAO } from "./_sistema";
 import { colunaDoCanal } from "./regras";
 
 /**
@@ -91,8 +78,8 @@ function projecao(provedor: string, i: InterpretacaoDeWebhook, motivo: string | 
 }
 
 async function descartarEvento(eventoId: string, provedor: string, i: InterpretacaoDeWebhook, motivo: string) {
-  const ctx = contextoDoSistema(null);
-  await emTransacao(ctx, (tx) =>
+  // Sem loja: o evento é descartado antes de a conta ser resolvida.
+  await emTransacao(contextoDeSistema({ origem: "worker" }), (tx) =>
     registrarProcessamentoEvento(tx, eventoId, { tipo: "descartado", erro: motivo, projecao: projecao(provedor, i, motivo) }),
   );
 }
@@ -135,7 +122,7 @@ async function baixarMidiasDaMeta(conta: Conta, mensagens: MensagemNormalizada[]
  */
 async function guardarBinario(
   tx: Transacao,
-  ctx: Contexto,
+  ctx: ContextoDeGravacao,
   entrada: Parameters<typeof guardarMidiaRecebida>[1],
 ): Promise<string | null> {
   try {
@@ -155,7 +142,7 @@ async function guardarBinario(
  */
 async function gravarMidias(
   tx: Transacao,
-  ctx: Contexto,
+  ctx: ContextoDeGravacao,
   conta: Conta & { lojaId: string },
   mensagemId: string,
   m: MensagemNormalizada,
@@ -195,49 +182,16 @@ async function gravarMidias(
         baixada: Boolean(midiaId),
       },
       ctx,
-      ACAO.midiaDaMensagem,
+      ACAO.midiaRecebida,
     );
     if (!midiaId) paraBaixar.push(String(anexo.id));
   }
   return paraBaixar;
 }
 
-/**
- * PENDÊNCIA DA FUNDAÇÃO: `upsertContatoPorCanal` só reconhece a colisão de
- * telefone quando o erro do pg chega cru (`e.code`), mas o Drizzle 0.45 o
- * embrulha (`e.cause.code`) — o passo 2 nunca roda e a mensagem do contato do
- * CRM se perderia. Até a correção em `mutacoes.ts`, o passo 2 roda ANTES, aqui,
- * pelo helper com trava; depois dela, isto vira redundância inofensiva.
- */
-async function carimbarContatoDoCrm(
-  tx: Transacao,
-  ctx: Contexto,
-  lojaId: string,
-  coluna: "whatsapp_id" | "instagram_id",
-  valor: string,
-  telefone: string,
-): Promise<void> {
-  const crm = await contatoSemCanalPorTelefone(tx, lojaId, telefone, coluna);
-  if (!crm) return;
-  try {
-    await emSavepoint(tx, (sp) =>
-      atualizarComTrava(
-        sp,
-        contatos,
-        { id: crm.id, escopo: { tipo: "uma", lojaId }, updatedAtOriginal: crm.updatedAt, dados: { [coluna]: valor } },
-        ctx,
-        "contato_alterado",
-      ),
-    );
-  } catch (erro) {
-    // Outra entrega carimbou antes: o upsert a seguir acha pelo canal.
-    if (!(erro instanceof ErroDeColisao)) throw erro;
-  }
-}
-
 async function gravarMensagemRecebida(
   tx: Transacao,
-  ctx: Contexto,
+  ctx: ContextoDeGravacao,
   conta: Conta & { lojaId: string },
   m: MensagemNormalizada,
   baixadas: Map<string, { bytes: Buffer; mime: string }>,
@@ -250,7 +204,8 @@ async function gravarMensagemRecebida(
   if (!coluna) return;
   const agora = new Date();
   const telefone = coluna === "whatsapp_id" ? telefoneDoRemetente(m.remetenteId) : undefined;
-  if (telefone) await carimbarContatoDoCrm(tx, ctx, lojaId, coluna, m.remetenteId, telefone);
+  // Os 3 passos (canal → contato do CRM pelo telefone → canal de novo) são da
+  // fundação: uma regra de casamento só (01-dados-dominio.md §2.1).
   const contato = await upsertContatoPorCanal(
     tx,
     lojaId,
@@ -366,7 +321,7 @@ export async function processarEventoDeCanal(pedido: PedidoDeProcessamento): Pro
   const baixadas = await baixarMidiasDaMeta(conta, mensagens);
 
   const saida = NADA(null, conta.lojaId, provedor);
-  const ctx = contextoDoSistema(conta.lojaId, "worker");
+  const ctx = contextoDeSistema({ origem: "worker", lojaId: conta.lojaId });
   await emTransacao(ctx, async (tx) => {
     for (const m of mensagens) await gravarMensagemRecebida(tx, ctx, contaDaLoja, m, baixadas, saida);
     for (const s of interpretacao.status) await aplicarStatus(tx, contaDaLoja.lojaId, s, saida);
@@ -385,8 +340,7 @@ export async function processarEventoDeCanal(pedido: PedidoDeProcessamento): Pro
 
 /** Última tentativa esgotada: o corpo cru fica (é a prova), marcado `falhou`. */
 export async function marcarEventoComoFalho(eventoId: string, erro: string): Promise<void> {
-  const ctx = contextoDoSistema(null);
-  await emTransacao(ctx, (tx) =>
+  await emTransacao(contextoDeSistema({ origem: "worker" }), (tx) =>
     registrarProcessamentoEvento(tx, eventoId, { tipo: "falhou", erro: erro.slice(0, 500) }),
   );
 }

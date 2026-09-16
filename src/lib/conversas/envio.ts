@@ -1,33 +1,38 @@
 import { db } from "@/lib/db/client";
-import {
-  atualizarComTrava,
-  atualizarEstado,
-  avancarStatusDeEntrega,
-  emTransacao,
-  type Transacao,
-} from "@/lib/db/mutacoes";
+import { atualizarEstado, avancarStatusDeEntrega, contextoDeSistema, emTransacao } from "@/lib/db/mutacoes";
 import { conversas_mensagens } from "@/lib/db/schema/conversas/mensagens";
-import { ErroDeIntegracao } from "@/lib/erros";
+import { ErroDeEscopo, ErroDeIntegracao } from "@/lib/erros";
+import { lerBinarioDaMidia } from "@/lib/midias/leitura";
 import { consumir } from "@/lib/seguranca/limite";
+import { cabeNoLimite } from "@/lib/canais/normalizacao";
 import { abrirCredenciais, configDoAmbiente, criarAdaptador, ehProvedorDeCanal } from "@/lib/canais/registro";
-import type { AdaptadorDeCanal, ClienteHttp, ResultadoEnvio } from "@/lib/canais/tipos";
-import { lerConta, lerMensagemParaEnvio, lerModelo } from "./_consultas-canal";
+import type {
+  AdaptadorDeCanal,
+  ClienteHttp,
+  ConfigDoCanal,
+  MidiaParaEnvio,
+  ResultadoEnvio,
+} from "@/lib/canais/tipos";
+import { anexosDaMensagem, lerConta, lerMensagemParaEnvio, lerModelo } from "./_consultas-canal";
 import { emSavepoint } from "./_gravacao";
-import { ACAO, contextoDoSistema } from "./_sistema";
-import { janelaFechada } from "./regras";
+import { ehTipoDeMidia, janelaFechada } from "./regras";
 import type { DadosDoEnvio } from "./saida";
 
 /**
  * ENVIO pela fila `mensagens-saida` (03-arquitetura.md §8, §10).
  *
  * `integracao_id` DA CONVERSA decide a conta de saída — nunca o dado do job,
- * nunca o ambiente (A-12). Ritmo por CONTA aplicado aqui (§8.4): 1 msg/s no
- * uazapi, 10 msg/s no oficial. Erro classificado: permanente não retenta; o
- * transitório sobe como exceção e a fila tenta de novo. Na última tentativa, a
- * mensagem vai para `falhou` com o motivo em texto — é o que a bolha mostra.
+ * nunca o ambiente (A-12). Ritmo por CONTA aplicado aqui (§8.4, ADR 0034): 1
+ * msg/s no uazapi, 10 msg/s no oficial. Erro classificado: permanente não
+ * retenta; o transitório sobe como exceção e a fila tenta de novo. Na última
+ * tentativa, a mensagem vai para `falhou` com o motivo em texto — é o que a
+ * bolha mostra.
  */
 
 export type DesfechoDoEnvio = { desfecho: "enviada" | "falhou" | "ignorada"; conversaId: string | null };
+
+/** Portas trocáveis no teste: o dublê do provedor e a config de plataforma. */
+export type PortasDoEnvio = { http?: ClienteHttp; config?: ConfigDoCanal };
 
 export const RITMO_POR_PROVEDOR: Readonly<Record<string, number>> = { uazapi: 1, whatsapp_oficial: 10, instagram: 10 };
 
@@ -52,7 +57,7 @@ async function aguardarRitmo(contaId: string, porSegundo: number): Promise<void>
 }
 
 export async function marcarFalhaDeEnvio(lojaId: string, mensagemId: string, motivo: string): Promise<void> {
-  const ctx = contextoDoSistema(lojaId);
+  const ctx = contextoDeSistema({ origem: "worker", lojaId });
   await emTransacao(ctx, async (tx) => {
     const avancou = await avancarStatusDeEntrega(tx, mensagemId, "falhou", new Date());
     if (!avancou) return;
@@ -66,22 +71,16 @@ export async function marcarFalhaDeEnvio(lojaId: string, mensagemId: string, mot
 }
 
 /**
- * Guarda o id externo e avança para `enviada`. PENDÊNCIA DA FUNDAÇÃO:
- * `externo_id` não está em `ESTADOS_DE_SISTEMA.conversas_mensagens`; até
- * estar, ele é gravado por `atualizarComTrava` (trilha `mensagem_enviada`).
+ * Guarda o id externo (estado do provedor, `ESTADOS_DE_SISTEMA`) e avança
+ * para `enviada`. Id repetido pelo provedor não desfaz o envio: o savepoint
+ * engole a colisão do único `(loja_id, externo_id)` e o status avança igual.
  */
-async function marcarEnviada(lojaId: string, mensagemId: string, updatedAt: Date, externoId: string): Promise<void> {
-  const ctx = contextoDoSistema(lojaId);
-  await emTransacao(ctx, async (tx: Transacao) => {
+async function marcarEnviada(lojaId: string, mensagemId: string, externoId: string): Promise<void> {
+  const ctx = contextoDeSistema({ origem: "worker", lojaId });
+  await emTransacao(ctx, async (tx) => {
     await emSavepoint(tx, (sp) =>
-      atualizarComTrava(
-        sp,
-        conversas_mensagens,
-        { id: mensagemId, escopo: ctx.escopo, updatedAtOriginal: updatedAt, dados: { externo_id: externoId } },
-        ctx,
-        ACAO.mensagemEnviada,
-      ),
-    ).catch(() => null);
+      atualizarEstado(sp, conversas_mensagens, { id: mensagemId, escopo: ctx.escopo }, { externo_id: externoId }),
+    );
     await avancarStatusDeEntrega(tx, mensagemId, "enviada", new Date());
   });
 }
@@ -94,10 +93,49 @@ function destinoDe(provedor: string, m: Mensagem): string | null {
   return bruto ? bruto.replace(/@.*$/, "").replace(/\D/g, "") || null : null;
 }
 
+/**
+ * Mídia de saída: o binário mora no MinIO e é lido pela costura do M3 na hora
+ * do envio (nunca pela URL). Uma mídia por mensagem — é o que o composer manda.
+ */
+async function despacharMidia(
+  adaptador: AdaptadorDeCanal,
+  lojaId: string,
+  m: Mensagem,
+  destino: string,
+): Promise<ResultadoEnvio> {
+  if (!adaptador.enviarMidia) {
+    return { ok: false, motivo: "Este número não envia anexo.", permanente: true };
+  }
+  const [anexo] = await anexosDaMensagem(db, lojaId, m.id);
+  if (!anexo?.midiaId || !ehTipoDeMidia(anexo.tipo)) {
+    return { ok: false, motivo: "O anexo desta mensagem não existe mais.", permanente: true };
+  }
+  let arquivo;
+  try {
+    arquivo = await lerBinarioDaMidia(lojaId, anexo.midiaId);
+  } catch (erro) {
+    if (erro instanceof ErroDeEscopo) {
+      return { ok: false, motivo: "O anexo foi excluído da galeria.", permanente: true };
+    }
+    return { ok: false, motivo: "O arquivo não pôde ser lido agora.", permanente: false };
+  }
+  const midia: MidiaParaEnvio = {
+    tipo: anexo.tipo,
+    bytes: arquivo.bytes,
+    mime: arquivo.mime,
+    ...(arquivo.nomeOriginal ? { nome: arquivo.nomeOriginal } : {}),
+    ...(m.conteudo ? { legenda: m.conteudo } : {}),
+  };
+  if (!cabeNoLimite(midia, adaptador.limites)) {
+    return { ok: false, motivo: "O arquivo passa do limite de tamanho deste canal.", permanente: true };
+  }
+  return adaptador.enviarMidia(destino, midia);
+}
+
 async function despachar(adaptador: AdaptadorDeCanal, lojaId: string, m: Mensagem, destino: string): Promise<ResultadoEnvio> {
   if (m.tipo === "texto") return adaptador.enviarTexto(destino, m.conteudo ?? "");
   if (m.tipo === "template") {
-    const meta = (m.metadados as { modelo?: { template_id?: string; variaveis?: string[] } }).modelo;
+    const meta = m.metadados.modelo;
     if (!adaptador.enviarModelo || !meta?.template_id) {
       return { ok: false, motivo: "Este número não envia modelo aprovado.", permanente: true };
     }
@@ -105,22 +143,21 @@ async function despachar(adaptador: AdaptadorDeCanal, lojaId: string, m: Mensage
     if (!modelo || modelo.status !== "aprovado") {
       return { ok: false, motivo: "O modelo não está mais aprovado.", permanente: true };
     }
-    return adaptador.enviarModelo(destino, { nome: modelo.nome, idioma: modelo.idioma, variaveis: meta.variaveis ?? [] });
+    return adaptador.enviarModelo(destino, { nome: modelo.nome, idioma: modelo.idioma, variaveis: meta.variaveis });
   }
-  // Mídia de saída: o binário mora no MinIO (pacote M3) e não há costura de
-  // leitura dele para o M1 no R1. Falha explícita, nunca silêncio.
-  return { ok: false, motivo: "Envio de mídia por este canal ainda não está disponível.", permanente: true };
+  if (ehTipoDeMidia(m.tipo)) return despacharMidia(adaptador, lojaId, m, destino);
+  return { ok: false, motivo: "Este tipo de mensagem não é enviado pelo sistema.", permanente: true };
 }
 
 /**
  * `ultimaTentativa`: esgotou a fila — o transitório também vira `falhou`.
- * Devolve o desfecho para o processador publicar o tempo real. `http` só é
- * trocado no teste (dublê do provedor); em produção é `buscarExterno`.
+ * Devolve o desfecho para o processador publicar o tempo real. As `portas` só
+ * são trocadas no teste; em produção são `buscarExterno` e o `env`.
  */
 export async function enviarDaFila(
   dados: DadosDoEnvio,
   ultimaTentativa: boolean,
-  http?: ClienteHttp,
+  portas: PortasDoEnvio = {},
 ): Promise<DesfechoDoEnvio> {
   const m = await lerMensagemParaEnvio(db, dados.lojaId, dados.mensagemId);
   if (!m) {
@@ -146,14 +183,18 @@ export async function enviarDaFila(
 
   let adaptador: AdaptadorDeCanal;
   try {
-    adaptador = criarAdaptador({
-      id: conta.id,
-      lojaId: dados.lojaId,
-      provedor: conta.provedor,
-      referenciaExterna: conta.referenciaExterna,
-      segredoWebhookHash: conta.segredoWebhookHash,
-      credenciais: abrirCredenciais(conta.credenciaisCifradas, conta.credenciaisAad),
-    }, configDoAmbiente(), http);
+    adaptador = criarAdaptador(
+      {
+        id: conta.id,
+        lojaId: dados.lojaId,
+        provedor: conta.provedor,
+        referenciaExterna: conta.referenciaExterna,
+        segredoWebhookHash: conta.segredoWebhookHash,
+        credenciais: abrirCredenciais(conta.credenciaisCifradas, conta.credenciaisAad),
+      },
+      portas.config ?? configDoAmbiente(),
+      portas.http,
+    );
   } catch {
     return falhar("A credencial do número não pôde ser lida. Reconecte a conta.");
   }
@@ -165,7 +206,7 @@ export async function enviarDaFila(
   await aguardarRitmo(conta.id, RITMO_POR_PROVEDOR[conta.provedor] ?? 1);
   const resultado = await despachar(adaptador, dados.lojaId, m, destino);
   if (resultado.ok) {
-    await marcarEnviada(dados.lojaId, m.id, m.updatedAt, resultado.externoId);
+    await marcarEnviada(dados.lojaId, m.id, resultado.externoId);
     return { desfecho: "enviada", conversaId: m.conversaId };
   }
   if (resultado.permanente || ultimaTentativa) return falhar(resultado.motivo);

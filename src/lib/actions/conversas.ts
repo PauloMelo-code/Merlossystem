@@ -118,8 +118,27 @@ export async function carregarMensagensAnteriores(dados: unknown): Promise<Resul
 }
 
 /**
+ * Releitura AUTOMÁTICA da conversa aberta (evento do tempo real, polling de
+ * degradação): mesmo dado de `abrirConversa`, sem renovar a inatividade —
+ * leitura que a tela faz sozinha não é uso (03-arquitetura.md §9).
+ */
+export async function relerConversa(dados: unknown): Promise<Resultado<AtendimentoAberto>> {
+  return executarAcao(
+    {
+      permissao: "conversas:ler",
+      entrada: abrirConversaSchema,
+      loja: "le",
+      renovaAtividade: false,
+      executar: (d, ctx, tx) => abrirAtendimento(tx, ctx, d.conversaId),
+    },
+    dados,
+  );
+}
+
+/**
  * Reconciliação e polling de degradação (03-arquitetura.md §9): a lista e,
- * quando há conversa aberta, as últimas mensagens dela — de uma vez.
+ * quando há conversa aberta, as últimas mensagens dela — de uma vez. Não
+ * renova a inatividade.
  */
 export async function resumoDoAtendimento(
   dados: unknown,
@@ -129,6 +148,7 @@ export async function resumoDoAtendimento(
       permissao: "conversas:ler",
       entrada: resumoSchema,
       loja: "le",
+      renovaAtividade: false,
       executar: async (d, ctx, tx) => ({
         lista: await paginaDeConversas(tx, ctx.escopo, ctx.autorId, d, null),
         mensagens: d.conversaId ? await paginaDeMensagens(tx, ctx.escopo, d.conversaId, null) : null,
