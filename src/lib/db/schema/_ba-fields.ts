@@ -60,6 +60,40 @@ export const CAMPOS_BA = {
       updatedAt: "updated_at",
     },
   },
-  twoFactor: { modelName: "usuarios_totp" },
-  passkey: { modelName: "usuarios_passkeys" },
+  /**
+   * Os dois modelos de plugin carregam `fields` porque `modelName` sozinho
+   * deixa o BA procurando `userId`, `publicKey`, `credentialID`… e o boot falha
+   * (02-seguranca.md §4.1 fecha esta lacuna de 01-dados.md §5.10).
+   *
+   * `verified`, `failedVerificationCount` e `lockedUntil` são campos que o
+   * plugin instalado declara e que §5.5 não previa — ver
+   * docs/seguranca/conferencia-ba-1.7.5.md §3.
+   */
+  twoFactor: {
+    modelName: "usuarios_totp",
+    fields: {
+      userId: "usuario_id",
+      secret: "secret",
+      backupCodes: "backup_codes",
+      verified: "verificado",
+      failedVerificationCount: "falhas_verificacao",
+      lockedUntil: "bloqueado_ate",
+      createdAt: "created_at",
+    },
+  },
+  passkey: {
+    modelName: "usuarios_passkeys",
+    fields: {
+      userId: "usuario_id",
+      name: "nome",
+      publicKey: "chave_publica",
+      credentialID: "credential_id",
+      counter: "contador",
+      deviceType: "tipo_dispositivo",
+      backedUp: "backed_up",
+      transports: "transportes",
+      aaguid: "aaguid",
+      createdAt: "created_at",
+    },
+  },
 } as const;
