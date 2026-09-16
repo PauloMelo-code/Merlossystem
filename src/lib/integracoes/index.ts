@@ -36,5 +36,5 @@ export {
   renovarTokenBling,
   VALIDADE_COOKIE_S,
 } from "./oauth";
-export { webhookInstagram, webhookUazapi, webhookWhatsapp } from "./roteamento";
+export { cabecalhosDoDiario, webhookInstagram, webhookUazapi, webhookWhatsapp } from "./roteamento";
 export { conferirSessao, parearUazapi, type Pareamento } from "./sessao";

@@ -42,3 +42,15 @@ export function sanitizarErroBanco(erro: unknown): ErroBancoSanitizado {
 
   return limpo;
 }
+
+/**
+ * Violação de único (23505) numa das constraints dadas. Lê o erro do `pg`
+ * direto ou embrulhado pelo Drizzle (`cause`). Quem chama traduz para
+ * `ErroDeColisao` — a transação já está abortada e vai sofrer rollback.
+ */
+export function ehViolacaoDeUnico(erro: unknown, ...constraints: readonly string[]): boolean {
+  type ErroPg = { code?: unknown; constraint?: unknown };
+  const bruto = erro as (ErroPg & { cause?: ErroPg }) | null;
+  const pg = bruto && bruto.code !== undefined ? bruto : bruto?.cause;
+  return pg?.code === "23505" && typeof pg.constraint === "string" && constraints.includes(pg.constraint);
+}

@@ -34,7 +34,8 @@ export type EventoDeIngestao = {
   integracaoId: string | null;
   lojaId: string | null;
   tipo: TipoEventoIntegracao;
-  eventoExternoId: string;
+  /** Nulo NÃO consome a chave de deduplicação: a linha sempre nasce (R2). */
+  eventoExternoId: string | null;
   assinaturaOk: boolean;
   ip: string | null;
   corpo: unknown;
@@ -72,6 +73,8 @@ export async function registrarEventoDeIngestao(
     returning id`);
   const criado = inserido.rows[0];
   if (criado) return { id: criado.id, novo: true, pendente: e.tipo === "recebido" };
+  // Sem id externo não há conflito possível: chegar aqui é defeito, não reentrega.
+  if (e.eventoExternoId === null) throw new ErroDeEscopo();
 
   const existente = await exec.execute<{ id: string; tipo: string; processado_em: Date | null }>(sql`
     select id, tipo, processado_em from lojas_integracoes_eventos
@@ -202,7 +205,10 @@ export type ResultadoAnonimizacao = {
  * Alcança também linhas já excluídas: dado pessoal em linha excluída continua
  * sendo dado pessoal. Mensagem recebe o MARCADOR, nunca `NULL` (CHECK
  * `conteudo_presente`). Pedido permanece (a venda de verdade mora no Masc),
- * sem observação nem endereço. Agendamento pendente é cancelado.
+ * sem observação nem endereço; a observação do Masc e o motivo do
+ * cancelamento (texto livre de quem atende) viram o MARCADOR, porque o CHECK
+ * `pedidos_masc_dispensado` exige a observação preenchida. Agendamento
+ * pendente é cancelado.
  */
 export async function anonimizarTitular(
   tx: Transacao,
@@ -241,9 +247,15 @@ export async function anonimizarTitular(
            ${carimbo}
      where loja_id = ${lojaId} and contato_id = ${contatoId}`);
   tabelas.pedidos = await rodar(sql`
-    update pedidos set observacoes = null, endereco_entrega = null, ${carimbo}
+    update pedidos
+       set observacoes = null,
+           endereco_entrega = null,
+           masc_observacao = case when masc_observacao is null then null else ${marcador} end,
+           cancelado_motivo = case when cancelado_motivo is null then null else ${marcador} end,
+           ${carimbo}
      where loja_id = ${lojaId} and contato_id = ${contatoId}
-       and (observacoes is not null or endereco_entrega is not null)`);
+       and (observacoes is not null or endereco_entrega is not null
+            or masc_observacao is not null or cancelado_motivo is not null)`);
 
   // Mídias RECEBIDAS do titular: todas vão para o job; as vivas viram excluídas
   // e `nome_original` (nome do arquivo que a pessoa mandou) some.

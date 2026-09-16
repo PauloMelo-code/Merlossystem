@@ -58,6 +58,14 @@ describe("registrarEventoDeIngestao + registrarProcessamentoEvento", () => {
     expect(linha).toEqual({ n: 1, autor: ATOR_SISTEMA });
   });
 
+  it("sem id externo a linha sempre nasce: nulo não consome a chave de dedupe", async () => {
+    const a = await registrarEventoDeIngestao({ ...evento("x"), eventoExternoId: null });
+    const b = await registrarEventoDeIngestao({ ...evento("x"), eventoExternoId: null });
+    expect(a).toMatchObject({ novo: true, pendente: true });
+    expect(b).toMatchObject({ novo: true, pendente: true });
+    expect(b.id).not.toBe(a.id);
+  });
+
   it("processar mascara o corpo no mesmo UPDATE; a reentrega deixa de estar pendente", async () => {
     const externo = `wamid.${randomUUID()}`;
     const { id } = await registrarEventoDeIngestao(evento(externo));
@@ -178,9 +186,19 @@ describe("anonimizarTitular", () => {
       [lojaId, contatoId, TELEFONE],
     );
     await banco.query(
-      `insert into pedidos (loja_id, contato_id, numero, criado_por, observacoes, endereco_entrega)
-       values ($1, $2, $3, $4, $5, $6)`,
-      [lojaId, contatoId, `T-${randomUUID().slice(0, 8)}`, ATOR_SISTEMA, TELEFONE, JSON.stringify({ rua: TELEFONE })],
+      `insert into pedidos
+         (loja_id, contato_id, numero, criado_por, observacoes, endereco_entrega, masc_observacao, cancelado_motivo)
+       values ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        lojaId,
+        contatoId,
+        `T-${randomUUID().slice(0, 8)}`,
+        ATOR_SISTEMA,
+        TELEFONE,
+        JSON.stringify({ rua: TELEFONE }),
+        `lançado para ${TELEFONE}`,
+        `cliente ${TELEFONE} desistiu`,
+      ],
     );
     return { contatoId, midiaId: midia.id as string };
   }
@@ -208,8 +226,16 @@ describe("anonimizarTitular", () => {
     expect(agendamento).toEqual({ status: "cancelada", conteudo: MARCADOR, cancelada_por: ATOR_SISTEMA });
     const midia = await um("select is_deleted, deleted_at, nome_original from lojas_midias where id = $1", [midiaId]);
     expect(midia).toMatchObject({ is_deleted: true, nome_original: null });
-    const pedido = await um("select observacoes, endereco_entrega from pedidos where contato_id = $1", [contatoId]);
-    expect(pedido).toEqual({ observacoes: null, endereco_entrega: null });
+    const pedido = await um(
+      "select observacoes, endereco_entrega, masc_observacao, cancelado_motivo from pedidos where contato_id = $1",
+      [contatoId],
+    );
+    expect(pedido).toEqual({
+      observacoes: null,
+      endereco_entrega: null,
+      masc_observacao: MARCADOR,
+      cancelado_motivo: MARCADOR,
+    });
 
     // O telefone só sobrevive em `contatos`, que é da regra de negócio (trava de colisão).
     const achados = await um(
@@ -219,7 +245,9 @@ describe("anonimizarTitular", () => {
        + (select count(*)::int from conversas_mensagens_midias where legenda like $1 or transcricao like $1)
        + (select count(*)::int from conversas_agendamentos where conteudo like $1)
        + (select count(*)::int from pesquisas_satisfacao where comentario like $1)
-       + (select count(*)::int from pedidos where observacoes like $1 or endereco_entrega::text like $1)
+       + (select count(*)::int from pedidos
+           where observacoes like $1 or endereco_entrega::text like $1
+              or masc_observacao like $1 or cancelado_motivo like $1)
        + (select count(*)::int from lojas_midias where nome_original like $1) as n`,
       [`%${TELEFONE}%`],
     );

@@ -40,6 +40,7 @@ export function cabecalhosDoDiario(h: Headers): CabecalhosEvento {
   }
   // A assinatura em si nunca é gravada: só a PRESENÇA dela.
   if (h.get("x-hub-signature-256")) guardados["x-hub-signature-256"] = "presente";
+  if (h.get("tiktok-signature")) guardados["tiktok-signature"] = "presente";
   return guardados;
 }
 

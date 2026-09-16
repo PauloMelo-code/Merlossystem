@@ -6,5 +6,8 @@
  */
 export * from "./mutacoes/base";
 export * from "./mutacoes/canais";
+export * from "./mutacoes/pagamentos";
 export * from "./mutacoes/pedidos";
+export * from "./mutacoes/pos-venda";
 export * from "./mutacoes/sistema";
+export * from "./mutacoes/transcricao";

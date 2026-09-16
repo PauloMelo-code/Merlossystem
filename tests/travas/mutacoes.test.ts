@@ -119,6 +119,12 @@ describe("mutações", () => {
       "reservarDestinatarios",
       "registrarProcessamentoEvento",
       "registrarConsentimentoBase",
+      // R2 (FR5): pós-venda, pagamento, transcrição e uso de IA.
+      "registrarRespostaDePesquisa",
+      "registrarComentarioDePesquisa",
+      "transicionarPagamento",
+      "transicionarTranscricao",
+      "registrarUsoDeIa",
     ]) {
       expect(texto).toContain(`export async function ${nome}`);
     }
@@ -136,6 +142,22 @@ describe("mutações", () => {
       expect(a.texto, a.caminho).not.toMatch(/^import \{[^}]*\} from "\.\.\/mutacoes";/m);
       expect(a.texto, a.caminho).not.toMatch(/from "@\/lib\/db\/mutacoes"/);
     }
+  });
+
+  it("lojas_ia_usos é append-only: nenhum `.update(` sobre ela, e só registrarUsoDeIa grava", () => {
+    const achados = arquivos
+      .filter((a) => !a.caminho.startsWith("tests/"))
+      .flatMap((a) =>
+        linhasDeCodigo(a.texto)
+          .filter((l) => /\.update\(\s*lojas_ia_usos\b|update\s+lojas_ia_usos\b/i.test(l.texto))
+          .map((l) => `${a.caminho}:${l.n}`),
+      );
+    expect(achados).toEqual([]);
+    const gravacoes = arquivos
+      .filter((a) => !a.caminho.startsWith("tests/"))
+      .filter((a) => /\.insert\(\s*lojas_ia_usos\b|insert\s+into\s+lojas_ia_usos\b/i.test(a.texto))
+      .map((a) => a.caminho);
+    expect(gravacoes).toEqual([`${MUTACOES_DIR}transcricao.ts`]);
   });
 
   it("atualizarComTrava e excluirLogico passam por travaDeColisao e condicaoDeLoja", () => {
