@@ -42,11 +42,11 @@ export const AGENDAMENTOS: readonly Agendamento[] = [
     porque: "convite vencido que continua aceitável é porta de entrada aberta (§9.2)",
   },
   {
-    nome: "gerar-alertas-15min",
+    nome: "gerar-alertas-5min",
     fila: "manutencao",
     job: "gerar-alertas",
-    padrao: "*/15 * * * *",
-    porque: "número caído e mensagem sem resposta precisam aparecer no mesmo turno",
+    padrao: "*/5 * * * *",
+    porque: "o menor prazo de SLA aceito é 5 min (INTERVALO_CONFERENCIA_SLA_MIN); conferir de 15 em 15 atrasaria o alerta em até 15 min",
   },
   {
     nome: "conferir-sessao-uazapi-10min",
@@ -104,6 +104,34 @@ export const AGENDAMENTOS: readonly Agendamento[] = [
     padrao: "0 7 * * *",
     porque: "o dono quer o número do dia anterior antes de abrir a loja",
   },
+  {
+    nome: "disparar-pesquisas-15min",
+    fila: "pos-venda",
+    job: "disparar-pesquisas",
+    padrao: "*/15 9-19 * * *",
+    porque: "pesquisa sai 30 min depois de resolver, só em horário comercial e com a janela de 24 h aberta",
+  },
+  {
+    nome: "expirar-cobrancas-5min",
+    fila: "pagamentos",
+    job: "expirar-cobrancas",
+    padrao: "*/5 * * * *",
+    porque: "cobrança vencida só vira expirada depois que o provedor confirma que não foi paga",
+  },
+  {
+    nome: "conciliar-cobrancas-diario",
+    fila: "pagamentos",
+    job: "conciliar-cobrancas",
+    padrao: "50 2 * * *",
+    porque: "webhook perdido e estorno tardio só aparecem relendo o provedor",
+  },
+  {
+    nome: "varrer-ia-minuto",
+    fila: "ia",
+    job: "varrer-ia",
+    padrao: "* * * * *",
+    porque: "classifica conversa com entrada nova e fecha transcrição órfã, sem rota de cron",
+  },
 ];
 
 /**
@@ -113,6 +141,7 @@ export const AGENDAMENTOS: readonly Agendamento[] = [
 export const AGENDADORES_APOSENTADOS: readonly { nome: string; fila: NomeDeFila }[] = [
   { nome: "sincronizar-templates-hora", fila: "integracoes" },
   { nome: "renovar-token-diario", fila: "integracoes" },
+  { nome: "gerar-alertas-15min", fila: "manutencao" },
 ];
 
 /**

@@ -23,6 +23,14 @@ import {
 import { processarEvento } from "./processadores/mensagens-entrada";
 import { enviarMensagem, reenviar } from "./processadores/mensagens-saida";
 import { baixarDeUrl, gerarMiniatura } from "./processadores/midia";
+import { classificarConversa, transcreverAudio, varrerIa } from "./processadores/inteligencia";
+import {
+  cancelarNoProvedor,
+  conciliarCobrancas,
+  expirarCobrancas,
+  processarNotificacao,
+} from "./processadores/pagamentos";
+import { dispararPesquisas } from "./processadores/pos-venda";
 
 /**
  * Worker em PROCESSO SEPARADO (03-arquitetura.md §8.3).
@@ -50,6 +58,7 @@ const PROCESSADORES: Record<NomeDeFila, Record<string, Processador>> = {
   midia: {
     "baixar-de-url": baixarDeUrl as Processador,
     "gerar-miniatura": gerarMiniatura as Processador,
+    "transcrever-audio": transcreverAudio as Processador,
   },
   campanhas: { "processar-lote": processarLote as Processador },
   agendamentos: { "enviar-agendada": enviarAgendada as Processador },
@@ -66,6 +75,17 @@ const PROCESSADORES: Record<NomeDeFila, Record<string, Processador>> = {
     "expirar-convites": expirarConvites as Processador,
     reconciliacao: reconciliacao as Processador,
     "resumo-diario": resumoDiario as Processador,
+  },
+  "pos-venda": { "disparar-pesquisas": dispararPesquisas as Processador },
+  pagamentos: {
+    "processar-notificacao": processarNotificacao as Processador,
+    "cancelar-no-provedor": cancelarNoProvedor as Processador,
+    "expirar-cobrancas": expirarCobrancas as Processador,
+    "conciliar-cobrancas": conciliarCobrancas as Processador,
+  },
+  ia: {
+    "varrer-ia": varrerIa as Processador,
+    "classificar-conversa": classificarConversa as Processador,
   },
   emails: { "email-seguranca": emailSeguranca as Processador },
 };

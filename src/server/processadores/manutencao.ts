@@ -5,6 +5,7 @@ import { registrarObjetosRemovidos } from "@/lib/lgpd/objetos-removidos";
 import { logger } from "@/lib/logger";
 import { limparMidiasExpiradas, removerBinarios } from "@/lib/midias";
 import { resumirDiaAnterior } from "@/lib/relatorios";
+import type { DadosManutencao } from "@/lib/fila/filas";
 
 /**
  * Fila `manutencao` (dono: M8, 05-plano-construcao.md §5). Concorrência 1,
@@ -24,13 +25,8 @@ import { resumirDiaAnterior } from "@/lib/relatorios";
  *   resumoDiario      números do dia anterior
  */
 
-export type DadosManutencao = {
-  /** Nulo = varre a rede inteira. Presente = só aquela loja. */
-  lojaId?: string;
-  /** Só em `limpar-midia` vindo da anonimização LGPD. */
-  solicitacaoId?: string;
-  midiaIds?: string[];
-};
+/** A carga mora no catálogo de filas, para `enfileirar` conferir o tipo. */
+export type { DadosManutencao };
 
 type JobManutencao = Job<DadosManutencao>;
 

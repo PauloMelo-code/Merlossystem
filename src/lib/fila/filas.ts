@@ -23,7 +23,7 @@ import { redisDaFila } from "./conexao";
 export const FILAS = {
   "mensagens-entrada": { jobs: ["processar-evento"], concorrencia: 8 },
   "mensagens-saida": { jobs: ["enviar-mensagem", "reenviar"], concorrencia: 4 },
-  midia: { jobs: ["baixar-de-url", "gerar-miniatura"], concorrencia: 4 },
+  midia: { jobs: ["baixar-de-url", "gerar-miniatura", "transcrever-audio"], concorrencia: 4 },
   campanhas: { jobs: ["processar-lote"], concorrencia: 1 },
   agendamentos: { jobs: ["enviar-agendada"], concorrencia: 2 },
   integracoes: {
@@ -41,6 +41,15 @@ export const FILAS = {
     ],
     concorrencia: 1,
   },
+  /** Pós-venda (R2-A): pesquisa de satisfação. */
+  "pos-venda": { jobs: ["disparar-pesquisas"], concorrencia: 1 },
+  /** Cobrança (R2-B): notificação, cancelamento no provedor, expiração e conciliação. */
+  pagamentos: {
+    jobs: ["processar-notificacao", "cancelar-no-provedor", "expirar-cobrancas", "conciliar-cobrancas"],
+    concorrencia: 2,
+  },
+  /** IA (R2-C): varredura de 1 min e classificação. Concorrência baixa: cada job é custo. */
+  ia: { jobs: ["varrer-ia", "classificar-conversa"], concorrencia: 2 },
   emails: { jobs: ["email-seguranca"], concorrencia: 2 },
 } as const satisfies Record<string, { jobs: readonly string[]; concorrencia: number }>;
 
@@ -49,8 +58,17 @@ export type JobDaFila<F extends NomeDeFila> = (typeof FILAS)[F]["jobs"][number];
 
 export const NOMES_DE_FILA = Object.keys(FILAS) as NomeDeFila[];
 
-/** Só `emails` tem carga tipada na fundação; o resto é do pacote dono. */
-type CargaPorFila = { emails: DadosEmailSeguranca };
+/** Carga de `manutencao` (dono M8). Os agendados vão sem carga. */
+export type DadosManutencao = {
+  /** Nulo = varre a rede inteira. Presente = só aquela loja. */
+  lojaId?: string;
+  /** Só em `limpar-midia` vindo da anonimização LGPD. */
+  solicitacaoId?: string;
+  midiaIds?: readonly string[];
+};
+
+/** Cargas tipadas na fundação; o resto é do pacote dono. */
+type CargaPorFila = { emails: DadosEmailSeguranca; manutencao: DadosManutencao };
 export type Carga<F extends NomeDeFila> = F extends keyof CargaPorFila
   ? CargaPorFila[F]
   : Record<string, unknown>;

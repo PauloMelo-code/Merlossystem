@@ -22,7 +22,7 @@ import {
 } from "./regras";
 
 /**
- * O GERADOR (job `gerar-alertas`, fila `manutencao`, a cada 15 min).
+ * O GERADOR (job `gerar-alertas`, fila `manutencao`, a cada 5 min).
  *
  * Quem resolve alerta é ELE, nunca a pessoa (01-dados.md §6.6). A cada
  * rodada, para cada tipo:
