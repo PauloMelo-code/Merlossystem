@@ -16,9 +16,12 @@ const FONTES = [
 ];
 
 /**
- * Os tres arquivos que rodam FORA do processo da aplicacao, mais o proprio
- * `env.ts`. `medir-kdf.mjs` so imprime `UV_THREADPOOL_SIZE`, que e ajuste de
- * runtime do Node, nao configuracao do sistema.
+ * Os arquivos que rodam FORA do processo da aplicacao, mais o proprio `env.ts`.
+ * `medir-kdf.mjs` so imprime `UV_THREADPOOL_SIZE`, que e ajuste de runtime do
+ * Node, nao configuracao do sistema. `fumaca-seguranca.mjs` roda no runner do
+ * deploy, contra o sistema ja no ar: importar `env.ts` o obrigaria a ter o
+ * ambiente inteiro do app, e receber a URL do banco por `argv` a colocaria na
+ * lista de processos da maquina.
  */
 const PODEM_LER_ENV = [
   "src/lib/env.ts",
@@ -27,6 +30,7 @@ const PODEM_LER_ENV = [
   "scripts/db-teste.mjs",
   "scripts/verificar-schema.mjs",
   "scripts/medir-kdf.mjs",
+  "scripts/fumaca-seguranca.mjs",
 ];
 
 function chavesDoEsquema(): string[] {

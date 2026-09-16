@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "next dev --port 3005",
-    "worker": "tsx watch src/server/worker.ts",
+    "worker": "tsx watch --conditions=react-server src/server/worker.ts",
     "build": "next build",
     "start": "next start --port ${PORT:-3005}",
     "lint": "eslint .",

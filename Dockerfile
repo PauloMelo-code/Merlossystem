@@ -53,4 +53,7 @@ COPY --from=deps-prod --chown=node:node /app/node_modules ./node_modules
 COPY --from=builder --chown=node:node /app/dist ./dist
 COPY --chown=node:node package.json ./
 USER node
-CMD ["node", "dist/worker.mjs"]
+# `--conditions=react-server`: o bundle mantém `import "server-only"` (é externo),
+# e esse pacote LANÇA no import fora do runtime do Next. A condição faz o Node
+# resolver o `empty.js` que o próprio pacote publica. Sem ela o worker não sobe.
+CMD ["node", "--conditions=react-server", "dist/worker.mjs"]

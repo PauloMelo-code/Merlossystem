@@ -82,6 +82,30 @@ jobs:
       - name: Instalar dependencias
         run: npm ci
 
+      # `src/lib/env.ts` cobra o ambiente INTEIRO no boot, e `next build` roda com
+      # NODE_ENV=production, que ainda exige EMAIL_* e SONDA_SEGREDO. Os segredos
+      # sao gerados na hora: valor literal aqui viraria achado do gitleaks e, pior,
+      # um segredo de teste que alguem copia para producao.
+      - name: Ambiente de teste (segredos gerados na hora)
+        run: |
+          {
+            echo "APP_URL=http://localhost:3005"
+            echo "BETTER_AUTH_SECRETS=v1:$(openssl rand -hex 24)"
+            echo "AUTH_EMAIL_HASH_KEY=$(openssl rand -hex 24)"
+            echo "INTEGRATIONS_KEY=$(openssl rand -hex 24)"
+            echo "INTEGRATIONS_STATE_KEY=$(openssl rand -hex 24)"
+            echo "SONDA_SEGREDO=$(openssl rand -hex 24)"
+            echo "S3_ENDPOINT=http://localhost:9002"
+            echo "S3_BUCKET=merlostore-midia"
+            echo "S3_ACCESS_KEY=ci"
+            echo "S3_SECRET_KEY=ci-sem-valor"
+            echo "S3_REGION=us-east-1"
+            echo "EMAIL_PROVEDOR=nenhum"
+            echo "EMAIL_REMETENTE=seguranca@exemplo.invalido"
+            echo "EMAIL_API_KEY=ci-sem-valor"
+            echo "AUTH_HIBP_HABILITADO=false"
+          } >> "$GITHUB_ENV"
+
       - name: 1. Lint
         run: npm run lint
 

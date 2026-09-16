@@ -117,6 +117,23 @@ export class ErroDeConfiguracao extends ErroDoAplicativo {
 }
 
 /**
+ * Costura de pacote ainda não preenchida (05-plano-construcao.md §5). A
+ * fundação cria o arquivo com a assinatura final para tudo compilar desde o
+ * dia 1; o pacote dono troca o corpo pela implementação. 501 e não 500: é
+ * "ainda não existe", não "quebrou".
+ */
+export class ErroNaoImplementado extends ErroDoAplicativo {
+  constructor(oQue: string) {
+    super("NAO_IMPLEMENTADO", `Ainda não implementado: ${oQue}.`, 501);
+  }
+}
+
+/** Devolve o erro para quem chama escrever `throw naoImplementado("…")`. */
+export function naoImplementado(oQue: string): ErroNaoImplementado {
+  return new ErroNaoImplementado(oQue);
+}
+
+/**
  * Traduz a exceção no `Resultado` que a action devolve (§14.2, passo 6 de
  * `executarAcao`). Exceção desconhecida vira mensagem genérica: detalhe de
  * erro interno na tela é superfície de informação de graça.

@@ -1,14 +1,14 @@
 import { and, eq, getTableName, sql } from "drizzle-orm";
 import type { PgColumn, PgTable } from "drizzle-orm/pg-core";
+import { diffAuditado, registrarAuditoria } from "@/lib/auditoria/gravador";
 import type { Contexto } from "@/lib/auth/guard";
 import type { EscopoLoja } from "@/lib/auth/loja";
 import { ErroDeColisao, ErroDeEscopo } from "@/lib/erros";
 import { db } from "./client";
 import { condicaoDeLoja, marcaDeExclusao, travaDeColisao, vivos } from "./consultas";
 import { CONTADORES, ESTADOS_DE_SISTEMA } from "./listas-fechadas";
-import { auditoria_eventos, type DiffAuditado } from "./schema/auditoria";
 import { usuarios } from "./schema/auth/usuarios";
-import { CAMPOS_PII, type AcaoAuditada } from "./schema/_enums/auditoria";
+import { type AcaoAuditada } from "./schema/_enums/auditoria";
 import { STATUS_ENTREGA } from "./schema/_enums/conversas";
 import { campanhas_destinatarios } from "./schema/campanhas";
 import { contatos } from "./schema/contatos";
@@ -40,69 +40,10 @@ export type TabelaDominio = PgTable & {
 type Linha = Record<string, unknown>;
 type Alvo = { id: string; escopo: EscopoLoja; updatedAtOriginal: Date };
 
-const SEGREDO = /senha|password|token|secret|credencia|authorization|apikey/i;
-
-/** O diff só guarda escalar: objeto inteiro no log é PII entrando pela porta lateral. */
-function paraValorDiff(valor: unknown): string | number | boolean | null {
-  if (valor === null || valor === undefined) return null;
-  if (valor instanceof Date) return valor.toISOString();
-  if (typeof valor === "string" || typeof valor === "number" || typeof valor === "boolean") {
-    return valor;
-  }
-  return "(alterado)";
-}
-
-/** Campos que mudaram, sem PII e sem segredo (01-dados.md §7.2). */
-function diffAuditado(
-  entidade: string,
-  antes: Linha | null,
-  depois: Linha,
-): { antes: DiffAuditado | null; depois: DiffAuditado } {
-  const pii = new Set(CAMPOS_PII[entidade] ?? []);
-  const a: DiffAuditado = {};
-  const d: DiffAuditado = {};
-  for (const [campo, valor] of Object.entries(depois)) {
-    if (SEGREDO.test(campo)) continue;
-    const anterior = antes?.[campo];
-    if (antes && Object.is(anterior, valor)) continue;
-    if (pii.has(campo)) {
-      d[campo] = "(alterado)";
-      if (antes) a[campo] = "(alterado)";
-      continue;
-    }
-    d[campo] = paraValorDiff(valor);
-    if (antes) a[campo] = paraValorDiff(anterior);
-  }
-  return { antes: antes ? a : null, depois: d };
-}
-
-/**
- * Trilha de negócio, na MESMA transação do efeito: se ela falha, a operação
- * inteira cai. Em ação administrativa destrutiva quem chama grava ANTES do
- * efeito — o efeito destrói o estado anterior e trilha depois seria trilha
- * nenhuma (01-dados.md §7.4).
- */
-export async function registrarAuditoria(
-  tx: Transacao,
-  ctx: Contexto,
-  acao: AcaoAuditada,
-  entidade: string,
-  entidadeId: string,
-  diff: { antes: DiffAuditado | null; depois: DiffAuditado },
-  motivo?: string,
-) {
-  await tx.insert(auditoria_eventos).values({
-    ator_tipo: ctx.origem === "ui" ? "usuario" : "sistema",
-    ator_id: ctx.autorId,
-    loja_id: ctx.escopo.tipo === "uma" ? ctx.escopo.lojaId : null,
-    acao,
-    entidade,
-    entidade_id: entidadeId,
-    antes: diff.antes,
-    depois: diff.depois,
-    motivo: motivo ?? null,
-  });
-}
+// A trilha de negócio (diff sem PII + o INSERT append-only) mora em
+// `src/lib/auditoria/gravador.ts`. Reexportada aqui para quem grava a trilha
+// ANTES do efeito (ação administrativa destrutiva) importar de um lugar só.
+export { diffAuditado, registrarAuditoria };
 
 /**
  * Abre a transação. É o que a action importa.
