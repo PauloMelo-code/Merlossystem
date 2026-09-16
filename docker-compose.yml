@@ -1,0 +1,77 @@
+# Serviços locais do MerlostoreChat (npm run db:up).
+# Portas próprias do projeto para conviver com os outros bancos da máquina:
+# Postgres 5437, Redis 6382, MinIO 9002 (API) e 9003 (console).
+#
+# As imagens minio/minio e minio/mc saíram do Docker Hub: a origem é o quay.io.
+services:
+  db:
+    image: postgres:16
+    container_name: merlostore_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: dev
+      POSTGRES_PASSWORD: dev
+      POSTGRES_DB: merlostore_dev
+    ports:
+      - "5437:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dev -d merlostore_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: merlostore_redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6382:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: quay.io/minio/minio:latest
+    container_name: merlostore_minio
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: dev
+      MINIO_ROOT_PASSWORD: devdevdev
+    ports:
+      - "9002:9000"
+      - "9003:9001"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Cria o bucket e garante que ele NÃO é público. Roda uma vez e sai.
+  minio-init:
+    image: quay.io/minio/mc:latest
+    container_name: merlostore_minio_init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >
+        mc alias set local http://minio:9000 dev devdevdev &&
+        mc mb --ignore-existing local/merlostore-midia &&
+        mc anonymous set none local/merlostore-midia
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:

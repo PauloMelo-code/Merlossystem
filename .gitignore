@@ -15,6 +15,7 @@
 
 # production
 /build
+/dist
 
 # misc
 .DS_Store
@@ -37,10 +38,8 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-/src/generated/prisma
-
-# Gerado no build da imagem (Dockerfile), a partir da schema.
-prisma/schema.sql
+# quarentena do scripts/limpar-lixo-raiz.mjs (lixo de shell mal escapado)
+.lixo-quarentena/
 
 # configuracao local do Claude Code (nao versionar)
 .claude/settings.local.json
