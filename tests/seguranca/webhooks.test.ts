@@ -7,6 +7,15 @@ import {
 import { TETO_WEBHOOK } from "@/lib/seguranca/corpo";
 import { rotaDeMaquina } from "@/lib/seguranca/maquina";
 import { redisDoLimitador } from "@/lib/seguranca/limite";
+import { fecharFilas, fila } from "@/lib/fila/filas";
+import { webhookUazapi } from "@/lib/integracoes/roteamento";
+import {
+  aleatorio,
+  banco as bancoDeTeste,
+  eventosDa,
+  semearConta,
+  semearLoja,
+} from "../integracao/integracoes-apoio";
 import { arquivosDe, lerFonte } from "./_fonte";
 
 /**
@@ -164,6 +173,115 @@ describe("T15 assinaturas", () => {
     expect(conferirSegredoPorHash(SEGREDO, null)).toBe(false);
     expect(conferirSegredoPorHash(null, HASH)).toBe(false);
     expect(conferirSegredoPorHash(SEGREDO, HASH)).toBe(true);
+  });
+});
+
+/**
+ * M5: o handler DE VERDADE do uazapi, contra Postgres e Redis. E aqui que
+ * "POST forjado escreve linha" e "evento repetido processado 2x" reprovam.
+ */
+describe("T15 webhook do uazapi ponta a ponta", () => {
+  const postarReal = (id: string, corpo: string, cabecalhos: Record<string, string> = {}) =>
+    new Request(`${URL_BASE}/${id}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...cabecalhos },
+      body: corpo,
+    });
+  const mensagem = (id: string) => JSON.stringify({ EventType: "messages", message: { messageid: id, text: "oi" } });
+
+  afterAll(async () => {
+    await fecharFilas();
+    await bancoDeTeste.end().catch(() => undefined);
+  });
+
+  it("POST forjado nao escreve linha nenhuma e nao enfileira nada", async () => {
+    const loja = await semearLoja();
+    const conta = await semearConta({ provedor: "uazapi", lojaId: loja.id });
+    const semSegredo = await webhookUazapi(postarReal(conta.id, mensagem(`F-${aleatorio()}`)));
+    const errado = await webhookUazapi(
+      postarReal(conta.id, mensagem(`F-${aleatorio()}`), { "x-uazapi-secret": "segredo-forjado" }),
+    );
+    expect([semSegredo.status, errado.status]).toEqual([401, 401]);
+    expect(await eventosDa(conta.id)).toEqual([]);
+    expect(await fila("mensagens-entrada").getJobCounts("waiting", "delayed")).toMatchObject({ waiting: 0 });
+  });
+
+  it("integracao de outro provedor responde IGUAL a inexistente", async () => {
+    const loja = await semearLoja();
+    const oficial = await semearConta({ provedor: "whatsapp_oficial", lojaId: loja.id });
+    const r = await webhookUazapi(postarReal(oficial.id, "{}", { "x-uazapi-secret": oficial.segredo }));
+    expect(r.status).toBe(401);
+    expect(await r.text()).toBe("");
+  });
+
+  it("evento repetido vira UMA linha e UM job; depois de processado, nao reenfileira", async () => {
+    const loja = await semearLoja();
+    const conta = await semearConta({ provedor: "uazapi", lojaId: loja.id });
+    const corpo = mensagem(`R-${aleatorio()}`);
+    const cab = { "x-uazapi-secret": conta.segredo };
+
+    const primeira = await webhookUazapi(postarReal(conta.id, corpo, cab));
+    const segunda = await webhookUazapi(postarReal(conta.id, corpo, cab));
+    expect([primeira.status, segunda.status]).toEqual([200, 200]);
+
+    const linhas = await eventosDa(conta.id);
+    expect(linhas).toHaveLength(1);
+    expect(linhas[0]!.tipo).toBe("recebido");
+    const q = fila("mensagens-entrada");
+    const job = await q.getJob(`evento-${linhas[0]!.id}`);
+    expect(job?.data).toEqual({ eventoId: linhas[0]!.id, provedor: "uazapi" });
+
+    // O processador (M1) conclui o evento; a terceira entrega nao cria job.
+    await bancoDeTeste.query(
+      "update lojas_integracoes_eventos set tipo = 'processado', processado_em = now() where id = $1",
+      [linhas[0]!.id],
+    );
+    await job!.remove();
+    const terceira = await webhookUazapi(postarReal(conta.id, corpo, cab));
+    expect(terceira.status).toBe(200);
+    expect(await eventosDa(conta.id)).toHaveLength(1);
+    expect(await q.getJob(`evento-${linhas[0]!.id}`)).toBeUndefined();
+  });
+
+  it("conta com status erro: 200, linha 'descartado' com motivo, sem job", async () => {
+    const loja = await semearLoja();
+    const conta = await semearConta({ provedor: "uazapi", lojaId: loja.id, status: "erro" });
+    const r = await webhookUazapi(
+      postarReal(conta.id, mensagem(`E-${aleatorio()}`), { "x-uazapi-secret": conta.segredo }),
+    );
+    expect(r.status).toBe(200);
+    const [linha] = await eventosDa(conta.id);
+    expect(linha?.tipo).toBe("descartado");
+    expect(await fila("mensagens-entrada").getJob(`evento-${linha!.id}`)).toBeUndefined();
+  });
+
+  it("evento de sessao dispara a conferencia da sessao, nao a ingestao de mensagem", async () => {
+    const loja = await semearLoja();
+    const conta = await semearConta({ provedor: "uazapi", lojaId: loja.id, status: "erro" });
+    const corpo = JSON.stringify({ EventType: "connection", instance: { status: "open" }, marca: aleatorio() });
+    const r = await webhookUazapi(postarReal(conta.id, corpo, { "x-uazapi-secret": conta.segredo }));
+    expect(r.status).toBe(200);
+    const [linha] = await eventosDa(conta.id);
+    expect(linha?.tipo).toBe("recebido");
+    const job = await fila("integracoes").getJob(`sessao-${linha!.id}`);
+    expect(job?.name).toBe("conferir-sessao-uazapi");
+  });
+
+  it("o diario nao guarda o segredo nem o token repetido no corpo", async () => {
+    const loja = await semearLoja();
+    const conta = await semearConta({ provedor: "uazapi", lojaId: loja.id });
+    const corpo = JSON.stringify({
+      EventType: "messages",
+      token: "token-da-instancia-xyz",
+      message: { messageid: aleatorio() },
+    });
+    await webhookUazapi(postarReal(conta.id, corpo, { "x-uazapi-secret": conta.segredo }));
+    const { rows } = await bancoDeTeste.query<{ corpo: string; cab: string }>(
+      "select corpo::text as corpo, cabecalhos::text as cab from lojas_integracoes_eventos where integracao_id = $1",
+      [conta.id],
+    );
+    expect(rows[0]!.corpo).not.toContain("token-da-instancia-xyz");
+    expect(rows[0]!.cab).not.toContain(conta.segredo);
   });
 });
 
