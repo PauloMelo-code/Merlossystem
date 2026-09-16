@@ -1,9 +1,14 @@
 import "server-only";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { z } from "zod";
-import type { Contexto } from "@/lib/auth/guard";
 import { condicaoDeLoja, vivosE } from "@/lib/db/consultas";
-import { atualizarComTrava, excluirLogico, inserirAuditado, type Transacao } from "@/lib/db/mutacoes";
+import {
+  atualizarComTrava,
+  excluirLogico,
+  inserirAuditado,
+  type ContextoDeGravacao,
+  type Transacao,
+} from "@/lib/db/mutacoes";
 import { campanhas } from "@/lib/db/schema/campanhas";
 import { respostas_rapidas } from "@/lib/db/schema/conteudo/respostas-rapidas";
 import { conversas_agendamentos } from "@/lib/db/schema/conversas/agendamentos";
@@ -17,7 +22,7 @@ import type {
   modeloSchema,
   respostaSchema,
 } from "@/lib/validadores/conteudo";
-import { TRILHA_CONTEUDO } from "./trilha";
+import { TRILHA_MODELO, TRILHA_RESPOSTA } from "./trilha";
 import { contarVariaveis } from "./variaveis";
 
 /**
@@ -27,7 +32,7 @@ import { contarVariaveis } from "./variaveis";
 
 type Alvo = { id: string; updated_at: Date };
 
-function lojaDe(ctx: Contexto): string {
+function lojaDe(ctx: ContextoDeGravacao): string {
   if (ctx.escopo.tipo !== "uma") throw new ErroDeEscopo();
   return ctx.escopo.lojaId;
 }
@@ -50,7 +55,7 @@ async function comUnico<T>(indice: string, campo: string, frase: string, fn: () 
 
 const ATALHO_REPETIDO = "Já existe uma resposta com este atalho nesta loja.";
 
-export async function criarResposta(tx: Transacao, ctx: Contexto, d: z.output<typeof respostaSchema>) {
+export async function criarResposta(tx: Transacao, ctx: ContextoDeGravacao, d: z.output<typeof respostaSchema>) {
   const lojaId = lojaDe(ctx);
   const linha = await comUnico("uq_respostas_rapidas_atalho", "atalho", ATALHO_REPETIDO, () =>
     inserirAuditado(
@@ -58,13 +63,13 @@ export async function criarResposta(tx: Transacao, ctx: Contexto, d: z.output<ty
       respostas_rapidas,
       { loja_id: lojaId, titulo: d.titulo, atalho: d.atalho, categoria: d.categoria, conteudo: d.conteudo },
       ctx,
-      TRILHA_CONTEUDO.criado,
+      TRILHA_RESPOSTA.criado,
     ),
   );
   return { id: String(linha.id) };
 }
 
-export async function editarResposta(tx: Transacao, ctx: Contexto, d: z.output<typeof editarRespostaSchema>) {
+export async function editarResposta(tx: Transacao, ctx: ContextoDeGravacao, d: z.output<typeof editarRespostaSchema>) {
   await comUnico("uq_respostas_rapidas_atalho", "atalho", ATALHO_REPETIDO, () =>
     atualizarComTrava(
       tx,
@@ -76,28 +81,28 @@ export async function editarResposta(tx: Transacao, ctx: Contexto, d: z.output<t
         dados: { titulo: d.titulo, atalho: d.atalho, categoria: d.categoria, conteudo: d.conteudo },
       },
       ctx,
-      TRILHA_CONTEUDO.alterado,
+      TRILHA_RESPOSTA.alterado,
     ),
   );
 }
 
-export async function alternarResposta(tx: Transacao, ctx: Contexto, d: z.output<typeof alternarRespostaSchema>) {
+export async function alternarResposta(tx: Transacao, ctx: ContextoDeGravacao, d: z.output<typeof alternarRespostaSchema>) {
   await atualizarComTrava(
     tx,
     respostas_rapidas,
     { id: d.id, escopo: ctx.escopo, updatedAtOriginal: d.updated_at, dados: { ativa: d.ativa } },
     ctx,
-    TRILHA_CONTEUDO.alterado,
+    TRILHA_RESPOSTA.alterado,
   );
 }
 
-export async function excluirResposta(tx: Transacao, ctx: Contexto, alvo: Alvo) {
+export async function excluirResposta(tx: Transacao, ctx: ContextoDeGravacao, alvo: Alvo) {
   await excluirLogico(
     tx,
     respostas_rapidas,
     { id: alvo.id, escopo: ctx.escopo, updatedAtOriginal: alvo.updated_at },
     ctx,
-    TRILHA_CONTEUDO.excluido,
+    TRILHA_RESPOSTA.excluido,
   );
 }
 
@@ -113,7 +118,7 @@ function contagemDe(corpo: string): number {
   return n;
 }
 
-export async function criarModelo(tx: Transacao, ctx: Contexto, d: z.output<typeof modeloSchema>) {
+export async function criarModelo(tx: Transacao, ctx: ContextoDeGravacao, d: z.output<typeof modeloSchema>) {
   const lojaId = lojaDe(ctx);
   const conta = await contaDaLoja(tx, lojaId, d.integracao_id);
   if (conta.provedor !== "whatsapp_oficial") {
@@ -135,13 +140,13 @@ export async function criarModelo(tx: Transacao, ctx: Contexto, d: z.output<type
         variaveis_contagem: contagemDe(d.corpo),
       },
       ctx,
-      TRILHA_CONTEUDO.modeloAlterado,
+      TRILHA_MODELO.criado,
     ),
   );
   return { id: String(linha.id) };
 }
 
-async function carregarModelo(tx: Transacao, ctx: Contexto, id: string) {
+async function carregarModelo(tx: Transacao, ctx: ContextoDeGravacao, id: string) {
   const [linha] = await tx
     .select({ id: lojas_integracoes_templates.id, status: lojas_integracoes_templates.status })
     .from(lojas_integracoes_templates)
@@ -157,7 +162,7 @@ async function carregarModelo(tx: Transacao, ctx: Contexto, id: string) {
   return linha;
 }
 
-export async function editarModelo(tx: Transacao, ctx: Contexto, d: z.output<typeof editarModeloSchema>) {
+export async function editarModelo(tx: Transacao, ctx: ContextoDeGravacao, d: z.output<typeof editarModeloSchema>) {
   const atual = await carregarModelo(tx, ctx, d.id);
   if (!EDITAVEIS.includes(atual.status)) {
     throw new ErroDeValidacao({ corpo: ["Modelo enviado à Meta não é editado aqui. Crie um novo."] });
@@ -181,13 +186,25 @@ export async function editarModelo(tx: Transacao, ctx: Contexto, d: z.output<typ
         },
       },
       ctx,
-      TRILHA_CONTEUDO.modeloAlterado,
+      TRILHA_MODELO.alterado,
     ),
   );
 }
 
+/**
+ * Só rascunho e rejeitado vão para a Meta. Confere na transação da action; o
+ * envio em si (`enviarModeloParaAprovacao`, do M5) roda DEPOIS do commit, com
+ * as transações dele, para a chamada à Graph não segurar conexão.
+ */
+export async function conferirEnviavel(tx: Transacao, ctx: ContextoDeGravacao, id: string): Promise<void> {
+  const atual = await carregarModelo(tx, ctx, id);
+  if (!EDITAVEIS.includes(atual.status)) {
+    throw new ErroDeValidacao({ status: ["Este modelo já está com a Meta."] });
+  }
+}
+
 /** Modelo em uso por campanha ou agendamento vivo não sai: o envio ficaria sem corpo. */
-export async function excluirModelo(tx: Transacao, ctx: Contexto, alvo: Alvo) {
+export async function excluirModelo(tx: Transacao, ctx: ContextoDeGravacao, alvo: Alvo) {
   await carregarModelo(tx, ctx, alvo.id);
   const [uso] = await tx
     .select({
@@ -216,6 +233,6 @@ export async function excluirModelo(tx: Transacao, ctx: Contexto, alvo: Alvo) {
     lojas_integracoes_templates,
     { id: alvo.id, escopo: ctx.escopo, updatedAtOriginal: alvo.updated_at },
     ctx,
-    TRILHA_CONTEUDO.modeloAlterado,
+    TRILHA_MODELO.excluido,
   );
 }

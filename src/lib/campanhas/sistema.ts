@@ -1,22 +1,4 @@
-import type { Contexto } from "@/lib/auth/guard";
 import { ErroDeEscopo, ErroDeIntegracao, ErroDeValidacao, type ErroDoAplicativo } from "@/lib/erros";
-
-/**
- * Contexto de quem grava a partir da FILA (templates/job.ts).
- *
- * O worker não tem sessão. `origem: "worker"` faz a trilha gravar
- * `ator_tipo = 'sistema'`; `autorId` é a pessoa que originou o trabalho (quem
- * iniciou a campanha, quem agendou a mensagem), porque `modified_by` é FK para
- * `usuarios` e "o sistema" não é uma linha daquela tabela.
- */
-export function contextoDoWorker(lojaId: string, autorId: string): Contexto {
-  return {
-    sessao: undefined as never,
-    escopo: { tipo: "uma", lojaId },
-    autorId,
-    origem: "worker",
-  };
-}
 
 /**
  * Erro que não melhora na quinta tentativa (03-arquitetura.md §8.2): vira

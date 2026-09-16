@@ -1,16 +1,16 @@
 import "server-only";
 import { eq } from "drizzle-orm";
-import { db } from "@/lib/db/client";
 import { vivosE } from "@/lib/db/consultas";
-import { atualizarComTrava, emTransacao } from "@/lib/db/mutacoes";
+import { atualizarComTrava, contextoDeSistema, emTransacao } from "@/lib/db/mutacoes";
+import type { AcaoAuditada } from "@/lib/db/schema/_enums/auditoria";
 import { GATILHOS_PROMOCIONAIS } from "@/lib/db/schema/_enums/conversas";
 import { contatos } from "@/lib/db/schema/contatos";
 import { conversas_agendamentos } from "@/lib/db/schema/conversas/agendamentos";
 import { registrarEnvio } from "@/lib/conversas/saida";
 import { exigirVariaveisDoModelo, modeloDaConta } from "@/lib/campanhas/conta";
 import { contatoSaiuDoMarketing } from "@/lib/campanhas/segmento";
-import { contextoDoWorker, ehPermanente, motivoDoErro } from "@/lib/campanhas/sistema";
-import { TRILHA_CONTEUDO } from "@/lib/conteudo/trilha";
+import { ehPermanente, motivoDoErro } from "@/lib/campanhas/sistema";
+import { TRILHA_AGENDAMENTO } from "@/lib/conteudo/trilha";
 import { renderizarCorpo, resolverVariaveis } from "@/lib/conteudo/variaveis";
 import { ErroDeValidacao } from "@/lib/erros";
 
@@ -43,21 +43,7 @@ function ehPromocional(gatilho: string): boolean {
 }
 
 export async function enviarAgendamento(d: DadosAgendada): Promise<Desfecho> {
-  const [previa] = await db
-    .select({ status: conversas_agendamentos.status, autor: conversas_agendamentos.modified_by })
-    .from(conversas_agendamentos)
-    .where(
-      vivosE(
-        conversas_agendamentos,
-        eq(conversas_agendamentos.loja_id, d.lojaId),
-        eq(conversas_agendamentos.id, d.agendamentoId),
-      ),
-    )
-    .limit(1);
-  if (!previa || previa.status !== "agendada") return "ignorada";
-  if (!previa.autor) throw new ErroDeValidacao({ autor: ["Agendamento sem autor registrado."] });
-
-  const ctx = contextoDoWorker(d.lojaId, previa.autor);
+  const ctx = contextoDeSistema({ origem: "worker", lojaId: d.lojaId });
 
   return emTransacao(ctx, async (tx) => {
     const [a] = await tx
@@ -90,17 +76,18 @@ export async function enviarAgendamento(d: DadosAgendada): Promise<Desfecho> {
       return "ignorada";
     }
 
-    const fechar = (dados: Record<string, unknown>) =>
+    const fechar = (dados: Record<string, unknown>, acao: AcaoAuditada, motivo?: string) =>
       atualizarComTrava(
         tx,
         conversas_agendamentos,
         { id: a.id, escopo: ctx.escopo, updatedAtOriginal: a.atualizadoEm, dados },
         ctx,
-        TRILHA_CONTEUDO.alterado,
+        acao,
+        motivo ? { motivo } : {},
       );
 
     if (ehPromocional(a.gatilho) && (await contatoSaiuDoMarketing(tx, a.contatoId))) {
-      await fechar({ status: "cancelada", erro: MOTIVO_OPT_OUT });
+      await fechar({ status: "cancelada", erro: MOTIVO_OPT_OUT }, TRILHA_AGENDAMENTO.cancelado, "opt_out");
       return "cancelada";
     }
 
@@ -131,11 +118,14 @@ export async function enviarAgendamento(d: DadosAgendada): Promise<Desfecho> {
           ctx,
         ),
       );
-      await fechar({ status: "enviada", enviada_em: new Date(), mensagem_id: mensagemId, erro: null });
+      await fechar({ status: "enviada", enviada_em: new Date(), mensagem_id: mensagemId, erro: null }, TRILHA_AGENDAMENTO.enviado);
       return "enviada";
     } catch (erro) {
       if (!ehPermanente(erro)) throw erro;
-      await fechar({ status: "falhou", erro: motivoDoErro(erro) });
+      const motivo = motivoDoErro(erro);
+      // ponytail: a lista fechada não tem `agendamento_falhou`; a falha é um
+      // cancelamento pelo sistema, com o status e o motivo no registro.
+      await fechar({ status: "falhou", erro: motivo }, TRILHA_AGENDAMENTO.cancelado, motivo);
       return "falhou";
     }
   });

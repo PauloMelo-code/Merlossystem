@@ -12,7 +12,10 @@ import { uuidSchema } from "./comum";
 /** O mesmo padrão do CHECK `respostas_rapidas_atalho_formato`. */
 export const REGEX_ATALHO = /^\/[a-z0-9-]{1,30}$/;
 
-/** O mesmo padrão do CHECK `lojas_integracoes_templates_nome`. */
+/**
+ * Equivale ao CHECK `lojas_integracoes_templates_nome` da migração 0018
+ * (`^[a-z0-9_]+$` e `char_length(nome) <= 512`): no JS a repetição cabe na regex.
+ */
 export const REGEX_NOME_MODELO = /^[a-z0-9_]{1,512}$/;
 
 /** Campo opcional de formulário: ausente ou vazio vira `null`. */
@@ -23,6 +26,8 @@ const opcional = (esquema: z.ZodString) =>
   );
 
 export const alvoSchema = z.object({ id: uuidSchema, updated_at: z.coerce.date() });
+
+export const idModeloSchema = z.object({ id: uuidSchema });
 
 export const respostaSchema = z.object({
   titulo: z.string().trim().min(2, "Dê um título com ao menos 2 letras.").max(80, "Use no máximo 80 caracteres."),

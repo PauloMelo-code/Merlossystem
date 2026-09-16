@@ -1,16 +1,15 @@
 import "server-only";
 import { eq, isNull } from "drizzle-orm";
 import type { z } from "zod";
-import type { Contexto } from "@/lib/auth/guard";
 import { condicaoDeLoja, vivosE } from "@/lib/db/consultas";
-import { atualizarComTrava, inserirAuditado, type Transacao } from "@/lib/db/mutacoes";
+import { atualizarComTrava, inserirAuditado, type ContextoDeGravacao, type Transacao } from "@/lib/db/mutacoes";
 import { contatos } from "@/lib/db/schema/contatos";
 import { conversas_agendamentos } from "@/lib/db/schema/conversas/agendamentos";
 import { ErroDeEscopo, ErroDeValidacao } from "@/lib/erros";
 import { enfileirar } from "@/lib/fila/filas";
 import { jobId } from "@/lib/fila/idempotencia";
 import { contaDaLoja, exigirVariaveisDoModelo, modeloDaConta } from "@/lib/campanhas/conta";
-import { TRILHA_CONTEUDO } from "@/lib/conteudo/trilha";
+import { TRILHA_AGENDAMENTO } from "@/lib/conteudo/trilha";
 import type { agendamentoSchema } from "@/lib/validadores/campanhas";
 
 /**
@@ -21,7 +20,7 @@ import type { agendamentoSchema } from "@/lib/validadores/campanhas";
 type Alvo = { id: string; updated_at: Date };
 export type Agendado = { lojaId: string; id: string; agendadaPara: Date };
 
-async function carregarAgendada(tx: Transacao, ctx: Contexto, id: string) {
+async function carregarAgendada(tx: Transacao, ctx: ContextoDeGravacao, id: string) {
   const [linha] = await tx
     .select({ id: conversas_agendamentos.id, lojaId: conversas_agendamentos.loja_id, status: conversas_agendamentos.status })
     .from(conversas_agendamentos)
@@ -36,7 +35,7 @@ async function carregarAgendada(tx: Transacao, ctx: Contexto, id: string) {
 
 export async function criarAgendamento(
   tx: Transacao,
-  ctx: Contexto,
+  ctx: ContextoDeGravacao,
   dados: z.output<typeof agendamentoSchema>,
 ): Promise<Agendado> {
   if (ctx.escopo.tipo !== "uma") throw new ErroDeEscopo();
@@ -71,14 +70,14 @@ export async function criarAgendamento(
       gatilho: dados.gatilho,
     },
     ctx,
-    TRILHA_CONTEUDO.criado,
+    TRILHA_AGENDAMENTO.criado,
   );
   return { lojaId, id: String(linha.id), agendadaPara: dados.agendada_para };
 }
 
 export async function reagendar(
   tx: Transacao,
-  ctx: Contexto,
+  ctx: ContextoDeGravacao,
   alvo: Alvo & { agendada_para: Date },
 ): Promise<Agendado> {
   const linha = await carregarAgendada(tx, ctx, alvo.id);
@@ -92,13 +91,13 @@ export async function reagendar(
       dados: { agendada_para: alvo.agendada_para },
     },
     ctx,
-    TRILHA_CONTEUDO.alterado,
+    TRILHA_AGENDAMENTO.reagendado,
   );
   return { lojaId: linha.lojaId, id: linha.id, agendadaPara: alvo.agendada_para };
 }
 
 /** Cancelamento LÓGICO (INV-20): a linha fica, com quem cancelou. */
-export async function cancelar(tx: Transacao, ctx: Contexto, alvo: Alvo): Promise<void> {
+export async function cancelar(tx: Transacao, ctx: ContextoDeGravacao, alvo: Alvo): Promise<void> {
   const linha = await carregarAgendada(tx, ctx, alvo.id);
   await atualizarComTrava(
     tx,
@@ -110,7 +109,7 @@ export async function cancelar(tx: Transacao, ctx: Contexto, alvo: Alvo): Promis
       dados: { status: "cancelada", cancelada_por: ctx.autorId },
     },
     ctx,
-    TRILHA_CONTEUDO.excluido,
+    TRILHA_AGENDAMENTO.cancelado,
   );
 }
 

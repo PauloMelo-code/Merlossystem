@@ -5,6 +5,7 @@ import { vivosE } from "@/lib/db/consultas";
 import {
   atualizarComTrava,
   atualizarEstado,
+  contextoDeSistema,
   emTransacao,
   reservarDestinatarios,
 } from "@/lib/db/mutacoes";
@@ -17,7 +18,7 @@ import { enfileirar } from "@/lib/fila/filas";
 import { jobId } from "@/lib/fila/idempotencia";
 import { publicarNaLoja } from "@/lib/tempo-real/publicar";
 import { chaveDoEnvio, INTERVALO_ENTRE_LOTES_MS, LEASE_MS } from "./regras";
-import { contextoDoWorker, ehPermanente, motivoDoErro } from "./sistema";
+import { ehPermanente, motivoDoErro } from "./sistema";
 
 /**
  * Um lote da fila `campanhas` (03-arquitetura.md §8, 01-dados-dominio.md §5.5).
@@ -58,7 +59,6 @@ export async function processarLoteDeCampanha(dados: DadosLote): Promise<Resulta
   const [c] = await db
     .select({
       status: campanhas.status,
-      criadaPor: campanhas.criada_por,
       integracaoId: campanhas.integracao_id,
       templateId: campanhas.template_id,
       texto: campanhas.conteudo_texto,
@@ -69,7 +69,7 @@ export async function processarLoteDeCampanha(dados: DadosLote): Promise<Resulta
     .limit(1);
   if (!c || c.status !== "enviando") return { enviados: 0, falhas: 0, desfecho: "parada" };
 
-  const ctx = contextoDoWorker(lojaId, c.criadaPor);
+  const ctx = contextoDeSistema({ origem: "worker", lojaId });
   const escopo = ctx.escopo;
 
   let corpo = c.texto ?? "";

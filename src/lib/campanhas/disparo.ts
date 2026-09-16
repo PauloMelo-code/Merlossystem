@@ -1,12 +1,13 @@
 import "server-only";
 import { and, eq } from "drizzle-orm";
-import type { Contexto } from "@/lib/auth/guard";
 import { condicaoDeLoja, vivosE } from "@/lib/db/consultas";
 import {
   atualizarComTrava,
   atualizarEstado,
   excluirLogico,
   inserirAuditado,
+  inserirDestinatariosEmLote,
+  type ContextoDeGravacao,
   type Transacao,
 } from "@/lib/db/mutacoes";
 import { campanhas, campanhas_destinatarios } from "@/lib/db/schema/campanhas";
@@ -44,12 +45,12 @@ import { conferirEtiquetas, idsDoSegmento } from "./segmento";
 type Alvo = { id: string; updated_at: Date };
 export type Disparo = { lojaId: string; campanhaId: string; provedor: ProvedorDeCampanha };
 
-function lojaDe(ctx: Contexto): string {
+function lojaDe(ctx: ContextoDeGravacao): string {
   if (ctx.escopo.tipo !== "uma") throw new ErroDeEscopo();
   return ctx.escopo.lojaId;
 }
 
-async function carregar(tx: Transacao, ctx: Contexto, id: string) {
+async function carregar(tx: Transacao, ctx: ContextoDeGravacao, id: string) {
   const [linha] = await tx
     .select()
     .from(campanhas)
@@ -88,7 +89,7 @@ async function conferirConteudo(
 
 export async function criarCampanha(
   tx: Transacao,
-  ctx: Contexto,
+  ctx: ContextoDeGravacao,
   dados: z.output<typeof campanhaSchema>,
 ): Promise<{ id: string }> {
   const lojaId = lojaDe(ctx);
@@ -122,7 +123,7 @@ export async function criarCampanha(
  * ter sido pausado pela Meta) e materializa os destinatários lendo a verdade
  * do consentimento.
  */
-export async function iniciarCampanha(tx: Transacao, ctx: Contexto, alvo: Alvo): Promise<Disparo> {
+export async function iniciarCampanha(tx: Transacao, ctx: ContextoDeGravacao, alvo: Alvo): Promise<Disparo> {
   const c = await carregar(tx, ctx, alvo.id);
   if (!podeSair(c.status, PODE_INICIAR)) recusarStatus(c.status, "só um rascunho pode ser iniciado.");
   const conta = await conferirConteudo(tx, c.loja_id, c);
@@ -147,22 +148,12 @@ export async function iniciarCampanha(tx: Transacao, ctx: Contexto, alvo: Alvo):
     "campanha_iniciada",
   );
 
-  // ponytail: uma linha e uma trilha por destinatário, pela porta única de
-  // INSERT; a inserção em lote pede helper novo em `mutacoes.ts` (bloqueio
-  // registrado). O único `(campanha_id, contato_id)` segura a duplicata.
-  for (const contatoId of ids) {
-    await inserirAuditado(
-      tx,
-      campanhas_destinatarios,
-      { loja_id: c.loja_id, campanha_id: c.id, contato_id: contatoId },
-      ctx,
-      "campanha_iniciada",
-    );
-  }
+  // Uma linha de trilha pelo lote; o único `(campanha_id, contato_id)` segura a duplicata.
+  await inserirDestinatariosEmLote(tx, ctx, { lojaId: c.loja_id, campanhaId: c.id, contatoIds: ids }, "campanha_iniciada");
   return { lojaId: c.loja_id, campanhaId: c.id, provedor: conta.provedor };
 }
 
-export async function retomarCampanha(tx: Transacao, ctx: Contexto, alvo: Alvo): Promise<Disparo> {
+export async function retomarCampanha(tx: Transacao, ctx: ContextoDeGravacao, alvo: Alvo): Promise<Disparo> {
   const c = await carregar(tx, ctx, alvo.id);
   if (!podeSair(c.status, PODE_RETOMAR)) recusarStatus(c.status, "só uma campanha pausada pode ser retomada.");
   const conta = await contaDaLoja(tx, c.loja_id, c.integracao_id);
@@ -180,7 +171,7 @@ export async function retomarCampanha(tx: Transacao, ctx: Contexto, alvo: Alvo):
 }
 
 /** O lote em curso termina; o próximo lê `pausada` e para. Nada é reenviado. */
-export async function pausarCampanha(tx: Transacao, ctx: Contexto, alvo: Alvo): Promise<void> {
+export async function pausarCampanha(tx: Transacao, ctx: ContextoDeGravacao, alvo: Alvo): Promise<void> {
   const c = await carregar(tx, ctx, alvo.id);
   if (!podeSair(c.status, PODE_PAUSAR)) recusarStatus(c.status, "só uma campanha enviando pode ser pausada.");
   await atualizarComTrava(
@@ -192,7 +183,7 @@ export async function pausarCampanha(tx: Transacao, ctx: Contexto, alvo: Alvo): 
   );
 }
 
-export async function excluirCampanha(tx: Transacao, ctx: Contexto, alvo: Alvo): Promise<void> {
+export async function excluirCampanha(tx: Transacao, ctx: ContextoDeGravacao, alvo: Alvo): Promise<void> {
   const c = await carregar(tx, ctx, alvo.id);
   if (!podeSair(c.status, PODE_EXCLUIR)) recusarStatus(c.status, "pause a campanha antes de excluir.");
   await excluirLogico(
@@ -210,7 +201,7 @@ export async function excluirCampanha(tx: Transacao, ctx: Contexto, alvo: Alvo):
  */
 export async function reenviarFalhas(
   tx: Transacao,
-  ctx: Contexto,
+  ctx: ContextoDeGravacao,
   alvo: Alvo,
 ): Promise<Disparo & { quantidade: number; enfileirar: boolean }> {
   const c = await carregar(tx, ctx, alvo.id);
@@ -247,7 +238,8 @@ export async function reenviarFalhas(
         dados: { status: "enviando", concluida_em: null },
       },
       ctx,
-      "campanha_iniciada",
+      "campanha_alterada",
+      { motivo: `reenvio de ${falhas.length} falha(s)` },
     );
   }
   return {
