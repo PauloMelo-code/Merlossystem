@@ -95,7 +95,11 @@ export const TETO_PADRAO = 16 * 1024 * 1024;
 export type OpcoesBusca = {
   provedor: Provedor;
   metodo?: "GET" | "POST";
-  corpo?: string;
+  /**
+   * JSON/texto, binário ou `FormData` (upload multipart da Graph). Com
+   * `FormData`, NÃO passe `content-type`: o `fetch` escreve o boundary.
+   */
+  corpo?: string | Uint8Array | Blob | FormData;
   cabecalhos?: Record<string, string>;
   /** Teto de bytes do corpo lido. O padrao cobre video e audio (16 MB). */
   maxBytes?: number;
@@ -110,7 +114,11 @@ export type RespostaExterna = {
 async function uma(url: URL, opcoes: OpcoesBusca): Promise<Response> {
   return fetch(url, {
     method: opcoes.metodo ?? "GET",
-    ...(opcoes.corpo === undefined ? {} : { body: opcoes.corpo }),
+    // `Uint8Array` do Node (Buffer) é aceito pelo `fetch`, mas o tipo do DOM
+    // quer `BufferSource` com `ArrayBuffer` — a cópia resolve os dois.
+    ...(opcoes.corpo === undefined
+      ? {}
+      : { body: opcoes.corpo instanceof Uint8Array ? new Uint8Array(opcoes.corpo) : opcoes.corpo }),
     headers: opcoes.cabecalhos ?? {},
     redirect: "manual",
     signal: AbortSignal.timeout(TIMEOUT_MS),

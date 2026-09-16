@@ -107,6 +107,29 @@ describe("SSRF: allowlist e esquema", () => {
     expect(r.bytes.toString("utf8")).toBe("conteudo");
   });
 
+  it("aceita corpo binario e multipart (upload da Graph) sem trocar o corpo", async () => {
+    const corpos: unknown[] = [];
+    vi.stubGlobal("fetch", async (_url: URL, init: RequestInit) => {
+      corpos.push(init.body);
+      return new Response("{}", { status: 200 });
+    });
+    const formulario = new FormData();
+    formulario.append("messaging_product", "whatsapp");
+    formulario.append("file", new Blob([new Uint8Array([1, 2, 3])], { type: "image/png" }), "a.png");
+    await buscarExterno("https://graph.facebook.com/v23.0/1/media", {
+      provedor: "meta",
+      metodo: "POST",
+      corpo: formulario,
+    });
+    await buscarExterno("https://graph.facebook.com/v23.0/1/media", {
+      provedor: "meta",
+      metodo: "POST",
+      corpo: Buffer.from([9, 8, 7]),
+    });
+    expect(corpos[0]).toBe(formulario);
+    expect(Array.from(corpos[1] as Uint8Array)).toEqual([9, 8, 7]);
+  });
+
   it("host permitido que RESOLVE para endereco privado e recusado", async () => {
     respondendo(new Response("nunca", { status: 200 }));
     await expect(
