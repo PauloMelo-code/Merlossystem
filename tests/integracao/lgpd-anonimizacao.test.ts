@@ -4,6 +4,7 @@ import { pool } from "@/lib/db/client";
 import type { Transacao } from "@/lib/db/mutacoes";
 import { ErroDeColisao, ErroDeEscopo, ErroDeValidacao } from "@/lib/erros";
 import { anonimizarContato, MARCADOR, NOME_ANONIMO } from "@/lib/lgpd";
+import { gravarObjetosRemovidos } from "@/lib/lgpd/objetos-removidos";
 import {
   cenario,
   contexto,
@@ -21,9 +22,12 @@ import {
  * respondida e pedido lançado: a transação FECHA (o marcador não viola o CHECK
  * `conversas_mensagens_conteudo_presente`) e o telefone do titular não é
  * encontrável em NENHUMA coluna de texto de NENHUMA tabela.
+ *
+ * A varredura é GLOBAL: o telefone é único por execução, para outra suíte que
+ * gravou no mesmo banco não aparecer como achado.
  */
 
-const TELEFONE = "5551988887777";
+const TELEFONE = `55519${Date.now().toString().slice(-8)}`;
 
 beforeAll(() => exigirBancoDeTeste());
 afterAll(async () => {
@@ -65,12 +69,20 @@ async function titularCompleto(tx: Transacao, c: Cenario): Promise<Titular> {
   const produto = await umaLinha<{ id: string }>(tx, sql`
     insert into produtos (loja_id, nome, preco) values (${c.lojaId}, 'Vestido', '100.00') returning id`);
   const pedido = await umaLinha<{ id: string }>(tx, sql`
-    insert into pedidos (loja_id, contato_id, numero, criado_por, subtotal, total, masc_status, masc_venda_id, masc_lancado_em)
-    values (${c.lojaId}, ${contato.id}, 'CEN-0001', ${c.usuarioId}, '100.00', '100.00', 'lancado', 'V-1', now())
+    insert into pedidos (loja_id, contato_id, numero, criado_por, subtotal, total, masc_status, masc_venda_id, masc_lancado_em,
+                         observacoes, endereco_entrega)
+    values (${c.lojaId}, ${contato.id}, 'CEN-0001', ${c.usuarioId}, '100.00', '100.00', 'lancado', 'V-1', now(),
+            ${`entregar e ligar no ${TELEFONE}`},
+            ${JSON.stringify({ cep: "90000000", logradouro: `Rua ${TELEFONE}`, numero: "1", bairro: "B", cidade: "Porto Alegre", uf: "RS" })}::jsonb)
     returning id`);
   await tx.execute(sql`
     insert into pedidos_itens (loja_id, pedido_id, produto_id, nome, tamanho, quantidade, preco_unitario, total_item)
     values (${c.lojaId}, ${pedido.id}, ${produto.id}, 'Vestido', 'M', 1, '100.00', '100.00')`);
+  // Agendamento pendente com o telefone no texto e na variável (ADR 0033).
+  await tx.execute(sql`
+    insert into conversas_agendamentos (loja_id, contato_id, integracao_id, conteudo, tipo_conteudo, variaveis, agendada_para, gatilho)
+    values (${c.lojaId}, ${contato.id}, ${c.integracaoId}, ${`oi, seu zap ${TELEFONE}`}, 'texto',
+            ${JSON.stringify([TELEFONE])}::jsonb, now() + interval '1 day', 'manual')`);
   return { contatoId: contato.id, updatedAt: new Date(contato.updated_at), pedidoId: pedido.id, midiaId: midia.id };
 }
 
@@ -136,6 +148,13 @@ describe("anonimização LGPD (aceite do M2)", () => {
       );
       expect(pedido).toEqual({ total: "100.00", numero: "CEN-0001", contato_id: t.contatoId });
 
+      // Agendamento pendente: cancelado pelo autor da eliminação, com o marcador.
+      const agendamento = await umaLinha<{ status: string; conteudo: string; cancelada_por: string }>(
+        tx,
+        sql`select status, conteudo, cancelada_por from conversas_agendamentos where contato_id = ${t.contatoId}`,
+      );
+      expect(agendamento).toEqual({ status: "cancelada", conteudo: MARCADOR, cancelada_por: c.usuarioId });
+
       // Solicitação com a contagem por tabela.
       const solicitacao = await umaLinha<{ tipo: string; resultado: { tabelas: Record<string, number>; objetos_removidos: number } }>(
         tx,
@@ -148,6 +167,8 @@ describe("anonimização LGPD (aceite do M2)", () => {
         conversas: 1,
         conversas_mensagens_midias: 1,
         pesquisas_satisfacao: 1,
+        conversas_agendamentos: 1,
+        pedidos: 1,
         lojas_midias: 1,
       });
       expect(solicitacao.resultado.objetos_removidos).toBe(0);
@@ -219,6 +240,41 @@ describe("anonimização LGPD (aceite do M2)", () => {
           anonimizarContato(sp, ctx, { contatoId: b.id, updatedAt: b.updatedAt, protocolo: "P-0001", motivo: "Protocolo repetido" }),
         ),
       ).rejects.toBeInstanceOf(ErroDeValidacao);
+    });
+  });
+});
+
+describe("objetos removidos (costura do job limpar-midia)", () => {
+  it("grava a contagem pelo ator de sistema, uma vez só, e recusa o que não é eliminação", async () => {
+    await emRollback(async (tx) => {
+      const c = await cenario(tx);
+      const t = await novoContato(tx, c.lojaId, { nome: "Titular do job" });
+      const saida = await anonimizarContato(tx, contexto(c), {
+        contatoId: t.id,
+        updatedAt: t.updatedAt,
+        protocolo: `LGPD-JOB-${Date.now()}`,
+        motivo: "Pedido da titular",
+      });
+
+      expect(await gravarObjetosRemovidos(tx, saida.solicitacaoId, 3)).toBe(true);
+      expect(await gravarObjetosRemovidos(tx, saida.solicitacaoId, 3)).toBe(false);
+
+      const linha = await umaLinha<{ resultado: { objetos_removidos: number; tabelas: Record<string, number> } }>(
+        tx,
+        sql`select resultado from lgpd_solicitacoes where id = ${saida.solicitacaoId}`,
+      );
+      expect(linha.resultado.objetos_removidos).toBe(3);
+      expect(linha.resultado.tabelas).toEqual(saida.resultado.tabelas);
+
+      const trilha = await tx.execute<{ ator_tipo: string }>(sql`
+        select ator_tipo from auditoria_eventos
+         where entidade = 'lgpd_solicitacoes' and entidade_id = ${saida.solicitacaoId}
+           and acao = 'lgpd_anonimizado'`);
+      expect(trilha.rows.map((r) => r.ator_tipo)).toEqual(["sistema"]);
+
+      await expect(
+        tx.transaction((sp) => gravarObjetosRemovidos(sp, crypto.randomUUID(), 1)),
+      ).rejects.toBeInstanceOf(ErroDeEscopo);
     });
   });
 });

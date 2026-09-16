@@ -167,16 +167,20 @@ describe("carteira: filtros, cursor e CSV", () => {
   it("gestão em 'todas' vê as duas lojas; CSV usa o mesmo filtro e neutraliza fórmula", async () => {
     await emRollback(async (tx) => {
       const c = await cenario(tx);
+      // 'todas' alcança o banco inteiro (outras suítes gravam contatos): a
+      // busca por um prefixo único deixa só as duas linhas deste teste.
+      const marca = `Zq${Date.now().toString(36)}`;
       await novoContato(tx, c.lojaId, { nome: "=HYPERLINK(1)" });
-      await novoContato(tx, c.outraLojaId, { nome: "Da outra" });
-      const todas = await buscarCarteira(tx, contextoTodas(c), filtros());
+      await novoContato(tx, c.lojaId, { nome: `${marca} do centro` });
+      await novoContato(tx, c.outraLojaId, { nome: `${marca} da outra` });
+      const todas = await buscarCarteira(tx, contextoTodas(c), filtros({ busca: marca }));
       expect(todas.variasLojas).toBe(true);
-      expect(todas.itens.map((i) => i.nome)).toEqual(expect.arrayContaining(["=HYPERLINK(1)", "Da outra"]));
+      expect(todas.itens.map((i) => i.nome).sort()).toEqual([`${marca} da outra`, `${marca} do centro`]);
 
       const { csv, quantidade } = await exportarCsv(tx, contexto(c), filtros());
-      expect(quantidade).toBe(1);
+      expect(quantidade).toBe(2);
       expect(csv).toContain(`"'=HYPERLINK(1)"`);
-      expect(csv).not.toContain("Da outra");
+      expect(csv).not.toContain("da outra");
     });
   });
 });
