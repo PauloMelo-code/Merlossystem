@@ -50,6 +50,22 @@ e §7`, `01-dados-dominio.md §7.2`, `03-arquitetura.md §8.1`, `04-ui.md §5.5`
 
 Os filtros são `<form method="get">` nativo: estado na URL, sem JavaScript.
 
+## Actions
+
+| Action | Chave | Faz |
+|---|---|---|
+| `centralDeAlertas` | `alertas:ler` | página, contadores, prazos de SLA e `podeReconhecer` |
+| `reconhecerAlerta` | `alertas:reconhecer` | marca ciência com trava de colisão (depende do bloqueio 1) |
+| `trilhaDeNegocio` | `trilha:ler` | trilha paginada, pessoas e ações do filtro |
+| `eventoDaTrilha` | `trilha:ler` | detalhe com diff mascarado |
+| `qualidadePorPessoa` | `trilha:ler` | os quatro indicadores por pessoa |
+| `ocorrenciasDaPessoa` | `trilha:ler` | até 100 ocorrências de um indicador |
+| `registrosExcluidos` | `trilha:ler` | excluídos por entidade e período |
+| `trilhaDeAcesso` | `seguranca:ler_eventos` | trilha de acesso paginada |
+| `eventoDeAcesso` | `seguranca:ler_eventos` | detalhe com IP e navegador |
+| `relatorioDoPeriodo` | `relatorios:ler` | cartões formatados, série e `podeExportar` |
+| `exportarRelatorioCsv` | `relatorios:exportar` | o mesmo relatório em CSV |
+
 ## Regras que não mudam
 
 - **Quem resolve alerta é o gerador.** Reconhecer só marca ciência. Alerta
