@@ -7,7 +7,11 @@ import { defineConfig } from "drizzle-kit";
 // aqui: a credencial do papel dono não entra em arquivo de configuração.
 export default defineConfig({
   dialect: "postgresql",
-  schema: "./src/lib/db/schema",
+  // Glob, e não só o caminho da pasta: o `schema/` nasce dividido em
+  // subpastas (`auth/`, `conversas/`, `catalogo/`, `conteudo/`, `pedidos/`) e o
+  // drizzle-kit NÃO desce nos subdiretórios quando recebe um diretório — via
+  // só as tabelas da raiz e geraria migração faltando 24 tabelas.
+  schema: "./src/lib/db/schema/**/*.ts",
   out: "./src/lib/db/migrations",
   migrations: { schema: "drizzle" },
 });
