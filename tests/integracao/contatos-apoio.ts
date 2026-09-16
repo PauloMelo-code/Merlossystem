@@ -46,17 +46,28 @@ export type Cenario = { lojaId: string; outraLojaId: string; usuarioId: string; 
 
 let contador = 0;
 const sufixo = () => `${Date.now().toString(36)}${(contador++).toString(36)}`;
-/** Sigla é única: três letras sorteadas para dois arquivos não colidirem. */
-const sigla = () =>
-  Array.from({ length: 3 }, () => String.fromCharCode(65 + Math.floor(Math.random() * 26))).join("");
+/**
+ * Loja com sigla LIVRE (única na rede), sorteada no próprio banco entre as que
+ * ninguém usa, como em auditoria-apoio.ts: as lojas das outras suítes ficam
+ * gravadas e um sorteio no cliente colidia de vez em quando.
+ */
+function novaLoja(tx: Transacao, nome: string, slug: string) {
+  return umaLinha<{ id: string }>(tx, sql`
+    insert into lojas (nome, slug, sigla)
+    select ${nome}, ${slug}, c.s
+      from (select chr(65 + floor(random() * 26)::int) || chr(65 + floor(random() * 26)::int)
+                   || chr(65 + floor(random() * 26)::int) as s
+              from generate_series(1, 200)) c
+     where not exists (select 1 from lojas l where l.sigla = c.s)
+     limit 1
+    returning id`);
+}
 
 /** Duas lojas, uma pessoa dona e uma conta de WhatsApp na primeira loja. */
 export async function cenario(tx: Transacao): Promise<Cenario> {
   const s = sufixo();
-  const loja = await umaLinha<{ id: string }>(tx, sql`
-    insert into lojas (nome, slug, sigla) values (${`Centro ${s}`}, ${`centro-${s}`}, ${sigla()}) returning id`);
-  const outra = await umaLinha<{ id: string }>(tx, sql`
-    insert into lojas (nome, slug, sigla) values (${`Sul ${s}`}, ${`sul-${s}`}, ${sigla()}) returning id`);
+  const loja = await novaLoja(tx, `Centro ${s}`, `centro-${s}`);
+  const outra = await novaLoja(tx, `Sul ${s}`, `sul-${s}`);
   const usuario = await umaLinha<{ id: string }>(tx, sql`
     insert into usuarios (nome, email, papel) values ('Dona de Teste', ${`dona-${s}@exemplo.invalido`}, 'dono')
     returning id`);
