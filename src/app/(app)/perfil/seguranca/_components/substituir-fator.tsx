@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Campo } from "@/components/comum/campo";
 import { BotaoEnviar } from "@/components/comum/botao-enviar";
-import { Copiar } from "@/components/comum/copiar";
+import { ChaveDoTotp } from "@/components/comum/chave-do-totp";
 import { FaixaAviso } from "@/components/comum/faixa-aviso";
 import { ModalConfirmacaoBlock } from "@/components/comum/modal-confirmacao-block";
 import { ModalReautenticacao } from "@/components/comum/modal-reautenticacao";
@@ -22,7 +22,11 @@ import {
 } from "@/lib/actions/seguranca";
 import { pediuProva, useReautenticacao } from "./usar-reautenticacao";
 
-const INICIAL_URI: Resultado<{ uri: string }> = { ok: false, codigo: "", mensagem: "" };
+const INICIAL_URI: Resultado<{ uri: string; qr: string }> = {
+  ok: false,
+  codigo: "",
+  mensagem: "",
+};
 const INICIAL_FIM: Resultado<null> = { ok: false, codigo: "", mensagem: "" };
 
 /**
@@ -277,7 +281,7 @@ function AssistenteDeTotp({
 
   return (
     <div className="flex flex-col gap-4 rounded-lg border border-border p-4">
-      <ChaveDoAplicativo uri={preparo.dados.uri} />
+      <ChaveDoTotp uri={preparo.dados.uri} qr={preparo.dados.qr} />
       <form action={confirmarAcao} className="flex flex-col gap-4">
         <Campo
           nome="codigo"
@@ -297,34 +301,6 @@ function AssistenteDeTotp({
         </Campo>
         <BotaoEnviar>Confirmar</BotaoEnviar>
       </form>
-    </div>
-  );
-}
-
-/**
- * ponytail: a chave aparece como TEXTO, sem imagem de QR. Nenhuma biblioteca de
- * QR está instalada e a CSP aceita só `img-src 'self' data: blob:` — a
- * dependência nova é decisão do orquestrador. A chave digitada funciona em todo
- * aplicativo autenticador.
- */
-function ChaveDoAplicativo({ uri }: { uri: string }) {
-  let chave = "";
-  try {
-    chave = new URL(uri).searchParams.get("secret") ?? "";
-  } catch {
-    chave = "";
-  }
-
-  return (
-    <div className="flex flex-col gap-2 rounded-lg bg-muted p-4">
-      <p className="text-denso font-medium">Cadastre esta chave no aplicativo</p>
-      <div className="flex items-center gap-2">
-        <code className="min-w-0 flex-1 break-all font-mono text-denso">{chave}</code>
-        <Copiar valor={chave} rotulo="a chave" />
-      </div>
-      <p className="text-legenda text-muted-foreground">
-        Ela aparece uma vez só: depois de confirmar, não é mostrada de novo.
-      </p>
     </div>
   );
 }

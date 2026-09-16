@@ -17,6 +17,7 @@ import {
 import { encerrarSessaoDoUsuario, revogarSessoesDe } from "@/lib/auth/sessoes";
 import { atualizarComTrava } from "@/lib/db/mutacoes";
 import { usuarios } from "@/lib/db/schema/auth/usuarios";
+import { qrDeDataUrl } from "@/lib/qr";
 import {
   apelidoSchema,
   codigoTotpSchema,
@@ -169,19 +170,26 @@ export async function trocarSenha(
 // /perfil/seguranca — segundo fator
 // ---------------------------------------------------------------------------
 
+/**
+ * O QR é montado NO SERVIDOR (`src/lib/qr.ts`): a `otpauth://` carrega o segredo
+ * do TOTP, e um gerador de QR na internet receberia esse segredo em texto. A
+ * `uri` acompanha porque é dela que a tela tira a chave escrita — a alternativa
+ * de quem não pode usar a câmera.
+ */
 export async function iniciarCadastroDeTotp(
-  _anterior: Resultado<{ uri: string }>,
+  _anterior: Resultado<{ uri: string; qr: string }>,
   form: FormData,
-): Promise<Resultado<{ uri: string }>> {
+): Promise<Resultado<{ uri: string; qr: string }>> {
   return executarAcao(
     {
       permissao: CHAVE_DE_QUALQUER_SESSAO,
       entrada: SENHA_ATUAL,
       loja: SEM_LOJA,
       fresca: true,
-      executar: async (dados, ctx) => ({
-        uri: await iniciarTotp(ctx.sessao, dados.senhaAtual),
-      }),
+      executar: async (dados, ctx) => {
+        const uri = await iniciarTotp(ctx.sessao, dados.senhaAtual);
+        return { uri, qr: qrDeDataUrl(uri) };
+      },
     },
     form,
   );

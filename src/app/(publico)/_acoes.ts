@@ -6,6 +6,7 @@ import { executarAcao, executarAcaoPublica } from "@/lib/actions/_base";
 import { ErroDeValidacao, ErroDoAplicativo, type Resultado } from "@/lib/erros";
 import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
+import { qrDeDataUrl } from "@/lib/qr";
 import { auth } from "@/lib/auth/auth";
 import { usarConvite } from "@/lib/auth/convites";
 import { politicaDeSenha } from "@/lib/auth/politica-senha";
@@ -172,17 +173,25 @@ const BASE_PROVISORIA = {
   fresca: true,
 } as const;
 
+/**
+ * O QR nasce AQUI, no servidor: a `otpauth://` carrega o segredo do TOTP, e
+ * mandá-la a um gerador de QR na internet entregaria o segundo fator de toda a
+ * operação a um terceiro. A `uri` continua indo junto porque é dela que a tela
+ * tira a chave em texto — o caminho de quem tem o autenticador no mesmo
+ * aparelho, sem câmera, ou usa leitor de tela.
+ */
 export async function prepararTotpDoPrimeiroAcesso(
-  _anterior: Resultado<{ uri: string }>,
+  _anterior: Resultado<{ uri: string; qr: string }>,
   form: FormData,
-): Promise<Resultado<{ uri: string }>> {
+): Promise<Resultado<{ uri: string; qr: string }>> {
   return executarAcao(
     {
       ...BASE_PROVISORIA,
       entrada: z.object({ senhaAtual: senhaAtualSchema }),
-      executar: async (dados, ctx) => ({
-        uri: await iniciarTotp(ctx.sessao, dados.senhaAtual),
-      }),
+      executar: async (dados, ctx) => {
+        const uri = await iniciarTotp(ctx.sessao, dados.senhaAtual);
+        return { uri, qr: qrDeDataUrl(uri) };
+      },
     },
     form,
   );

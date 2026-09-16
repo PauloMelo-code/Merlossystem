@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Campo } from "@/components/comum/campo";
 import { BotaoEnviar } from "@/components/comum/botao-enviar";
-import { Copiar } from "@/components/comum/copiar";
+import { ChaveDoTotp } from "@/components/comum/chave-do-totp";
 import { FaixaAviso } from "@/components/comum/faixa-aviso";
 import type { Resultado } from "@/lib/erros";
 import {
@@ -17,7 +17,11 @@ import {
 } from "../../_acoes";
 import { criarPasskeyNoAparelho } from "../../_components/porta-de-auth";
 
-const INICIAL_URI: Resultado<{ uri: string }> = { ok: false, codigo: "", mensagem: "" };
+const INICIAL_URI: Resultado<{ uri: string; qr: string }> = {
+  ok: false,
+  codigo: "",
+  mensagem: "",
+};
 type Conclusao = { concluido: boolean; falta: "passkey" | "totp" | null };
 const INICIAL_FIM: Resultado<Conclusao> = { ok: false, codigo: "", mensagem: "" };
 
@@ -170,38 +174,6 @@ function ComPasskey({ aoTerminar }: { aoTerminar: (resultado: Conclusao) => void
   );
 }
 
-/**
- * A chave do TOTP aparece como TEXTO para digitar no aplicativo.
- *
- * ponytail: sem imagem de QR. Nenhuma biblioteca de QR está instalada, e a CSP
- * aceita só `img-src 'self' data: blob:` — gerar a imagem exigiria dependência
- * nova, que é decisão do orquestrador e não do pacote. A chave digitada
- * funciona em todo aplicativo autenticador; quando a dependência entrar, o QR
- * encosta aqui e o texto continua como alternativa acessível.
- */
-export function ChaveDoTotp({ uri }: { uri: string }) {
-  let chave = "";
-  try {
-    chave = new URL(uri).searchParams.get("secret") ?? "";
-  } catch {
-    chave = "";
-  }
-
-  return (
-    <div className="flex flex-col gap-2 rounded-lg border border-border bg-muted p-4">
-      <p className="text-denso font-medium">Cadastre esta chave no aplicativo</p>
-      <div className="flex items-center gap-2">
-        <code className="min-w-0 flex-1 break-all font-mono text-denso">{chave}</code>
-        <Copiar valor={chave} rotulo="a chave" />
-      </div>
-      <p className="text-legenda text-muted-foreground">
-        No aplicativo, escolha inserir a chave manualmente. Ela aparece uma vez só: depois
-        de confirmar, não é mostrada de novo.
-      </p>
-    </div>
-  );
-}
-
 function ComAplicativo({
   senha,
   aoTerminar,
@@ -221,7 +193,8 @@ function ComAplicativo({
       <form action={prepararAcao} className="flex flex-col gap-4">
         <p className="text-corpo text-muted-foreground">
           Tenha o aplicativo autenticador aberto no celular (Google Authenticator,
-          Microsoft Authenticator, 1Password, Bitwarden).
+          Microsoft Authenticator, 1Password, Bitwarden). Você vai ler um código QR — ou
+          digitar a chave, se preferir.
         </p>
 
         {/*
@@ -257,7 +230,7 @@ function ComAplicativo({
 
   return (
     <div className="flex flex-col gap-6">
-      <ChaveDoTotp uri={preparo.dados.uri} />
+      <ChaveDoTotp uri={preparo.dados.uri} qr={preparo.dados.qr} />
       <form action={confirmarAcao} className="flex flex-col gap-4">
         <Campo
           nome="codigo"
