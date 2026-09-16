@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { hash, verify } from "@node-rs/argon2";
 
 /**
@@ -17,7 +18,9 @@ import { hash, verify } from "@node-rs/argon2";
  */
 
 const CUSTO = { algorithm: 2, memoryCost: 19456, timeCost: 2, parallelism: 1 };
-const SENHA = "frase-de-teste-sem-valor-nenhum-para-medicao";
+// Aleatoria a cada execucao: o custo do Argon2id nao depende do texto, e
+// literal de senha em `scripts/` reprova na trava T17.
+const SENHA = randomBytes(24).toString("base64url");
 
 const amostras = Number(process.argv[2] ?? 20);
 const concorrencia = Number(process.argv[3] ?? 4);

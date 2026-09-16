@@ -226,3 +226,12 @@ export async function ipDaRequisicao(): Promise<string | null> {
 export { pode } from "./permissoes";
 export { exigirAlvoPermitido } from "./permissoes/alvo";
 export { contextoDe, escopoDeLoja, lojaParaGravar } from "./loja";
+
+/**
+ * Fecham o contrato de 01-dados.md §13.1. A implementacao mora em
+ * `src/lib/seguranca/maquina.ts` (02-seguranca.md §12), porque e borda e nao
+ * pode depender do portao humano: `rotaDeMaquina` NUNCA aceita cookie de
+ * sessao e `exigirSessao` nunca aceita segredo de maquina (REQ-A4).
+ */
+export { rotaDeMaquina, rotaPublica } from "@/lib/seguranca/maquina";
+export type { ConfigMaquina, ConfigPublica } from "@/lib/seguranca/maquina";
