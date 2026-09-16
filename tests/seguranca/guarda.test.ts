@@ -17,11 +17,15 @@ import * as base from "@/lib/actions/_base";
 const RAIZ = process.cwd();
 
 /**
- * Piso mínimo de arquivos `"use server"`. Hoje é 0 porque as telas nascem em
- * F8 e os oito pacotes da onda 2; SUBIR este número junto com elas é o que
- * impede a trava de virar decorativa quando alguém apaga a pasta de actions.
+ * Piso mínimo de arquivos `"use server"`. SUBIR este número junto com cada tela
+ * é o que impede a trava de virar decorativa quando alguém apaga a pasta de
+ * actions.
+ *
+ * Hoje são três, todos da fundação: a casca de `(app)`, as actions da área
+ * pública e `actions/seguranca.ts`. Os oito pacotes da onda 2 acrescentam os
+ * seus.
  */
-const PISO_DE_ACTIONS = 0;
+const PISO_DE_ACTIONS = 3;
 
 function varrer(pasta: string): string[] {
   let entradas;

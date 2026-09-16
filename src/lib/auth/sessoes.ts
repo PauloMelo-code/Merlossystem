@@ -256,8 +256,18 @@ export async function encerrarSessaoDoUsuario(
  * pela pessoa. O polling do inbox passa `renovaAtividade: false` — senão a
  * inatividade de 60 min nunca aconteceria com a aba aberta.
  */
-export async function marcarAtividade(sessaoId: string, ultimoUso: Date | null): Promise<void> {
-  if (ultimoUso && Date.now() - ultimoUso.getTime() < PASSO_ATIVIDADE_MS) return;
+export async function marcarAtividade(
+  sessaoId: string,
+  ultimoUso: Date | string | null,
+): Promise<void> {
+  // `db.execute(sql...)` devolve a coluna como veio do driver, e `timestamptz`
+  // chega como STRING. Sem esta normalização, `.getTime()` estoura e a SEGUNDA
+  // ação de toda sessão falha com "INESPERADO" — a primeira passa porque
+  // `ultimo_uso_em` ainda é nulo. Foi o defeito que a prova manual de F8 achou.
+  const quando = ultimoUso === null ? null : new Date(ultimoUso);
+  if (quando && !Number.isNaN(quando.getTime()) && Date.now() - quando.getTime() < PASSO_ATIVIDADE_MS) {
+    return;
+  }
   try {
     await db.execute(sql`
       update usuarios_sessoes set ultimo_uso_em = now() where id = ${sessaoId}::uuid

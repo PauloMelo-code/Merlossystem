@@ -1,125 +1,28 @@
 import { ErroDeValidacao } from "@/lib/erros";
-import { CONTEXTO_DA_CASA, ehSenhaComum } from "./senhas-comuns";
+import { motivosDeSenha, type ContextoDeSenha } from "./senha-regras";
 
 /**
  * Política de senha (02-seguranca.md §6).
  *
- * A parte determinística é PURA e este arquivo NÃO tem `import "server-only"`:
- * é o mesmo módulo que o servidor e o componente da tela importam, para a lista
- * de motivos ser idêntica dos dois lados (B6). Os dois pedaços que precisam de
- * rede ou banco (HIBP e histórico) entram por `import()` dentro da função
- * assíncrona — o cliente nunca chama `politicaDeSenha`, então o módulo do banco
- * nunca é avaliado no navegador.
+ * A parte determinística é PURA e mora em `./senha-regras.ts`, que a tela
+ * importa direto: é o mesmo módulo dos dois lados, para a lista de motivos ser
+ * idêntica (B6). Ela foi separada daqui porque este arquivo alcança o banco e
+ * o HIBP por `import()`, e o empacotador do Next arrastaria esse grafo para o
+ * navegador — onde `server-only` reprova o build.
  *
  * ONDE RODA: só onde a senha é GRAVADA — convite, `/reset-password`,
  * `/change-password` e a troca pela action. NUNCA em `password.hash`/`verify`,
  * que rodam no login e virariam oráculo (B9/G22/G23).
- *
- * VOCABULÁRIO: nenhuma mensagem fala em "token", "link", "inválido" ou
- * "expirado" (E10) — senha fraca não pode ser confundida com link queimado.
  */
 
-export const MIN_SENHA = 15;
-export const MAX_SENHA = 128;
-/** Teto bruto, conferido ANTES de qualquer avaliação ou hash (B8). */
-export const MAX_BYTES_SENHA = 1024;
-
-export const CAMINHOS_QUE_GRAVAM_SENHA = [
-  "/reset-password",
-  "/change-password",
-] as const;
-
-export type ContextoDeSenha = {
-  nome?: string | null;
-  email?: string | null;
-  loja?: string | null;
-};
-
-/** Sequência de alfabeto, de teclado ou de dígitos, em qualquer direção. */
-const SEQUENCIAS = [
-  "abcdefghijklmnopqrstuvwxyz",
-  "0123456789",
-  "qwertyuiop",
-  "asdfghjkl",
-  "zxcvbnm",
-];
-
-function temSequencia(senha: string, tamanho = 5): boolean {
-  const baixa = senha.toLowerCase();
-  for (const linha of SEQUENCIAS) {
-    const invertida = [...linha].reverse().join("");
-    for (const fonte of [linha, invertida]) {
-      for (let i = 0; i + tamanho <= fonte.length; i += 1) {
-        if (baixa.includes(fonte.slice(i, i + tamanho))) return true;
-      }
-    }
-  }
-  return false;
-}
-
-/** `aaaaaaa` ou `abababab`: repetição de um bloco curto cobrindo tudo. */
-function ehRepeticao(senha: string): boolean {
-  const baixa = senha.toLowerCase();
-  for (let tamanho = 1; tamanho <= 3; tamanho += 1) {
-    const bloco = baixa.slice(0, tamanho);
-    if (bloco.repeat(Math.ceil(baixa.length / tamanho)).slice(0, baixa.length) === baixa) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function pedacosDoContexto(contexto: ContextoDeSenha): string[] {
-  const cru = [
-    contexto.nome ?? "",
-    (contexto.email ?? "").split("@")[0] ?? "",
-    contexto.loja ?? "",
-  ].join(" ");
-  return cru
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter((p) => p.length >= 4);
-}
-
-/**
- * A parte determinística, pura. Devolve a lista de motivos — vazia quer dizer
- * "passou nesta camada". É esta função que a tela usa ao vivo.
- */
-export function motivosDeSenha(senha: string, contexto: ContextoDeSenha = {}): string[] {
-  const motivos: string[] = [];
-
-  if (Buffer.byteLength(senha, "utf8") > MAX_BYTES_SENHA) {
-    return ["A senha é longa demais."];
-  }
-  if (senha.length < MIN_SENHA) {
-    motivos.push(`Use ao menos ${MIN_SENHA} caracteres — uma frase curta serve.`);
-  }
-  if (senha.length > MAX_SENHA) {
-    motivos.push(`Use no máximo ${MAX_SENHA} caracteres.`);
-  }
-  if (ehSenhaComum(senha)) {
-    motivos.push("Esta senha é conhecida e está em listas públicas. Escolha outra.");
-  }
-  if (temSequencia(senha)) {
-    motivos.push("Evite sequências de teclado, alfabeto ou números.");
-  }
-  if (ehRepeticao(senha)) {
-    motivos.push("Evite repetir o mesmo trecho do começo ao fim.");
-  }
-
-  const baixa = senha
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase();
-  const contextuais = [...pedacosDoContexto(contexto), ...CONTEXTO_DA_CASA];
-  if (contextuais.some((p) => p.length >= 4 && baixa.includes(p))) {
-    motivos.push("Não use seu nome, seu e-mail, o nome da loja nem o da marca.");
-  }
-
-  return motivos;
-}
+export {
+  CAMINHOS_QUE_GRAVAM_SENHA,
+  MAX_BYTES_SENHA,
+  MAX_SENHA,
+  MIN_SENHA,
+  motivosDeSenha,
+} from "./senha-regras";
+export type { ContextoDeSenha } from "./senha-regras";
 
 /**
  * HIBP por k-anonimato: manda só os 5 primeiros do SHA-1 e compara o sufixo.

@@ -39,8 +39,20 @@ export const ACOES_COM_BLOCK = [
   "eliminar-dados-do-titular",
 ] as const;
 
-const PISO_DE_TELAS_LIGADAS = 0;
-const telasLigadas: readonly string[] = [];
+/**
+ * Cada tela que liga uma das ações acima ACRESCENTA o identificador aqui e sobe
+ * o piso — é o que impede esta trava de virar decoração. A prova de cada uma
+ * vive no arquivo de teste da tela; aqui ficam o inventário e o piso.
+ *
+ * F8 (telas de acesso e de conta) ligou duas: remover passkey e substituir
+ * fator compartilham o item 18, e encerrar todas as sessões é o item 17. As
+ * provas estão em `tests/componentes/perfil.test.tsx`.
+ */
+const PISO_DE_TELAS_LIGADAS = 2;
+const telasLigadas: readonly string[] = [
+  "substituir-fator-ou-remover-passkey",
+  "encerrar-todas-as-sessoes",
+];
 
 const BLOQUEIO_MS = 3000;
 

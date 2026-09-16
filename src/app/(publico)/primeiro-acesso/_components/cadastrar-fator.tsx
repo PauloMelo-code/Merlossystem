@@ -1,0 +1,234 @@
+"use client";
+
+import { useActionState, useEffect, useState } from "react";
+import { Fingerprint, Loader2, Smartphone } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Campo } from "@/components/comum/campo";
+import { BotaoEnviar } from "@/components/comum/botao-enviar";
+import { Copiar } from "@/components/comum/copiar";
+import type { Resultado } from "@/lib/erros";
+import {
+  confirmarPasskeyDoPrimeiroAcesso,
+  confirmarTotpDoPrimeiroAcesso,
+  prepararPasskeyDoPrimeiroAcesso,
+  prepararTotpDoPrimeiroAcesso,
+} from "../../_acoes";
+import { criarPasskeyNoAparelho } from "../../_components/porta-de-auth";
+
+const INICIAL_URI: Resultado<{ uri: string }> = { ok: false, codigo: "", mensagem: "" };
+const INICIAL_FIM: Resultado<{ concluido: boolean }> = { ok: false, codigo: "", mensagem: "" };
+
+/**
+ * Passo 2: cadastrar o segundo fator (02-seguranca.md §9.1 e §9.2 item 7).
+ *
+ * PASSKEY é a recomendada — é a resistente a phishing e, para `dono` e `admin`,
+ * é obrigatória (H7). O aplicativo autenticador existe para o celular de loja
+ * sem biometria.
+ *
+ * Não há terceira opção: OTP por e-mail, SMS e código de recuperação não
+ * existem no sistema (S-07, D3/D4, G4), e desenhar a tela deles seria prometer
+ * o que o código não faz (U8).
+ */
+export function CadastrarFator({
+  senha,
+  aoConcluir,
+}: {
+  senha: string;
+  aoConcluir: () => void;
+}) {
+  const [escolha, setEscolha] = useState<"nenhuma" | "passkey" | "totp">("nenhuma");
+
+  if (escolha === "totp") return <ComAplicativo senha={senha} aoConcluir={aoConcluir} />;
+  if (escolha === "passkey") return <ComPasskey aoConcluir={aoConcluir} />;
+
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-corpo text-muted-foreground">
+        Escolha como você vai confirmar que é você toda vez que entrar.
+      </p>
+
+      <Button type="button" onClick={() => setEscolha("passkey")}>
+        <Fingerprint aria-hidden="true" strokeWidth={2} />
+        Usar uma passkey (recomendado)
+      </Button>
+      <p className="text-legenda text-muted-foreground">
+        Usa a digital, o rosto ou o PIN deste aparelho. É a forma mais segura e a mais
+        rápida no dia a dia.
+      </p>
+
+      <Button type="button" variant="outline" onClick={() => setEscolha("totp")}>
+        <Smartphone aria-hidden="true" strokeWidth={2} />
+        Usar um aplicativo autenticador
+      </Button>
+      <p className="text-legenda text-muted-foreground">
+        Para celular de loja sem biometria. Você digita um código de 6 dígitos ao entrar.
+      </p>
+    </div>
+  );
+}
+
+function ComPasskey({ aoConcluir }: { aoConcluir: () => void }) {
+  const [erro, setErro] = useState("");
+  const [ocupado, setOcupado] = useState(false);
+  const apelido = "Meu aparelho";
+
+  async function cadastrar() {
+    setOcupado(true);
+    setErro("");
+    try {
+      const preparo = await prepararPasskeyDoPrimeiroAcesso(apelido);
+      if (!preparo.ok) {
+        setErro(preparo.mensagem);
+        return;
+      }
+      const prova = await criarPasskeyNoAparelho(preparo.dados.opcoes);
+      const fim = await confirmarPasskeyDoPrimeiroAcesso({ apelido, resposta: prova });
+      if (!fim.ok) {
+        setErro(fim.mensagem);
+        return;
+      }
+      aoConcluir();
+    } catch {
+      setErro("O cadastro foi cancelado no aparelho. Tente de novo quando quiser.");
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-corpo">
+        O aparelho vai pedir a sua digital, o seu rosto ou o PIN. Nada disso chega ao
+        sistema — ele só recebe a confirmação.
+      </p>
+      {erro ? (
+        <p role="alert" className="text-corpo text-perigo">
+          {erro}
+        </p>
+      ) : null}
+      <Button
+        type="button"
+        onClick={() => void cadastrar()}
+        disabled={ocupado}
+        aria-busy={ocupado}
+      >
+        {ocupado ? (
+          <Loader2
+            aria-hidden="true"
+            strokeWidth={2}
+            className="movimento-essencial animate-spin"
+          />
+        ) : (
+          <Fingerprint aria-hidden="true" strokeWidth={2} />
+        )}
+        Cadastrar a passkey
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * A chave do TOTP aparece como TEXTO para digitar no aplicativo.
+ *
+ * ponytail: sem imagem de QR. Nenhuma biblioteca de QR está instalada, e a CSP
+ * aceita só `img-src 'self' data: blob:` — gerar a imagem exigiria dependência
+ * nova, que é decisão do orquestrador e não do pacote. A chave digitada
+ * funciona em todo aplicativo autenticador; quando a dependência entrar, o QR
+ * encosta aqui e o texto continua como alternativa acessível.
+ */
+export function ChaveDoTotp({ uri }: { uri: string }) {
+  let chave = "";
+  try {
+    chave = new URL(uri).searchParams.get("secret") ?? "";
+  } catch {
+    chave = "";
+  }
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-border bg-muted p-4">
+      <p className="text-denso font-medium">Cadastre esta chave no aplicativo</p>
+      <div className="flex items-center gap-2">
+        <code className="min-w-0 flex-1 break-all font-mono text-denso">{chave}</code>
+        <Copiar valor={chave} rotulo="a chave" />
+      </div>
+      <p className="text-legenda text-muted-foreground">
+        No aplicativo, escolha inserir a chave manualmente. Ela aparece uma vez só: depois
+        de confirmar, não é mostrada de novo.
+      </p>
+    </div>
+  );
+}
+
+function ComAplicativo({ senha, aoConcluir }: { senha: string; aoConcluir: () => void }) {
+  const [preparo, prepararAcao] = useActionState(prepararTotpDoPrimeiroAcesso, INICIAL_URI);
+  const [fim, confirmarAcao] = useActionState(confirmarTotpDoPrimeiroAcesso, INICIAL_FIM);
+
+  useEffect(() => {
+    if (fim.ok) aoConcluir();
+  }, [fim, aoConcluir]);
+
+  if (!preparo.ok) {
+    return (
+      <form action={prepararAcao} className="flex flex-col gap-4">
+        <p className="text-corpo text-muted-foreground">
+          Tenha o aplicativo autenticador aberto no celular (Google Authenticator,
+          Microsoft Authenticator, 1Password, Bitwarden).
+        </p>
+
+        {/*
+         * A senha acompanha o passo 1 em memória. Quem VOLTOU para concluir o
+         * cadastro (fechou a aba, trocou de aparelho) não a tem mais, e o
+         * `/two-factor/enable` do Better Auth a exige — então a tela pede, em
+         * vez de falhar com um erro que a pessoa não consegue corrigir.
+         */}
+        {senha ? (
+          <input type="hidden" name="senhaAtual" value={senha} />
+        ) : (
+          <Campo nome="senhaAtual" rotulo="Sua senha">
+            <Input
+              id="senhaAtual"
+              name="senhaAtual"
+              type="password"
+              autoComplete="current-password"
+              required
+            />
+          </Campo>
+        )}
+        {preparo.mensagem ? (
+          <p role="alert" className="text-corpo text-perigo">
+            {preparo.mensagem}
+          </p>
+        ) : null}
+        <BotaoEnviar>Gerar a chave</BotaoEnviar>
+      </form>
+    );
+  }
+
+  const erro = fim.ok ? undefined : (fim.erros?.["codigo"]?.[0] ?? fim.mensagem);
+
+  return (
+    <div className="flex flex-col gap-6">
+      <ChaveDoTotp uri={preparo.dados.uri} />
+      <form action={confirmarAcao} className="flex flex-col gap-4">
+        <Campo
+          nome="codigo"
+          rotulo="Código de 6 dígitos"
+          ajuda="Digite o código que o aplicativo está mostrando agora."
+          {...(erro ? { erro } : {})}
+        >
+          <Input
+            id="codigo"
+            name="codigo"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            maxLength={7}
+            aria-invalid={Boolean(erro)}
+            required
+          />
+        </Campo>
+        <BotaoEnviar>Confirmar e concluir</BotaoEnviar>
+      </form>
+    </div>
+  );
+}

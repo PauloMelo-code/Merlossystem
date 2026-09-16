@@ -3,6 +3,7 @@ import { cookies, headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import type { z } from "zod";
 import { ErroDeValidacao, paraResultado, type Resultado } from "@/lib/erros";
+import { logger } from "@/lib/logger";
 import { emTransacao, type Transacao } from "@/lib/db/mutacoes";
 import { exigirPermissao, exigirSessao, exigirSessaoFresca, type Contexto, type Sessao } from "@/lib/auth/guard";
 import { contextoDe, resolverLojaPedida } from "@/lib/auth/loja";
@@ -149,8 +150,27 @@ export async function executarAcao<E extends z.ZodType, T>(
     if (erro instanceof Error && "digest" in erro && String(erro.digest).startsWith("NEXT_")) {
       throw erro;
     }
+    registrarInesperado(erro, cfg.permissao);
     return paraResultado(erro);
   }
+}
+
+/**
+ * Exceção que não é `ErroDoAplicativo` vira "INESPERADO" na tela, sem detalhe
+ * nenhum — é a regra, e é certa. Mas sem um registro do lado do servidor não
+ * sobra rastro nenhum para quem vai corrigir: o defeito aparece como uma frase
+ * genérica e some. O log fica no servidor; a tela continua genérica.
+ */
+function registrarInesperado(erro: unknown, acaoChamada: string): void {
+  if (erro instanceof ErroDoAplicativo) return;
+  logger.error(
+    {
+      acao: acaoChamada,
+      erro: erro instanceof Error ? erro.message : String(erro),
+      pilha: erro instanceof Error ? erro.stack : undefined,
+    },
+    "action falhou por erro inesperado",
+  );
 }
 
 /** Açúcar para quem prefere declarar a action como constante (T1 aceita os dois). */
@@ -186,6 +206,7 @@ export async function executarAcaoPublica<E extends z.ZodType, T>(
     if (erro instanceof Error && "digest" in erro && String(erro.digest).startsWith("NEXT_")) {
       throw erro;
     }
+    registrarInesperado(erro, cfg.motivo);
     return paraResultado(erro);
   }
 }

@@ -8,7 +8,13 @@ import { alertas } from "@/lib/db/schema/alertas";
 import { lojas } from "@/lib/db/schema/lojas";
 import { usuarios } from "@/lib/db/schema/auth/usuarios";
 import { COOKIE_LOJA } from "@/lib/actions/_base";
-import { ErroNaoAutenticado, exigirSessao, pode } from "@/lib/auth/guard";
+import {
+  ErroFatorObrigatorio,
+  ErroNaoAutenticado,
+  ErroTrocaObrigatoria,
+  exigirSessao,
+  pode,
+} from "@/lib/auth/guard";
 import { ehPapelDeGestao, escopoDeLoja, resolverLojaPedida } from "@/lib/auth/loja";
 import { itensVisiveis } from "@/lib/navegacao";
 import { rotuloDePapel } from "@/lib/ui/tons";
@@ -39,7 +45,13 @@ export default async function LayoutDoAplicativo({ children }: { children: React
   } catch (erro) {
     // O proxy já redireciona quem não tem cookie; aqui cai quem tem cookie
     // inválido, expirado ou de sessão encerrada em outro aparelho.
-    if (erro instanceof ErroNaoAutenticado) redirect("/entrar");
+    if (erro instanceof ErroNaoAutenticado) redirect("/entrar?motivo=sessao");
+    // Gates de sessão reduzida (02-seguranca.md §9.4): a sessão existe e é
+    // válida, mas só alcança o fluxo que falta concluir. Sem estes dois
+    // desvios a pessoa recebe a tela de erro em vez do caminho de saída
+    // (04-ui.md §7.2).
+    if (erro instanceof ErroFatorObrigatorio) redirect("/primeiro-acesso");
+    if (erro instanceof ErroTrocaObrigatoria) redirect("/perfil/seguranca");
     throw erro;
   }
 

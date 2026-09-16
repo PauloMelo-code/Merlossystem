@@ -168,16 +168,44 @@ describe("SSRF fonte: nenhum fetch fora desta porta", () => {
    */
   const FORA_DA_REGRA = "src/lib/auth/politica-senha.ts";
 
-  it("fetch( so existe em rede/buscarExterno.ts e na chamada ao HIBP", () => {
+  /**
+   * A segunda excecao e de OUTRA natureza: roda no NAVEGADOR, nao no servidor.
+   * `porta-de-auth.ts` fala com `/api/auth/**` da propria origem, porque a
+   * recusa unica de login (bytes, cabecalhos e piso de tempo) mora no Route
+   * Handler e uma Server Action passaria por fora dela. SSRF e sobre o servidor
+   * alcancar endereco de terceiro; aqui nao ha servidor nem host.
+   *
+   * A excecao e estreita e conferida abaixo: o arquivo tem de ser `"use client"`
+   * e o unico alvo do fetch tem de ser um caminho relativo em `/api/auth`.
+   */
+  const PORTA_DO_NAVEGADOR = "src/app/(publico)/_components/porta-de-auth.ts";
+
+  it("fetch( so existe em rede/buscarExterno.ts, no HIBP e na porta do navegador", () => {
     const achados = arquivosDe("src", [".ts", ".tsx"]).filter((f) =>
       /\bfetch\(/.test(semComentarios(lerFonte(f))),
     );
-    expect(achados.sort()).toEqual([FORA_DA_REGRA, "src/lib/rede/buscarExterno.ts"]);
+    expect(achados.sort()).toEqual(
+      [PORTA_DO_NAVEGADOR, FORA_DA_REGRA, "src/lib/rede/buscarExterno.ts"].sort(),
+    );
   });
 
   it("a excecao do HIBP tem host literal e teto de tempo proprio", () => {
     const fonte = lerFonte(FORA_DA_REGRA);
     expect(fonte).toMatch(/fetch\(`https:\/\/api\.pwnedpasswords\.com\/range\/\$\{prefixo\}`/);
     expect(fonte).toMatch(/abortar\.abort\(\)/);
+  });
+
+  it("a porta do navegador e cliente e so alcanca /api/auth da propria origem", () => {
+    const fonte = lerFonte(PORTA_DO_NAVEGADOR);
+    expect(fonte.startsWith('"use client"')).toBe(true);
+
+    const alvos = [...semComentarios(fonte).matchAll(/\bfetch\(([^,]+)/g)].map((m) =>
+      (m[1] ?? "").trim(),
+    );
+    expect(alvos.length).toBeGreaterThan(0);
+    for (const alvo of alvos) {
+      // Caminho relativo literal: sem esquema, sem host, sem variavel na frente.
+      expect(alvo, alvo).toMatch(/^`\/api\/auth\$\{caminho\}`$/);
+    }
   });
 });
