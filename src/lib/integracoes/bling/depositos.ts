@@ -1,12 +1,15 @@
 import "server-only";
-import { naoImplementado } from "@/lib/erros";
+import { contaBling } from "./cliente";
+import { PRODUTOS_POR_PAGINA } from "./config";
+import { listarDepositos } from "./leitura";
 
 /**
  * COSTURA — dono: M4, consumida por M5 (tela de lojas escolhe o depósito em
  * vez de digitar o id). Assinatura final criada pela integração (D11).
  *
- * SOMENTE LEITURA (T26): `GET /depositos` na conta Bling da rede. Sem conta
- * conectada, `ErroDeIntegracao` permanente — a tela cai no campo digitado.
+ * SOMENTE LEITURA (T26): `GET /depositos` na conta Bling da rede, pelo mesmo
+ * balde de 3 req/s de `lerDoBling`. Sem conta conectada, `ErroDeIntegracao`
+ * permanente — a tela cai no campo digitado. Sem cache: a tela de lojas é rara.
  */
 
 export type DepositoBling = {
@@ -17,6 +20,16 @@ export type DepositoBling = {
   ativo: boolean;
 };
 
+/** A rede tem poucos depósitos; o teto só evita laço sem fim. */
+const PAGINAS_MAXIMAS = 10;
+
 export async function listarDepositosBling(): Promise<DepositoBling[]> {
-  throw naoImplementado("lista de depósitos do Bling (M4)");
+  const conta = await contaBling();
+  const todos: DepositoBling[] = [];
+  for (let pagina = 1; pagina <= PAGINAS_MAXIMAS; pagina += 1) {
+    const lista = await listarDepositos(conta, pagina);
+    todos.push(...lista);
+    if (lista.length < PRODUTOS_POR_PAGINA) break;
+  }
+  return todos;
 }

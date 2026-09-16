@@ -18,6 +18,7 @@ vi.mock("@/lib/rede/buscarExterno", () => ({ buscarExterno: m.buscarExterno }));
 
 const { lerDoBling, montarUrl } = await import("@/lib/integracoes/bling/cliente");
 const { chaveDoLimitador, LIMITE_BLING } = await import("@/lib/integracoes/bling/config");
+const { listarDepositos } = await import("@/lib/integracoes/bling/leitura");
 
 const conta = { id: "conta-1", token: "tok" };
 const resposta = (status: number, corpo: unknown = {}) => ({
@@ -70,5 +71,28 @@ describe("lerDoBling", () => {
   it("404 é 'não existe', não erro", async () => {
     m.buscarExterno.mockResolvedValue(resposta(404));
     await expect(lerDoBling(conta, "/produtos/9")).resolves.toBeNull();
+  });
+});
+
+describe("listarDepositos (costura do M5)", () => {
+  it("GET /depositos, id como texto, situacao 0 = inativo e item malformado descartado", async () => {
+    m.buscarExterno.mockResolvedValue(
+      resposta(200, {
+        data: [
+          { id: 101, descricao: "Loja Centro", situacao: 1, padrao: true },
+          { id: 102, descricao: "Antigo", situacao: 0, padrao: false },
+          { id: 103, descricao: "Sem situação" },
+          { id: 104 },
+        ],
+      }),
+    );
+    await expect(listarDepositos(conta, 1)).resolves.toEqual([
+      { id: "101", descricao: "Loja Centro", padrao: true, ativo: true },
+      { id: "102", descricao: "Antigo", padrao: false, ativo: false },
+      { id: "103", descricao: "Sem situação", padrao: false, ativo: true },
+    ]);
+    const [url, opcoes] = m.buscarExterno.mock.calls[0]!;
+    expect(url).toContain("/Api/v3/depositos?pagina=1");
+    expect(opcoes).toMatchObject({ metodo: "GET" });
   });
 });

@@ -4,7 +4,7 @@ import { lerDoBling, type ContaBling } from "./cliente";
 import { PRODUTOS_POR_PAGINA } from "./config";
 
 /**
- * As três leituras que o sistema faz do Bling, com a resposta validada por Zod
+ * As leituras que o sistema faz do Bling, com a resposta validada por Zod
  * TOLERANTE: campo desconhecido é ignorado, campo ausente vira `null`. Um
  * produto malformado é descartado, não derruba a página inteira.
  *
@@ -90,6 +90,27 @@ export async function detalharProduto(conta: ContaBling, id: string): Promise<De
     pesoGramas: typeof peso === "number" ? Math.round(peso * 1000) : null,
     variacoes,
   };
+}
+
+const deposito = z.object({
+  id: z.coerce.string(),
+  descricao: z.string().trim().min(1),
+  // API v3: 1 = ativo, 0 = inativo. Ausente conta como ativo.
+  situacao: numero.nullish().catch(null),
+  padrao: z.boolean().catch(false),
+});
+
+export type DepositoLido = { id: string; descricao: string; padrao: boolean; ativo: boolean };
+
+/** Uma página de `GET /depositos`. Página vazia = fim. */
+export async function listarDepositos(conta: ContaBling, pagina: number): Promise<DepositoLido[]> {
+  const bruto = await lerDoBling(conta, "/depositos", { pagina, limite: PRODUTOS_POR_PAGINA });
+  return validos(listaDe(bruto), deposito).map((d) => ({
+    id: d.id,
+    descricao: d.descricao,
+    padrao: d.padrao,
+    ativo: d.situacao !== 0,
+  }));
 }
 
 /**
