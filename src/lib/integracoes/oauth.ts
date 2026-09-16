@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { env } from "@/lib/env";
 import type { Contexto, Sessao } from "@/lib/auth/guard";
-import { atualizarComTrava, emTransacao, inserirAuditado } from "@/lib/db/mutacoes";
+import { atualizarComTrava, contextoDeSistema, emTransacao, inserirAuditado } from "@/lib/db/mutacoes";
 import { lojas_integracoes } from "@/lib/db/schema/integracoes";
 import { ErroDeConfiguracao, ErroDeIntegracao, ErroDoAplicativo } from "@/lib/erros";
 import { enfileirar } from "@/lib/fila/filas";
@@ -15,7 +15,6 @@ import { cifrar, conferirCofre } from "@/lib/seguranca/cofre";
 import { marcarUmaVez } from "@/lib/seguranca/limite";
 import { contaComCredencial, contaDaRede } from "./_consultas";
 import { registrarEstadoDoSistema } from "./contas";
-import { contextoDoSistema } from "./_sistema";
 
 /**
  * OAuth do Bling — o sistema como CLIENTE (02-seguranca.md §12, D-11).
@@ -198,7 +197,7 @@ async function gravarTokens(
  * workers renovando juntos queimariam o refresh um do outro.
  */
 export async function renovarTokenBling(integracaoId: string): Promise<"renovado" | "expirado" | "ignorado"> {
-  const ctx = contextoDoSistema("worker");
+  const ctx = contextoDeSistema({ origem: "worker" });
   try {
     return await emTransacao(ctx, async (tx) => {
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`renovar-${integracaoId}`}))`);

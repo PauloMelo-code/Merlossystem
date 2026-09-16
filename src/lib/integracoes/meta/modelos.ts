@@ -2,13 +2,12 @@ import "server-only";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { vivosE } from "@/lib/db/consultas";
-import { atualizarComTrava, emTransacao } from "@/lib/db/mutacoes";
+import { atualizarComTrava, contextoDeSistema, emTransacao } from "@/lib/db/mutacoes";
 import { lojas_integracoes_templates } from "@/lib/db/schema/integracoes";
 import type { AcaoAuditada } from "@/lib/db/schema/_enums/auditoria";
 import type { StatusTemplate } from "@/lib/db/schema/_enums/plataforma";
 import { logger } from "@/lib/logger";
 import { contaComCredencial } from "../_consultas";
-import { contextoDoSistema } from "../_sistema";
 import { listarModelosDaMeta, type ModeloDaMeta } from "./graph";
 
 /**
@@ -21,15 +20,12 @@ import { listarModelosDaMeta, type ModeloDaMeta } from "./graph";
  * modelo é da tela `/modelos` (pacote M6).
  */
 
-/**
- * PENDÊNCIA DA FUNDAÇÃO (bloqueio registrado): `ACOES_AUDITADAS` não tem
- * `template_pausado`. Até a lista crescer, o pausado NÃO é aplicado — é
- * registrado em log — para a trilha não mentir com outra ação.
- */
+/** Cada status que a Meta devolve tem a sua ação de trilha. Rascunho é só daqui. */
 const ACAO_POR_STATUS: Partial<Record<StatusTemplate, AcaoAuditada>> = {
   enviado: "template_enviado",
   aprovado: "template_aprovado",
   rejeitado: "template_rejeitado",
+  pausado: "template_pausado",
 };
 
 export type ResumoModelos = { lidos: number; alterados: number; ignorados: number };
@@ -93,18 +89,13 @@ export async function sincronizarModelosDaConta(integracaoId: string): Promise<R
     .from(lojas_integracoes_templates)
     .where(vivosE(lojas_integracoes_templates, eq(lojas_integracoes_templates.integracao_id, integracaoId)));
 
-  const ctx = contextoDoSistema("worker", { tipo: "uma", lojaId: conta.lojaId });
+  const ctx = contextoDeSistema({ origem: "worker", lojaId: conta.lojaId });
   const agora = new Date();
   for (const local of locais) {
     // Rascunho nunca foi enviado: o que a Meta tem com esse nome é outra coisa.
     if (local.status === "rascunho") continue;
     const remoto = porChave.get(`${local.nome}|${local.idioma}`);
     if (!remoto) continue;
-    if (remoto.status === "pausado") {
-      logger.warn({ templateId: local.id }, "modelo pausado na Meta: sem ação de trilha, não aplicado");
-      resumo.ignorados += 1;
-      continue;
-    }
     const dados = mudancaDoModelo(local, remoto, agora);
     if (!dados) continue;
     // Linha editada por gente no meio do caminho: a colisão derruba só esta

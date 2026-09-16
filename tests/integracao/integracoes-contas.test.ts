@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { emTransacao } from "@/lib/db/mutacoes";
+import { ATOR_SISTEMA, emTransacao } from "@/lib/db/mutacoes";
 import { ErroDeColisao, ErroDeValidacao } from "@/lib/erros";
 import { fecharFilas } from "@/lib/fila/filas";
 import {
@@ -186,14 +186,14 @@ describe("editar e estado de sistema", () => {
     expect((await linhaDaConta(rede.id)).loja_id).toBeNull();
   });
 
-  it("estado escrito pelo sistema grava trilha com ator 'sistema' e modified_by nulo", async () => {
+  it("estado escrito pelo sistema grava trilha e modified_by com o ATOR_SISTEMA", async () => {
     const loja = await semearLoja();
     const conta = await semearConta({ provedor: "uazapi", lojaId: loja.id });
     expect(await registrarEstadoDoSistema(conta.id, { status: "erro", ultimoErro: "token recusado" })).toBe(true);
     const linha = await linhaDaConta(conta.id);
-    expect(linha).toMatchObject({ status: "erro", ultimo_erro: "token recusado", modified_by: null });
+    expect(linha).toMatchObject({ status: "erro", ultimo_erro: "token recusado", modified_by: ATOR_SISTEMA });
     const [t] = await trilhaDe(conta.id);
-    expect(t).toMatchObject({ acao: "integracao_alterada", ator_tipo: "sistema" });
+    expect(t).toMatchObject({ acao: "integracao_alterada", ator_tipo: "sistema", ator_id: ATOR_SISTEMA });
     // Mesmo status: nada muda, nenhuma trilha nova.
     expect(await registrarEstadoDoSistema(conta.id, { status: "erro", ultimoErro: "token recusado" })).toBe(false);
     expect(await trilhaDe(conta.id)).toHaveLength(1);

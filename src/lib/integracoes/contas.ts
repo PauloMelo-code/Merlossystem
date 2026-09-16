@@ -6,6 +6,7 @@ import { vivosE } from "@/lib/db/consultas";
 import {
   atualizarComTrava,
   atualizarContador,
+  contextoDeSistema,
   emTransacao,
   excluirLogico,
   inserirAuditado,
@@ -27,7 +28,6 @@ import type {
   SubstituirCredencial,
 } from "@/lib/validadores/integracoes";
 import { UUID } from "./_consultas";
-import { contextoDoSistema } from "./_sistema";
 
 /**
  * Escrita das contas conectadas (01-dados.md §6.3; 02-seguranca.md §13).
@@ -227,8 +227,8 @@ export async function registrarEstadoDoSistema(
     .limit(1);
   if (!linha) return false;
 
-  const escopo = linha.lojaId ? { tipo: "uma" as const, lojaId: linha.lojaId } : { tipo: "todas" as const };
-  const ctx = contextoDoSistema("worker", escopo);
+  const ctx = contextoDeSistema({ origem: "worker", lojaId: linha.lojaId });
+  const escopo = ctx.escopo;
   const mudouStatus = linha.status !== estado.status || estado.extra !== undefined;
 
   await emTransacao(ctx, async (tx) => {
@@ -257,13 +257,12 @@ export async function registrarEstadoDoSistema(
 
 /** Carimbo de sincronização bem-sucedida (contador, sem trilha). */
 export async function marcarSincronizacao(integracaoId: string, lojaId: string | null): Promise<void> {
-  const escopo = lojaId ? { tipo: "uma" as const, lojaId } : { tipo: "todas" as const };
-  const ctx = contextoDoSistema("worker", escopo);
+  const ctx = contextoDeSistema({ origem: "worker", lojaId });
   await emTransacao(ctx, (tx) =>
     atualizarContador(
       tx,
       lojas_integracoes,
-      { id: integracaoId, escopo },
+      { id: integracaoId, escopo: ctx.escopo },
       { ultima_sincronizacao: new Date(), ultimo_erro: null },
     ),
   );

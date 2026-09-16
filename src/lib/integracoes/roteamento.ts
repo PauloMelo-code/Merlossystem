@@ -1,5 +1,7 @@
 import "server-only";
 import { env } from "@/lib/env";
+import { registrarEventoDeIngestao } from "@/lib/db/mutacoes";
+import type { CabecalhosEvento } from "@/lib/db/schema/integracoes";
 import { enfileirar } from "@/lib/fila/filas";
 import { jobId } from "@/lib/fila/idempotencia";
 import type { Provedor } from "@/lib/db/schema/_enums/plataforma";
@@ -10,7 +12,6 @@ import {
 } from "@/lib/seguranca/assinaturas";
 import { rotaDeMaquina, type EntradaDeMaquina } from "@/lib/seguranca/maquina";
 import { contaPorId, contaPorReferencia, type ContaParaWebhook } from "./_consultas";
-import { cabecalhosDoDiario, registrarEventoRecebido } from "./diario";
 import { lerJson, rotearInstagram, rotearUazapi, rotearWhatsapp, type ItemRoteado } from "./payload";
 
 /**
@@ -27,6 +28,20 @@ import { lerJson, rotearInstagram, rotearUazapi, rotearWhatsapp, type ItemRotead
 
 const NO_STORE = { "cache-control": "no-store" };
 const ok = () => new Response(null, { status: 200, headers: NO_STORE });
+
+/** Lista branca de cabeçalhos do diário (01-dados.md §10). Nunca `authorization`. */
+const CABECALHOS_GUARDADOS = ["content-type", "user-agent", "x-request-id"] as const;
+
+export function cabecalhosDoDiario(h: Headers): CabecalhosEvento {
+  const guardados: CabecalhosEvento = {};
+  for (const nome of CABECALHOS_GUARDADOS) {
+    const valor = h.get(nome);
+    if (valor) guardados[nome] = valor.slice(0, 256);
+  }
+  // A assinatura em si nunca é gravada: só a PRESENÇA dela.
+  if (h.get("x-hub-signature-256")) guardados["x-hub-signature-256"] = "presente";
+  return guardados;
+}
 
 /** Falha ao ENFILEIRAR também é 500: sem job, o evento nunca sairia de `recebido`. */
 class ErroDeEnfileiramento extends Error {}
@@ -58,7 +73,7 @@ async function despachar(
 
   // Modelo da Meta vem pela WABA, não por número: dispara a sincronização.
   if (item.tipo === "modelo") {
-    const r = await registrarEventoRecebido({ ...base, integracaoId: null, lojaId: null, tipo: "recebido" });
+    const r = await registrarEventoDeIngestao({ ...base, integracaoId: null, lojaId: null, tipo: "recebido" });
     if (r.pendente) {
       await exigirEnfileirado(
         enfileirar("integracoes", "sincronizar-templates", { eventoId: r.id }, { jobId: jobId("modelos", r.id) }),
@@ -79,7 +94,7 @@ async function despachar(
             : null;
 
   if (motivo !== null) {
-    await registrarEventoRecebido({
+    await registrarEventoDeIngestao({
       ...base,
       integracaoId: conta?.id ?? null,
       lojaId: conta?.lojaId ?? null,
@@ -89,7 +104,7 @@ async function despachar(
     return;
   }
 
-  const r = await registrarEventoRecebido({
+  const r = await registrarEventoDeIngestao({
     ...base,
     integracaoId: conta!.id,
     lojaId: conta!.lojaId,

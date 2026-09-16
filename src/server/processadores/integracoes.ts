@@ -1,5 +1,5 @@
 import type { Job } from "bullmq";
-import { emTransacao } from "@/lib/db/mutacoes";
+import { contextoDeSistema, emTransacao, registrarProcessamentoEvento } from "@/lib/db/mutacoes";
 import { ErroDeIntegracao } from "@/lib/erros";
 import { enfileirar, type JobDaFila } from "@/lib/fila/filas";
 import { jobId } from "@/lib/fila/idempotencia";
@@ -9,10 +9,8 @@ import {
   conferirSessao,
   contaDaRede,
   contasDoProvedor,
-  contextoDoSistema,
   marcarSincronizacao,
   registrarEstadoDoSistema,
-  registrarProcessamentoEvento,
   renovarTokenBling,
   sincronizarModelosDaConta,
 } from "@/lib/integracoes";
@@ -64,12 +62,8 @@ async function espalhar(
 /** Fecha a linha do diário, com o corpo trocado pela projeção mascarada. */
 async function concluirEvento(eventoId: string | undefined, tipo: string): Promise<void> {
   if (!eventoId) return;
-  const ctx = contextoDoSistema("worker");
-  await emTransacao(ctx, (tx) =>
-    registrarProcessamentoEvento(tx, eventoId, {
-      tipo: "processado",
-      corpo: { mascarado: true, tipo },
-    }),
+  await emTransacao(contextoDeSistema({ origem: "worker" }), (tx) =>
+    registrarProcessamentoEvento(tx, eventoId, { tipo: "processado", projecao: { mascarado: true, tipo } }),
   );
 }
 

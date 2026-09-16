@@ -115,9 +115,11 @@ export async function linhaDaConta(id: string): Promise<Record<string, unknown>>
   return (rows[0] ?? {}) as Record<string, unknown>;
 }
 
-export async function trilhaDe(entidadeId: string): Promise<{ acao: string; ator_tipo: string; depois: unknown }[]> {
+export async function trilhaDe(
+  entidadeId: string,
+): Promise<{ acao: string; ator_tipo: string; ator_id: string | null; depois: unknown }[]> {
   const { rows } = await banco.query(
-    `select acao, ator_tipo, depois from auditoria_eventos where entidade_id = $1 order by criado_em, id`,
+    `select acao, ator_tipo, ator_id, depois from auditoria_eventos where entidade_id = $1 order by criado_em, id`,
     [entidadeId],
   );
   return rows;
