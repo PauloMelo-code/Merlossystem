@@ -89,8 +89,20 @@ const esquema = z
     META_GRAPH_VERSION: z.string().regex(/^v\d+\.\d+$/, 'formato "v23.0"').optional(),
     WHATSAPP_VERIFY_TOKEN: segredo.optional(),
     INSTAGRAM_VERIFY_TOKEN: segredo.optional(),
+    /** Challenge do webhook do Messenger. PROPRIO: nunca o do Instagram (ADR 0054). */
+    FACEBOOK_VERIFY_TOKEN: segredo.optional(),
+    /** App da TikTok API for Business (mensagem direta, ADR 0055). Um app por ambiente. */
+    TIKTOK_APP_ID: z.string().min(1).optional(),
+    /** HMAC do webhook, troca de code, renovação e endereço de entrega do app. */
+    TIKTOK_APP_SECRET: segredo.optional(),
+    /** Sem default literal no código, como META_GRAPH_VERSION. */
+    TIKTOK_API_VERSAO: z.string().regex(/^v\d+\.\d+$/, 'formato "v1.3"').optional(),
     /** O segredo do webhook uazapi é POR INTEGRAÇÃO, no banco. */
     UAZAPI_BASE_URL: z.url().optional(),
+
+    // -- Pagamentos (R2-B, ADR 0041) ---------------------------------------
+    /** `desligado`: Mercado Pago não é oferecido. `teste`: só token TEST- (HML). `producao`: só token APP_USR- (PRD). */
+    PAGAMENTOS_MERCADOPAGO: z.enum(["desligado", "teste", "producao"]).default("desligado"),
 
     // -- Mídia (S3/MinIO) --------------------------------------------------
     S3_ENDPOINT: z.url(),
@@ -117,6 +129,20 @@ const esquema = z
     /** `/api/pronto`: comparado com `timingSafeEqual`, nunca com `===`. */
     SONDA_SEGREDO: segredo.optional(),
     DISCORD_WEBHOOK_ALERTAS: z.url().optional(),
+    /** Pesquisa de satisfação automática (ADR 0038). Desligada até o cliente aprovar o texto. */
+    CSAT_ATIVO: booleano.default(false),
+
+    // -- Inteligência (R2-C, ADRs 0046–0050) ------------------------------
+    /** Desligado por padrão: sem chave, o recurso não aparece (U8). */
+    IA_PROVEDOR_TEXTO: z.enum(["desligado", "anthropic", "simulado"]).default("desligado"),
+    /** Chave da INSTALAÇÃO, não da loja: env, nunca cofre, nunca tela. */
+    ANTHROPIC_API_KEY: z.string().regex(/^sk-ant-\S{20,}$/, "formato sk-ant-…").optional(),
+    IA_PROVEDOR_TRANSCRICAO: z.enum(["desligado", "openai", "simulado"]).default("desligado"),
+    OPENAI_API_KEY: z.string().regex(/^sk-\S{20,}$/, "formato sk-…").optional(),
+    /** Manda texto da cliente a terceiro sem ninguém pedir: desligada até o cliente decidir. */
+    IA_CLASSIFICACAO_AUTOMATICA: booleano.default(false),
+    /** Por loja, por dia de America/Sao_Paulo. String decimal, como dinheiro. */
+    IA_LIMITE_DIARIO_USD: z.string().regex(/^\d{1,4}(\.\d{1,2})?$/, 'formato "2.00"').default("2.00"),
   })
   .superRefine((v, ctx) => {
     const exigir = (chave: keyof typeof v, porque: string) => {
@@ -145,6 +171,34 @@ const esquema = z
     if (v.BLING_CLIENT_ID !== undefined) {
       exigir("BLING_CLIENT_SECRET", "quando BLING_CLIENT_ID existe");
       exigir("BLING_REDIRECT_URI", "quando BLING_CLIENT_ID existe");
+    }
+    if (v.FACEBOOK_VERIFY_TOKEN !== undefined) {
+      exigir("META_APP_SECRET", "quando FACEBOOK_VERIFY_TOKEN existe");
+    }
+    if (v.TIKTOK_APP_ID !== undefined) {
+      exigir("TIKTOK_APP_SECRET", "quando TIKTOK_APP_ID existe");
+      exigir("TIKTOK_API_VERSAO", "quando TIKTOK_APP_ID existe");
+    }
+
+    if (v.IA_PROVEDOR_TEXTO === "anthropic") {
+      exigir("ANTHROPIC_API_KEY", "quando IA_PROVEDOR_TEXTO=anthropic");
+    }
+    if (v.IA_PROVEDOR_TRANSCRICAO === "openai") {
+      exigir("OPENAI_API_KEY", "quando IA_PROVEDOR_TRANSCRICAO=openai");
+    }
+    if (v.NODE_ENV === "production") {
+      for (const chave of ["IA_PROVEDOR_TEXTO", "IA_PROVEDOR_TRANSCRICAO"] as const) {
+        if (v[chave] === "simulado") {
+          ctx.addIssue({ code: "custom", path: [chave], message: "simulado é proibido em produção" });
+        }
+      }
+    }
+    if (v.IA_CLASSIFICACAO_AUTOMATICA && v.IA_PROVEDOR_TEXTO === "desligado") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["IA_CLASSIFICACAO_AUTOMATICA"],
+        message: "exige IA_PROVEDOR_TEXTO ligado",
+      });
     }
   });
 
