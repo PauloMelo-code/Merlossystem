@@ -162,7 +162,7 @@ export function NovaVenda({
           Nova venda
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-3xl">
+      <DialogContent className="max-h-dvh overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>Nova venda</DialogTitle>
           <DialogDescription>
