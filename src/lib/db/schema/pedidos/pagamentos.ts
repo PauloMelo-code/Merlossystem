@@ -9,12 +9,12 @@ import { lojas_midias } from "../midias";
 import { pedidos } from "./pedidos";
 
 /**
- * `pagamentos` (01-dados-dominio.md §6.5). FORA DO R1: tabela criada, sem
- * escrita — não há provedor contratado e não há webhook de pagamento na v2.
+ * `pagamentos` (01-dados-dominio.md §6.5). Escrita só pelo módulo `pagamentos`
+ * (R2-B, ADRs 0040–0045). O QR não é persistido: `qrcode_midia_id` fica nulo
+ * (ADR 0045).
  *
  * O único é por `(provedor, externo_id)`: o webhook antigo buscava
- * `external_id` global, sem provedor e sem loja. O QR vai para o MinIO
- * (`qrcode_midia_id`), não para a linha.
+ * `external_id` global, sem provedor e sem loja.
  *
  * `metodo` usa a mesma lista de `pedidos.forma_pagamento` (`FORMAS_PAGAMENTO`):
  * o catálogo de nomes de 01-dados.md §16.3 não define uma segunda constante.
@@ -57,6 +57,10 @@ export const pagamentos = pgTable(
     uniqueIndex("uq_pagamentos_externo")
       .on(t.provedor, t.externo_id)
       .where(sql`externo_id is not null and is_deleted = false`),
+    /** Uma cobrança pendente por pedido (R2-B): duas pendentes = cliente pagando duas vezes. */
+    uniqueIndex("uq_pagamentos_um_pendente")
+      .on(t.pedido_id)
+      .where(sql`status = 'pendente' and is_deleted = false`),
     index("ix_pagamentos_pedido").on(t.pedido_id),
     index("ix_pagamentos_status").on(t.loja_id, t.status),
     index("ix_pagamentos_expiracao")

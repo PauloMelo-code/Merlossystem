@@ -4,6 +4,7 @@ import { usuarios } from "../auth/usuarios";
 import { colunasAuditoria, instante } from "../_compartilhado";
 import { checkLista, listaSql } from "../_enums";
 import { PRIORIDADES, STATUS_CONVERSA, STATUS_CONVERSA_ABERTOS } from "../_enums/conversas";
+import { INTENCOES_IA, SENTIMENTOS_IA } from "../_enums/inteligencia";
 import { contatos } from "../contatos";
 import { lojas } from "../lojas";
 import { lojas_integracoes } from "../integracoes";
@@ -56,6 +57,15 @@ export const conversas = pgTable(
       onDelete: "restrict",
       onUpdate: "restrict",
     }),
+    /**
+     * cache de sistema (R2, ADR 0050): classificação da IA até `ia_classificada_ate`.
+     * Escrita só por `atualizarContador` (relógio separado da trava). NUNCA muda
+     * `prioridade`: a tela mostra a sugestão e a pessoa decide.
+     */
+    ia_intencao: text("ia_intencao"),
+    ia_urgencia: text("ia_urgencia"),
+    ia_sentimento: text("ia_sentimento"),
+    ia_classificada_ate: instante("ia_classificada_ate"),
     ...colunasAuditoria,
   },
   (t) => [
@@ -75,5 +85,12 @@ export const conversas = pgTable(
     index("ix_conversas_responsavel").on(t.responsavel_id, t.status),
     index("ix_conversas_contato").on(t.contato_id, t.created_at.desc()),
     index("ix_conversas_loja").on(t.loja_id, t.is_deleted),
+    checkLista("conversas_ia_intencao_lista", t.ia_intencao, INTENCOES_IA),
+    checkLista("conversas_ia_urgencia_lista", t.ia_urgencia, PRIORIDADES),
+    checkLista("conversas_ia_sentimento_lista", t.ia_sentimento, SENTIMENTOS_IA),
+    /** Varredura da classificação (R2, ADR 0050): só conversa aberta, pela última entrada. */
+    index("ix_conversas_ia_varredura")
+      .on(t.ultima_entrada_em)
+      .where(sql.raw(`status in (${listaSql(STATUS_CONVERSA_ABERTOS)}) and is_deleted = false`)),
   ],
 );

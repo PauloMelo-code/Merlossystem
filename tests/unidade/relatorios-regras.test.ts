@@ -4,22 +4,40 @@ import {
   chaveDeDeduplicacao,
   lerChave,
   mensagemDoAlerta,
-  PRAZOS_SLA_TEXTO,
   rotaDoAlerta,
   SEVERIDADE_POR_TIPO,
-  SLA_MINUTOS,
   TIPOS_GERADOS_R1,
 } from "@/lib/alertas/regras";
 import { SEVERIDADES, TIPOS_ALERTA } from "@/lib/db/schema/_enums/plataforma";
 import { celula, gerarCsv } from "@/lib/relatorios/csv";
 import { formatarValor, METRICAS, type Indicadores } from "@/lib/relatorios/definicoes";
 import { ontem } from "@/lib/relatorios/resumo";
+import { PRAZO_SLA_PADRAO_MIN, textoDosPrazos, type PrazosDaLoja } from "@/lib/sla/prazo";
 import { filtrosRelatorioSchema } from "@/lib/validadores/relatorios";
 
 describe("regras dos alertas", () => {
-  it("SLA do R1: WhatsApp 5, Instagram 15, Facebook 30, TikTok 60", () => {
-    expect(SLA_MINUTOS).toMatchObject({ whatsapp_oficial: 5, uazapi: 5, instagram: 15, facebook: 30, tiktok_shop: 60 });
-    expect(PRAZOS_SLA_TEXTO.map((p) => p.minutos)).toEqual([5, 15, 30, 60]);
+  it("SLA padrão por canal: WhatsApp 5, Instagram 15, Facebook 30, TikTok 60 (ADR 0060)", () => {
+    expect(PRAZO_SLA_PADRAO_MIN).toEqual({ whatsapp_oficial: 5, uazapi: 5, instagram: 15, facebook: 30, tiktok: 60 });
+  });
+
+  it("texto dos prazos: canais por extenso, prioridade só quando tem regra", () => {
+    const loja: PrazosDaLoja = {
+      lojaId: "l1",
+      lojaNome: "Centro",
+      lojaSigla: "CEN",
+      canais: [
+        { chave: "whatsapp_oficial", minutos: 5, padrao: 5, origem: "padrao", updatedAt: null },
+        { chave: "instagram", minutos: 20, padrao: 15, origem: "loja", updatedAt: null },
+      ],
+      prioridades: [
+        { chave: "urgente", minutos: 3, updatedAt: null },
+        { chave: "baixa", minutos: null, updatedAt: null },
+      ],
+    };
+    expect(textoDosPrazos([loja])).toBe(
+      "CEN — WhatsApp (oficial) 5 min · Instagram 20 min · prioridade Urgente 3 min. " +
+        "Vale o menor entre canal e prioridade; o sistema confere a cada 5 min",
+    );
   });
 
   it("todo tipo gerado está no CHECK, tem severidade válida e alvo", () => {

@@ -19,8 +19,7 @@ import { pedidos } from "./pedidos/pedidos";
  * `resolvido_em` quando ela deixa de valer; a pessoa só RECONHECE. É isso que
  * mantém a dedupe honesta e conserta 04/F05 — alerta reconhecido que volta.
  *
- * Sem tabela de configuração de SLA nesta entrega: o SLA por canal é constante
- * no código (5/15/30/60 min) e `/configuracoes/sla` não existe no R1.
+ * Prazo de SLA: `src/lib/sla/prazo.ts` (lê `lojas_sla`, ADR 0060).
  */
 export const alertas = pgTable(
   "alertas",

@@ -12,6 +12,7 @@ export * from "./auditoria";
 export * from "./auth";
 export * from "./catalogo";
 export * from "./conversas";
+export * from "./inteligencia";
 export * from "./pedidos";
 export * from "./plataforma";
 

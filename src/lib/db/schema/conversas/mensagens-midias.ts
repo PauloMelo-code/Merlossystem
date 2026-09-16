@@ -37,6 +37,8 @@ export const conversas_mensagens_midias = pgTable(
     mime_type: text("mime_type").notNull(),
     tamanho_bytes: integer("tamanho_bytes"),
     legenda: text("legenda"),
+    /** Posição na mensagem (0..N-1). Envio e bolha leem `ORDER BY ordem, id` (ADR 0059). */
+    ordem: integer("ordem").notNull().default(0),
     baixada: boolean("baixada").notNull().default(false),
     transcricao: text("transcricao"),
     transcricao_status: text("transcricao_status"),
@@ -59,10 +61,12 @@ export const conversas_mensagens_midias = pgTable(
     ),
     /** O antigo gravava a base64 inteira quando o upload falhava (01/D-33). */
     check("conversas_mensagens_midias_url", sql`${t.url_externa} ~ '^https?://'`),
+    check("conversas_mensagens_midias_ordem_positiva", sql`${t.ordem} >= 0`),
     index("ix_conversas_mensagens_midias_mensagem").on(t.mensagem_id),
+    /** Pedido e processamento: a varredura de órfã lê os dois estados (R2, ADR 0049). */
     index("ix_conversas_mensagens_midias_transcricao")
       .on(t.transcricao_status)
-      .where(sql`transcricao_status = 'pendente'`),
+      .where(sql`transcricao_status in ('pendente', 'processando')`),
     index("ix_conversas_mensagens_midias_loja").on(t.loja_id, t.is_deleted),
   ],
 );

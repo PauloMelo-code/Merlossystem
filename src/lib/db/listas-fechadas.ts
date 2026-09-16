@@ -20,6 +20,11 @@ export const CONTADORES: Readonly<Record<string, readonly string[]>> = {
     "nao_lidas",
     "primeira_resposta_em",
     "sla_estourado_em",
+    // cache de sistema da classificação (R2-C, ADR 0050)
+    "ia_intencao",
+    "ia_urgencia",
+    "ia_sentimento",
+    "ia_classificada_ate",
   ],
   contatos: ["ultimo_contato_em", "ultima_compra_em", "pedidos_contagem", "pedidos_valor_total"],
   negocios: ["ultima_atividade_em"],
@@ -33,9 +38,10 @@ export const ESTADOS_DE_SISTEMA: Readonly<Record<string, readonly string[]>> = {
   /**
    * O job `baixar-de-url` preenche a mídia e LIMPA a URL no mesmo UPDATE
    * (01-dados-dominio.md §2.4). O vínculo continua "ligação pura" para
-   * pessoas; só o worker o completa.
+   * pessoas; só o worker o completa. Transcrição sob demanda (R2-C, ADR 0049):
+   * `transcricao_status` e `transcricao` só por `transicionarTranscricao()`.
    */
-  conversas_mensagens_midias: ["midia_id", "baixada", "url_externa"],
+  conversas_mensagens_midias: ["midia_id", "baixada", "url_externa", "transcricao_status", "transcricao"],
   /** Quem resolve é o gerador, nunca a pessoa (01-dados.md §6.6). */
   alertas: ["resolvido_em"],
   campanhas_destinatarios: [

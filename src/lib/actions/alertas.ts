@@ -4,7 +4,6 @@ import { executarAcao } from "@/lib/actions/_base";
 import {
   contarAlertas,
   listarAlertas,
-  PRAZOS_SLA_TEXTO,
   reconhecerAlerta as reconhecerNoDominio,
   rotaDoAlerta,
   type AlertaNaLista,
@@ -12,6 +11,7 @@ import {
 } from "@/lib/alertas";
 import { decodificarCursor, type Pagina } from "@/lib/auditoria/cursor";
 import { pode } from "@/lib/auth/guard";
+import { lerPrazosVigentes, textoDosPrazos } from "@/lib/sla/prazo";
 import type { Resultado } from "@/lib/erros";
 import { filtrosAlertasSchema, reconhecerAlertaSchema } from "@/lib/validadores/alertas";
 
@@ -23,7 +23,7 @@ import { filtrosAlertasSchema, reconhecerAlertaSchema } from "@/lib/validadores/
 
 export type CentralDeAlertas = {
   pagina: Pagina<AlertaNaLista & { rota: string | null }>;
-  /** "WhatsApp 5 min · Instagram 15 min …" — texto somente leitura. */
+  /** Texto dos prazos vigentes por loja (`lojas_sla`). */
   prazosSla: string;
   contadores: ContadoresAlertas;
   porPagina: number;
@@ -55,7 +55,7 @@ export async function centralDeAlertas(bruto: unknown): Promise<Resultado<Centra
         ]);
         return {
           pagina: { ...pagina, itens: pagina.itens.map((a) => ({ ...a, rota: rotaDoAlerta(a) })) },
-          prazosSla: PRAZOS_SLA_TEXTO.map((p) => `${p.canal} ${p.minutos} min`).join(" · "),
+          prazosSla: textoDosPrazos(await lerPrazosVigentes(tx, ctx.escopo)),
           contadores,
           porPagina: dados.porPagina,
           podeReconhecer: pode(ctx.sessao.papel, "alertas", "reconhecer"),

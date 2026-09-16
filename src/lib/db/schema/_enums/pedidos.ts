@@ -20,6 +20,10 @@ export const MOTIVOS_PERDA = [
 ] as const;
 export type MotivoPerda = (typeof MOTIVOS_PERDA)[number];
 
+/** Estágios em que o negócio ainda está em jogo (ADR 0035). Único parcial por contato. */
+export const ESTAGIOS_NEGOCIO_ABERTOS = ["lead", "interessada", "negociando", "fechando"] as const;
+export type EstagioNegocioAberto = (typeof ESTAGIOS_NEGOCIO_ABERTOS)[number];
+
 export const STATUS_PEDIDO = [
   "confirmado",
   "preparando",
@@ -43,7 +47,8 @@ export type FormaPagamento = (typeof FORMAS_PAGAMENTO)[number];
 export const MASC_STATUS = ["pendente", "lancado", "dispensado"] as const;
 export type MascStatus = (typeof MASC_STATUS)[number];
 
-export const PROVEDORES_PAGAMENTO = ["mercadopago", "asaas", "pagbank", "manual"] as const;
+/** `manual` saiu no R2 (ADR 0042): baixa manual não existe, nem no banco. */
+export const PROVEDORES_PAGAMENTO = ["mercadopago", "asaas", "pagbank", "pagamento_simulado"] as const;
 export type ProvedorPagamento = (typeof PROVEDORES_PAGAMENTO)[number];
 
 export const STATUS_PAGAMENTO = [

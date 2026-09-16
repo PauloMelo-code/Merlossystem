@@ -5,6 +5,7 @@ import { db } from "@/lib/db/client";
 import { condicaoDeLoja, vivosE } from "@/lib/db/consultas";
 import type { Transacao } from "@/lib/db/mutacoes";
 import { alertas } from "@/lib/db/schema/alertas";
+import { minutosDeSlaSql, venceEmSql } from "@/lib/sla/prazo";
 import type { Severidade, TipoAlerta } from "@/lib/db/schema/_enums/plataforma";
 import {
   condicaoDoCursor,
@@ -19,7 +20,6 @@ import {
   JANELA_NOVIDADE_HORAS,
   PROVEDORES_COM_RISCO_DE_AVALIACAO,
   RISCO_AVALIACAO_MINUTOS,
-  SLA_MINUTOS,
   TOLERANCIA_AGENDADA_MINUTOS,
   type TipoGerado,
 } from "./regras";
@@ -53,12 +53,21 @@ type LinhaCandidato = {
 
 const lista = (valores: readonly string[]) => sql.raw(valores.map((v) => `'${v}'`).join(", "));
 
-/** Prazo de SLA do provedor, em minutos, montado das constantes (sem entrada externa). */
-const CASO_SLA = sql.raw(
-  `case i.provedor ${Object.entries(SLA_MINUTOS)
-    .map(([provedor, minutos]) => `when '${provedor}' then ${minutos}`)
-    .join(" ")} end`,
-);
+/** Resposta da EQUIPE: saída de pessoa, que não é nota (campanha e sistema não respondem). */
+const RESPOSTA_DA_EQUIPE = (alias: string) =>
+  sql.raw(
+    `${alias}.direcao = 'saida' and ${alias}.nota_interna = false and ${alias}.autor_tipo = 'usuario' and ${alias}.is_deleted = false`,
+  );
+
+/** 1ª entrada ainda sem resposta da equipe: o relógio do SLA (ADR 0060). */
+const INICIO_SEM_RESPOSTA = sql`(
+  select min(e.ocorrida_em) from conversas_mensagens e
+   where e.conversa_id = c.id and e.direcao = 'entrada' and e.is_deleted = false
+     and not exists (select 1 from conversas_mensagens s
+                      where s.conversa_id = c.id and ${RESPOSTA_DA_EQUIPE("s")}
+                        and s.ocorrida_em >= e.ocorrida_em))`;
+
+const REFS_SLA = { lojaId: sql`c.loja_id`, provedor: sql`i.provedor`, prioridade: sql`c.prioridade` };
 
 /**
  * "Sem resposta": conversa aberta, com entrada, e nenhuma mensagem NOSSA (nota
@@ -71,8 +80,8 @@ const SEM_RESPOSTA = sql`
   and c.ultima_entrada_em is not null
   and not exists (
     select 1 from conversas_mensagens m
-     where m.conversa_id = c.id and m.direcao = 'saida' and m.nota_interna = false
-       and m.is_deleted = false and m.ocorrida_em >= c.ultima_entrada_em)`;
+     where m.conversa_id = c.id and ${RESPOSTA_DA_EQUIPE("m")}
+       and m.ocorrida_em >= c.ultima_entrada_em)`;
 
 function daLoja(coluna: string, lojaId: string | null): SQL {
   return lojaId ? sql`and ${sql.raw(coluna)} = ${lojaId}::uuid` : sql``;
@@ -81,11 +90,11 @@ function daLoja(coluna: string, lojaId: string | null): SQL {
 const CONSULTAS: Record<TipoGerado, (lojaId: string | null) => SQL> = {
   sla_estourado: (lojaId) => sql`
     select c.loja_id, c.id as alvo_id, c.id as conversa_id, c.contato_id,
-           (${CASO_SLA})::int as minutos, null::text as rotulo
+           (${minutosDeSlaSql(REFS_SLA)})::int as minutos, null::text as rotulo
       from conversas c join lojas_integracoes i on i.id = c.integracao_id
      where ${SEM_RESPOSTA}
        and i.provedor <> 'bling'
-       and c.ultima_entrada_em < now() - make_interval(mins => (${CASO_SLA})::int)
+       and ${venceEmSql(INICIO_SEM_RESPOSTA, REFS_SLA)} < now()
        ${daLoja("c.loja_id", lojaId)}`,
 
   risco_avaliacao: (lojaId) => sql`
@@ -199,6 +208,16 @@ export async function alertasAbertos(
         lojaId ? eq(alertas.loja_id, lojaId) : undefined,
       ),
     );
+}
+
+/** Conversas cujo atraso já marcado continua valendo: sem resposta e no MESMO turno. */
+export async function atrasosVigentes(lojaId: string | null, leitor: Leitor = db): Promise<Set<string>> {
+  const r = await leitor.execute<{ id: string }>(sql`
+    select c.id from conversas c
+     where ${SEM_RESPOSTA} and c.sla_estourado_em is not null
+       and ${INICIO_SEM_RESPOSTA} <= c.sla_estourado_em
+       ${daLoja("c.loja_id", lojaId)}`);
+  return new Set(r.rows.map((l) => l.id));
 }
 
 /** Conversas com o carimbo de SLA ligado — para desligar o que foi respondido. */

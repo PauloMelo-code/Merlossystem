@@ -20,11 +20,16 @@ export type MetadadosMensagem = {
   encaminhada?: boolean;
   citacao_externa_id?: string;
   erro_provedor?: { codigo: string; mensagem: string };
-  card?: { tipo: "produto" | "pedido" | "pagamento"; id: string };
+  /** Cartão derivado; `pagamento` (R2-B) e `lookbook` (R2-E1). */
+  card?: { tipo: "produto" | "pedido" | "pagamento" | "lookbook"; id: string };
   /** Mensagem de modelo: o worker envia o template com estas variáveis. */
   modelo?: { template_id: string; variaveis: string[] };
   /** Saída feita no próprio aparelho (`fromMe` do provedor), não pelo sistema. */
   enviada_pelo_aparelho?: boolean;
+  /** TikTok: `conversation_id` do provedor, exigido para responder (ADR 0056). */
+  conversa_externa_id?: string;
+  /** Quem originou a saída. Só `pessoa` pode usar HUMAN_AGENT no Messenger (ADR 0056). */
+  origem_envio?: "pessoa" | "automatica";
 };
 
 /**

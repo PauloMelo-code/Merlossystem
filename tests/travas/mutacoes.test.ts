@@ -165,7 +165,7 @@ for (const valor of Object.values(schema)) {
 
 describe("listas fechadas de contador e de estado", () => {
   it("o schema foi carregado inteiro", () => {
-    expect(colunasPorTabela.size).toBe(48);
+    expect(colunasPorTabela.size).toBe(50);
   });
 
   it.each([

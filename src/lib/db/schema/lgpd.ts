@@ -103,7 +103,8 @@ export const lgpd_solicitacoes = pgTable(
 );
 
 /**
- * `pesquisas_satisfacao` — CSAT (§7.1). FORA DO R1: tabela criada, sem tela.
+ * `pesquisas_satisfacao` — CSAT (§7.1). Disparo e painel do módulo `pesquisas`
+ * (R2-A, ADR 0038), desligado por `CSAT_ATIVO`.
  *
  * `mensagem_id` é a prova de que a pesquisa foi ENVIADA. `comentario` é campo
  * livre com PII e entra na anonimização.
@@ -143,6 +144,14 @@ export const pesquisas_satisfacao = pgTable(
     uniqueIndex("uq_pesquisas_satisfacao_pedido")
       .on(t.pedido_id, t.gatilho)
       .where(sql`pedido_id is not null and is_deleted = false`),
+    /** Uma pesquisa por conversa encerrada (ADR 0038). */
+    uniqueIndex("uq_pesquisas_satisfacao_conversa")
+      .on(t.conversa_id)
+      .where(sql`gatilho = 'conversa_encerrada' and is_deleted = false`),
+    /** Painel /satisfacao por loja e período. */
+    index("ix_pesquisas_satisfacao_periodo")
+      .on(t.loja_id, t.enviada_em.desc())
+      .where(sql`is_deleted = false`),
     index("ix_pesquisas_satisfacao_contato").on(t.contato_id),
     index("ix_pesquisas_satisfacao_loja").on(t.loja_id, t.is_deleted),
   ],

@@ -5,6 +5,7 @@ import { conversas } from "@/lib/db/schema/conversas/conversas";
 import { logger } from "@/lib/logger";
 import {
   alertasAbertos,
+  atrasosVigentes,
   candidatosDe,
   conversasComSlaMarcado,
   type Candidato,
@@ -63,6 +64,7 @@ function porChave(tipo: TipoGerado, candidatos: Candidato[]): Map<string, Candid
  */
 async function sincronizarCarimboDeSla(
   candidatos: Candidato[],
+  mantidos: ReadonlySet<string>,
   lojaId: string | null,
   agora: Date,
 ): Promise<{ marcados: number; desmarcados: number }> {
@@ -82,7 +84,7 @@ async function sincronizarCarimboDeSla(
     marcados += 1;
   }
   for (const m of marcadas) {
-    if (atrasadas.has(m.id)) continue;
+    if (atrasadas.has(m.id) || mantidos.has(m.id)) continue;
     await db.transaction((tx) =>
       atualizarContador(tx, conversas, { id: m.id, escopo: { tipo: "uma", lojaId: m.lojaId } }, {
         sla_estourado_em: null,
@@ -99,12 +101,14 @@ export async function gerarAlertas(opcoes: Opcoes = {}): Promise<ResumoDaGeracao
   const resumo: ResumoDaGeracao = { abertos: 0, resolvidos: 0, slaMarcados: 0, slaDesmarcados: 0 };
   let falhas = 0;
 
+  // Afrouxar o prazo não desfaz atraso que já aconteceu (ADR 0060).
+  const mantidos = await atrasosVigentes(lojaId);
   const vigentes = new Map<TipoGerado, Map<string, Candidato>>();
   for (const tipo of TIPOS_GERADOS_R1) {
     const candidatos = await candidatosDe(tipo, lojaId);
     vigentes.set(tipo, porChave(tipo, candidatos));
     if (tipo === "sla_estourado") {
-      const carimbo = await sincronizarCarimboDeSla(candidatos, lojaId, agora);
+      const carimbo = await sincronizarCarimboDeSla(candidatos, mantidos, lojaId, agora);
       resumo.slaMarcados = carimbo.marcados;
       resumo.slaDesmarcados = carimbo.desmarcados;
     }
@@ -126,6 +130,8 @@ export async function gerarAlertas(opcoes: Opcoes = {}): Promise<ResumoDaGeracao
     const lida = lerChave(alerta.chave);
     if (!lida) continue; // chave que não é deste gerador: não é ele quem resolve
     if (vigentes.get(lida.tipo)?.has(alerta.chave)) continue;
+    // Afrouxar o prazo não resolve atraso que já aconteceu (ADR 0060).
+    if (lida.tipo === "sla_estourado" && lida.alvo.tipo === "conversa" && mantidos.has(lida.alvo.id)) continue;
     await gravar(async () => {
       await db.transaction((tx) => resolver(tx, { id: alerta.id, lojaId: alerta.lojaId }, agora));
       resumo.resolvidos += 1;

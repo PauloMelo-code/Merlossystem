@@ -1,10 +1,11 @@
 import { sql } from "drizzle-orm";
 import { boolean, check, index, integer, jsonb, pgTable, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { colunasAuditoria, instante } from "./_compartilhado";
-import { checkLista } from "./_enums";
+import { checkLista, listaSql } from "./_enums";
 import {
   CATEGORIAS_TEMPLATE,
   PROVEDORES,
+  PROVEDORES_DE_PAGAMENTO,
   STATUS_INTEGRACAO,
   STATUS_TEMPLATE,
   TIPOS_CABECALHO_TEMPLATE,
@@ -59,6 +60,10 @@ export const lojas_integracoes = pgTable(
     uniqueIndex("uq_lojas_integracoes_referencia")
       .on(t.provedor, t.referencia_externa)
       .where(sql`referencia_externa is not null and is_deleted = false`),
+    /** No máximo uma conta de pagamento viva por loja (R2-B, ADR 0040). */
+    uniqueIndex("uq_lojas_integracoes_pagamento")
+      .on(t.loja_id)
+      .where(sql.raw(`provedor in (${listaSql(PROVEDORES_DE_PAGAMENTO)}) and is_deleted = false`)),
     index("ix_lojas_integracoes_loja").on(t.loja_id, t.provedor),
     index("ix_lojas_integracoes_provedor_status").on(t.provedor, t.status),
   ],

@@ -18,6 +18,8 @@ export * from "./devolucoes";
 export * from "./integracoes";
 export * from "./lgpd";
 export * from "./lojas";
+export * from "./lojas-ia-usos";
+export * from "./lojas-sla";
 export * from "./midias";
 export * from "./negocios";
 export * from "./pedidos";

@@ -1,31 +1,10 @@
-import type { Provedor } from "@/lib/db/schema/_enums/plataforma";
 import type { Severidade, TipoAlerta } from "@/lib/db/schema/_enums/plataforma";
 
 /**
  * Regras PURAS dos alertas (01-dados.md §6.6, 04-ui.md §5.5). Sem banco, sem
- * `server-only`: a tela importa daqui o texto dos prazos de SLA.
- *
- * SLA é CONSTANTE NO CÓDIGO nesta entrega (não há tabela de configuração e
- * `/configuracoes/sla` não existe). Os valores são os do sistema antigo
- * (`levantamento/04 §9.2`): WhatsApp 5, Instagram 15, Facebook 30, TikTok 60.
- * Os dois WhatsApp (oficial e uazapi) são o mesmo canal para quem responde.
+ * `server-only`. O prazo de SLA NÃO mora aqui: a fonte única é
+ * `src/lib/sla/prazo.ts`, que lê `lojas_sla` (ADR 0060).
  */
-
-export const SLA_MINUTOS: Readonly<Record<Exclude<Provedor, "bling">, number>> = {
-  whatsapp_oficial: 5,
-  uazapi: 5,
-  instagram: 15,
-  facebook: 30,
-  tiktok_shop: 60,
-};
-
-/** O texto somente leitura de `/alertas` (04-ui.md §5.5). */
-export const PRAZOS_SLA_TEXTO: readonly { canal: string; minutos: number }[] = [
-  { canal: "WhatsApp", minutos: SLA_MINUTOS.whatsapp_oficial },
-  { canal: "Instagram", minutos: SLA_MINUTOS.instagram },
-  { canal: "Facebook", minutos: SLA_MINUTOS.facebook },
-  { canal: "TikTok", minutos: SLA_MINUTOS.tiktok_shop },
-];
 
 /** Rede social pública: resposta que demora vira avaliação ruim. */
 export const PROVEDORES_COM_RISCO_DE_AVALIACAO = ["instagram", "facebook"] as const;

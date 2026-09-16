@@ -16,7 +16,7 @@ export {
   type ContadoresAlertas,
   type FiltrosAlertas,
 } from "./_consultas";
-export { PRAZOS_SLA_TEXTO, rotaDoAlerta, TIPOS_GERADOS_R1 } from "./regras";
+export { rotaDoAlerta, TIPOS_GERADOS_R1 } from "./regras";
 
 /**
  * A pessoa só RECONHECE (marca ciência). Nunca resolve: `resolvido_em` é do

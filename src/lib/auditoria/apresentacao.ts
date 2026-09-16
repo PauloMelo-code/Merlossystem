@@ -88,6 +88,11 @@ const ENTIDADES: Readonly<Record<string, string>> = {
   alerta: "Alerta",
   convite: "Convite",
   resposta_rapida: "Resposta rápida",
+  // R2: pesquisa de satisfação, lookbooks, prazos de SLA e base de conhecimento.
+  pesquisa: "Pesquisa de satisfação",
+  lookbook: "Lookbook",
+  sla: "Prazo de SLA",
+  artigo: "Artigo",
 };
 
 const PALAVRAS: Readonly<Record<string, string>> = {

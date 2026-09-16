@@ -7,7 +7,13 @@ import type { Prioridade, StatusAgendamento, StatusConversa, StatusEntrega } fro
 import { MASC_STATUS, STATUS_PEDIDO } from "@/lib/db/schema/_enums/pedidos";
 import type { MascStatus, StatusPedido } from "@/lib/db/schema/_enums/pedidos";
 import { SEVERIDADES, STATUS_INTEGRACAO, STATUS_TEMPLATE, TIPOS_ALERTA } from "@/lib/db/schema/_enums/plataforma";
-import type { Severidade, StatusIntegracao, StatusTemplate, TipoAlerta } from "@/lib/db/schema/_enums/plataforma";
+import type {
+  ProvedorDeConversa,
+  Severidade,
+  StatusIntegracao,
+  StatusTemplate,
+  TipoAlerta,
+} from "@/lib/db/schema/_enums/plataforma";
 
 /**
  * Mapa enum -> rótulo PT-BR + tom (04-ui.md §2.4).
@@ -130,6 +136,7 @@ const TIPO_ALERTA_TONS: Record<TipoAlerta, Entrada> = {
   sessao_uazapi_caiu: { rotulo: "Sessão do uazapi caiu", tom: "neutro" },
   integracao_com_erro: { rotulo: "Integração com erro", tom: "neutro" },
   espelho_divergente: { rotulo: "Dados divergentes", tom: "neutro" },
+  pagamento_conferir: { rotulo: "Pagamento para conferir", tom: "neutro" },
 };
 
 /**
@@ -193,6 +200,23 @@ export function tomDe(dominio: Dominio, valor: string): Entrada {
 export function rotuloDePapel(papel: Papel): string {
   return PAPEL_TONS[papel].rotulo;
 }
+
+/** Prioridade por extenso para formulário e texto (o selo omite baixa e média de propósito). */
+export const ROTULO_PRIORIDADE: Readonly<Record<Prioridade, string>> = {
+  baixa: "Baixa",
+  media: "Média",
+  alta: "Alta",
+  urgente: "Urgente",
+};
+
+/** Canal por extenso, distinguindo os dois WhatsApp (tela e texto de SLA). */
+export const ROTULO_PROVEDOR_CONVERSA: Readonly<Record<ProvedorDeConversa, string>> = {
+  whatsapp_oficial: "WhatsApp (oficial)",
+  uazapi: "WhatsApp (não oficial)",
+  instagram: "Instagram",
+  facebook: "Facebook",
+  tiktok: "TikTok",
+};
 
 /**
  * Disponibilidade derivada de `01-dados-dominio.md §4.2` (nunca persistida).
