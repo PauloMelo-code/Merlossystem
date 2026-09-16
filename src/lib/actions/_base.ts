@@ -2,7 +2,7 @@ import "server-only";
 import { cookies, headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import type { z } from "zod";
-import { ErroDeValidacao, paraResultado, type Resultado } from "@/lib/erros";
+import { ErroDeEscopo, ErroDeValidacao, paraResultado, type Resultado } from "@/lib/erros";
 import { logger } from "@/lib/logger";
 import { emTransacao, type Transacao } from "@/lib/db/mutacoes";
 import { exigirPermissao, exigirSessao, exigirSessaoFresca, type Contexto, type Sessao } from "@/lib/auth/guard";
@@ -14,11 +14,13 @@ import { limitarPorIp, type Regra } from "@/lib/seguranca/limite";
 import { ErroDoAplicativo } from "@/lib/erros";
 
 /**
- * Os DOIS embrulhos de Server Action (02-seguranca.md §3.2,
+ * Os TRÊS embrulhos de Server Action (02-seguranca.md §3.2,
  * 03-arquitetura.md §4.3). Todo `export` de arquivo `"use server"` usa um deles
  * — a trava T1 reprova export sem nenhum.
  *
- * `acao()` é autenticada; `acaoPublica()` é anônima e OBRIGATÓRIA em `entrar`,
+ * `acao()` é autenticada; `executarAcaoExterna()` é autenticada e SEM
+ * transação (chamada a provedor externo; lista fechada de arquivos, ADR 0053);
+ * `acaoPublica()` é anônima e OBRIGATÓRIA em `entrar`,
  * `esqueciASenha`, `redefinirSenha`, `consumirConvite` e
  * `verificarSegundoFator`. Sem ela, a escrita anônima não teria checagem de
  * origem (o Next só AVISA quando `Origin` falta — N2) nem teto por IP.
@@ -69,17 +71,23 @@ export function normalizarEntrada(bruto: unknown): unknown {
   return objeto;
 }
 
-/** O formulário nunca é limpo: o que a pessoa digitou volta em `valores`. */
-function valoresDoFormulario(bruto: unknown): Record<string, string> | undefined {
+/**
+ * O formulário nunca é limpo: o que a pessoa digitou volta em `valores`, menos
+ * segredo e documento (voltam ao navegador junto com o erro).
+ * @internal exportado só para o teste.
+ */
+export function valoresDoFormulario(bruto: unknown): Record<string, string> | undefined {
   if (!(bruto instanceof FormData)) return undefined;
   const valores: Record<string, string> = {};
   for (const [chave, valor] of bruto.entries()) {
-    if (typeof valor === "string" && !/senha|password|token|codigo/i.test(chave)) {
+    if (typeof valor === "string" && !SEGREDO_NO_FORMULARIO.test(chave)) {
       valores[chave] = valor;
     }
   }
   return valores;
 }
+
+const SEGREDO_NO_FORMULARIO = /senha|password|token|codigo|segredo|secret|assinatura|cpf|cnpj/i;
 
 function analisar<E extends z.ZodType>(esquema: E, bruto: unknown): z.output<E> {
   const analise = esquema.safeParse(normalizarEntrada(bruto));
@@ -105,44 +113,54 @@ async function lojaPedida(dados: unknown): Promise<string | undefined> {
 }
 
 /**
- * A ordem é a de 03-arquitetura.md §4.3 e não muda:
- * sessão -> permissão -> validação -> escopo -> transação -> tradução ->
- * revalidação.
+ * Sessão -> permissão -> validação -> escopo, comum aos embrulhos autenticados.
  *
  * LIMITE CONHECIDO E ESCRITO (I2 parcial): o runtime do Next desserializa o
  * corpo da Server Action ANTES desta função rodar. Não existe guarda anterior
  * ao corpo em Server Action — é por isso que `bodySizeLimit` está em 1 MB e que
  * toda action alcançável sem sessão usa `acaoPublica`, com teto por IP.
  */
+async function prepararAcao<E extends z.ZodType>(
+  cfg: Omit<ConfigAcao<E, unknown>, "executar">,
+  bruto: unknown,
+): Promise<{ dados: z.output<E>; ctx: Contexto }> {
+  const opcoes = {
+    ...(cfg.provisoria === undefined ? {} : { provisoria: cfg.provisoria }),
+    ...(cfg.trocaDeSenha === undefined ? {} : { trocaDeSenha: cfg.trocaDeSenha }),
+    ...(cfg.renovaAtividade === undefined ? {} : { renovaAtividade: cfg.renovaAtividade }),
+  };
+  const sessao: Sessao = cfg.fresca
+    ? await exigirSessaoFresca(opcoes)
+    : await exigirSessao(opcoes);
+
+  exigirPermissao(sessao, cfg.permissao);
+
+  const dados = analisar(cfg.entrada, bruto);
+
+  const modo: ModoDeLoja = cfg.loja ?? "le";
+  const pedida = modo === "nenhuma" ? undefined : await lojaPedida(dados);
+  // A loja pedida pelo cliente só vale depois de existir e estar viva.
+  const resolvida = await resolverLojaPedida(sessao, pedida);
+  const ctx = contextoDe(sessao, resolvida);
+
+  if (modo === "grava" && ctx.escopo.tipo !== "uma") {
+    const { ErroFaltaLoja } = await import("@/lib/erros");
+    throw new ErroFaltaLoja();
+  }
+  return { dados, ctx };
+}
+
+/**
+ * A ordem é a de 03-arquitetura.md §4.3 e não muda:
+ * sessão -> permissão -> validação -> escopo -> transação -> tradução ->
+ * revalidação.
+ */
 export async function executarAcao<E extends z.ZodType, T>(
   cfg: ConfigAcao<E, T>,
   bruto: unknown,
 ): Promise<Resultado<T>> {
   try {
-    const opcoes = {
-      ...(cfg.provisoria === undefined ? {} : { provisoria: cfg.provisoria }),
-      ...(cfg.trocaDeSenha === undefined ? {} : { trocaDeSenha: cfg.trocaDeSenha }),
-      ...(cfg.renovaAtividade === undefined ? {} : { renovaAtividade: cfg.renovaAtividade }),
-    };
-    const sessao: Sessao = cfg.fresca
-      ? await exigirSessaoFresca(opcoes)
-      : await exigirSessao(opcoes);
-
-    exigirPermissao(sessao, cfg.permissao);
-
-    const dados = analisar(cfg.entrada, bruto);
-
-    const modo: ModoDeLoja = cfg.loja ?? "le";
-    const pedida = modo === "nenhuma" ? undefined : await lojaPedida(dados);
-    // A loja pedida pelo cliente só vale depois de existir e estar viva.
-    const resolvida = await resolverLojaPedida(sessao, pedida);
-    const ctx = contextoDe(sessao, resolvida);
-
-    if (modo === "grava" && ctx.escopo.tipo !== "uma") {
-      const { ErroFaltaLoja } = await import("@/lib/erros");
-      throw new ErroFaltaLoja();
-    }
-
+    const { dados, ctx } = await prepararAcao(cfg, bruto);
     const saida = await emTransacao(ctx, (tx, contexto) => cfg.executar(dados, contexto, tx));
 
     for (const caminho of cfg.revalidar ?? []) revalidatePath(caminho);
@@ -174,6 +192,35 @@ function registrarInesperado(erro: unknown, acaoChamada: string): void {
     },
     "action falhou por erro inesperado",
   );
+}
+
+export type ConfigAcaoExterna<E extends z.ZodType, T> = Omit<ConfigAcao<E, T>, "executar"> & {
+  /**
+   * Chamada a provedor externo (pagamento, IA, transcrição) SEM transação aberta:
+   * segundos de rede dentro de `emTransacao` seguram conexão e locks. O domínio
+   * abre `emTransacao(ctx, …)` curtas antes e depois da chamada (ADR 0053).
+   * Uso restrito por trava a `actions/pagamentos.ts`, `actions/inteligencia.ts`
+   * e `actions/canais-extras.ts`.
+   */
+  executar: (dados: z.output<E>, ctx: Contexto) => Promise<T>;
+};
+
+export async function executarAcaoExterna<E extends z.ZodType, T>(
+  cfg: ConfigAcaoExterna<E, T>,
+  bruto: unknown,
+): Promise<Resultado<T>> {
+  try {
+    const { dados, ctx } = await prepararAcao(cfg, bruto);
+    // Mesmo fail-closed de `emTransacao`: escopo "nenhuma" nunca executa.
+    if (ctx.escopo.tipo === "nenhuma") throw new ErroDeEscopo();
+    const saida = await cfg.executar(dados, ctx);
+    for (const caminho of cfg.revalidar ?? []) revalidatePath(caminho);
+    return { ok: true, dados: saida };
+  } catch (erro) {
+    if (erro instanceof Error && "digest" in erro && String(erro.digest).startsWith("NEXT_")) throw erro;
+    registrarInesperado(erro, cfg.permissao);
+    return paraResultado(erro);
+  }
 }
 
 /** Açúcar para quem prefere declarar a action como constante (T1 aceita os dois). */

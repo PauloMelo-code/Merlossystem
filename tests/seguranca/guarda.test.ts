@@ -67,6 +67,7 @@ describe("portão nas Server Actions", () => {
     expect(typeof base.acaoPublica).toBe("function");
     expect(typeof base.executarAcao).toBe("function");
     expect(typeof base.executarAcaoPublica).toBe("function");
+    expect(typeof base.executarAcaoExterna).toBe("function");
     expect(base.acao).not.toBe(base.acaoPublica);
   });
 
@@ -79,7 +80,7 @@ describe("portão nas Server Actions", () => {
     "%s: todo export passa por acao() ou acaoPublica()",
     (caminho) => {
       const arquivo = usoServidor.find((a) => a.caminho === caminho)!;
-      const embrulhos = /\b(executarAcao|executarAcaoPublica|acao|acaoPublica)\s*\(/;
+      const embrulhos = /\b(executarAcao|executarAcaoExterna|executarAcaoPublica|acao|acaoPublica)\s*\(/;
       for (const exportado of exportsDe(arquivo.texto)) {
         const corpo = arquivo.texto.slice(arquivo.texto.indexOf(exportado.linha));
         const ateOProximo = corpo.slice(0, corpo.indexOf("\nexport ", 1) + 1 || corpo.length);
@@ -87,6 +88,20 @@ describe("portão nas Server Actions", () => {
       }
     },
   );
+
+  it("executarAcaoExterna só em arquivos da lista fechada (ADR 0053)", () => {
+    const PERMITIDOS = new Set([
+      "src/lib/actions/_base.ts",
+      "src/lib/actions/pagamentos.ts",
+      "src/lib/actions/inteligencia.ts",
+      "src/lib/actions/canais-extras.ts",
+    ]);
+    const fora = arquivos
+      .filter((a) => /\bexecutarAcaoExterna\b/.test(a.texto))
+      .map((a) => a.caminho)
+      .filter((c) => !PERMITIDOS.has(c));
+    expect(fora).toEqual([]);
+  });
 
   it("`_base.ts` confere origem e teto por IP fora de exigirSessao (§3.2)", () => {
     const texto = readFileSync(join(RAIZ, "src/lib/actions/_base.ts"), "utf8");
