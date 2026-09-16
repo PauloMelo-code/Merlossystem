@@ -15,10 +15,9 @@ import { arquivosDe, lerFonte, linhasCom, semComentarios } from "./_fonte";
  *   2. `escopoDeLoja` e `lojaParaGravar` moram so em `src/lib/auth/loja.ts`.
  *   3. O cookie de loja NUNCA e lido fora de `actions/_base.ts` e do layout da
  *      casca: cookie e preferencia de interface, nunca autorizacao.
- *   4. Consulta de modulo de dominio que nao cita escopo REPROVA. Hoje nenhum
- *      modulo de dominio existe (eles nascem na onda 2), e por isso o piso e
- *      zero e esta escrito — quem entregar o primeiro modulo SOBE o piso, como
- *      em `block-3s.test.tsx`. Sem isso a trava vira decoracao.
+ *   4. Consulta de modulo de dominio que nao cita escopo REPROVA. O piso e
+ *      o valor real da onda 2 e esta escrito — quem entrega modulo SOBE o piso,
+ *      como em `block-3s.test.tsx`. Sem isso a trava vira decoracao.
  *   5. Escopo que nao resolve FECHA: `ErroDeEscopo` responde 404, nunca 403.
  */
 
@@ -43,10 +42,11 @@ const PASTAS_DE_DOMINIO = [
 ];
 
 /**
- * SOBE quando o primeiro modulo de dominio entregar consulta de verdade. Hoje
- * as tres pastas que existem tem so arquivo-costura, que nao consulta nada.
+ * Valor real depois da onda 2 (139 leituras nos modulos de dominio). So DESCE
+ * com motivo escrito no commit — uma queda silenciosa e pasta que sumiu da
+ * varredura.
  */
-const PISO_DE_CONSULTAS_DE_DOMINIO = 0;
+const PISO_DE_CONSULTAS_DE_DOMINIO = 139;
 
 const ehDeDominio = (f: string) => PASTAS_DE_DOMINIO.some((p) => f.startsWith(p));
 

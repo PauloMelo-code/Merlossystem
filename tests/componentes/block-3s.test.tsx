@@ -1,7 +1,30 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ModalConfirmacaoBlock } from "@/components/comum/modal-confirmacao-block";
 import { ConfirmarExclusao } from "@/components/comum/confirmar-exclusao";
+
+// O jsdom não tem ResizeObserver, e o RadioGroup do Radix o usa para medir.
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};
+
+const usuarios = vi.hoisted(() => ({
+  trocarPapel: vi.fn(),
+  promoverAAdmin: vi.fn(),
+  transferirPosse: vi.fn(),
+  recuperarAcesso: vi.fn(),
+}));
+vi.mock("@/lib/actions/usuarios", () => usuarios);
+vi.mock("@/lib/actions/seguranca", () => ({ reautenticar: vi.fn() }));
+vi.mock("sonner", () => ({ toast: { success: vi.fn() } }));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
+}));
+
+const { AcoesUsuario } = await import("@/app/(app)/configuracoes/usuarios/_components/acoes-usuario");
+const { FRASE_CIENCIA_ADMIN } = await import("@/lib/validadores/usuarios");
 
 /**
  * Trava do bloqueio de 3 segundos (04-ui.md §9.1).
@@ -44,14 +67,36 @@ export const ACOES_COM_BLOCK = [
  * o piso — é o que impede esta trava de virar decoração. A prova de cada uma
  * vive no arquivo de teste da tela; aqui ficam o inventário e o piso.
  *
- * F8 (telas de acesso e de conta) ligou duas: remover passkey e substituir
- * fator compartilham o item 18, e encerrar todas as sessões é o item 17. As
- * provas estão em `tests/componentes/perfil.test.tsx`.
+ * Cada linha diz ONDE está a prova. `excluir-registro` é um item só, provado
+ * por mais de uma tela.
  */
-const PISO_DE_TELAS_LIGADAS = 2;
+const PISO_DE_TELAS_LIGADAS = 18;
 const telasLigadas: readonly string[] = [
+  // F8 — tests/componentes/perfil.test.tsx
   "substituir-fator-ou-remover-passkey",
   "encerrar-todas-as-sessoes",
+  // M2 — contatos-telas.test.tsx; M3 — midias-galeria.test.tsx
+  "excluir-registro",
+  "exportar-dossie-do-titular",
+  "eliminar-dados-do-titular",
+  // M4 — pedidos-acoes.test.tsx
+  "marcar-lancado-no-masc",
+  "cancelar-pedido",
+  // M5 — integracoes-telas.test.tsx
+  "desconectar-integracao",
+  "parear-novo-aparelho",
+  "criar-editar-ou-desativar-loja",
+  // M6 — campanhas-telas.test.tsx
+  "iniciar-ou-retomar-disparo",
+  // M7 — usuarios-tela.test.tsx
+  "convidar-usuario",
+  "desativar-ou-reativar-usuario",
+  "iniciar-reset-de-acesso",
+  // M7 — provados neste arquivo, abaixo
+  "trocar-papel",
+  "promover-a-admin",
+  "transferir-posse",
+  "recuperacao-assistida",
 ];
 
 const BLOQUEIO_MS = 3000;
@@ -217,5 +262,52 @@ describe("lista fechada de ações com block", () => {
     expect(telasLigadas.every((tela) => (ACOES_COM_BLOCK as readonly string[]).includes(tela))).toBe(
       true,
     );
+  });
+});
+
+describe("M7: as cerimônias administrativas passam pelo block", () => {
+  const LOJA = "33333333-3333-4333-8333-333333333333";
+  const ALVO = {
+    id: "44444444-4444-4444-8444-444444444444",
+    nome: "Bia Lima",
+    papel: "vendedor" as const,
+    lojaId: LOJA,
+    updatedAt: "2026-09-16T09:00:00.000Z",
+  };
+  const casos = [
+    ["papel", "Trocar papel ou loja", "Trocar papel", usuarios.trocarPapel, false],
+    ["promover", "Promover a administrador", "Promover", usuarios.promoverAAdmin, true],
+    ["transferir", "Transferir a posse", "Transferir posse", usuarios.transferirPosse, true],
+    ["recuperar", "Recuperação assistida", "Recuperar acesso", usuarios.recuperarAcesso, false],
+  ] as const;
+
+  it.each(casos)("%s só chama o servidor depois dos 3 s", async (acao, menu, botao, chamada, ciencia) => {
+    chamada.mockResolvedValue({ ok: true, dados: { updatedAt: new Date() } });
+    render(
+      <AcoesUsuario
+        usuario={ALVO}
+        disponiveis={[acao]}
+        lojas={[{ id: LOJA, nome: "Centro", sigla: "CEN" }]}
+      />,
+    );
+    fireEvent.keyDown(screen.getByRole("button", { name: `Ações para ${ALVO.nome}` }), { key: "Enter" });
+    fireEvent.click(screen.getByRole("menuitem", { name: menu }));
+    if (ciencia) {
+      fireEvent.change(screen.getByLabelText("Ciência"), { target: { value: FRASE_CIENCIA_ADMIN } });
+    }
+    const motivo = screen.getAllByRole("textbox").at(-1)!;
+    fireEvent.change(motivo, { target: { value: "decisão registrada em reunião" } });
+    fireEvent.click(screen.getByRole("button", { name: botao }));
+
+    const dialogo = screen.getByRole("alertdialog");
+    fireEvent.click(within(dialogo).getByRole("button", { name: botao }));
+    expect(chamada).not.toHaveBeenCalled();
+
+    liberar();
+    fireEvent.click(within(dialogo).getByRole("button", { name: botao }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(chamada).toHaveBeenCalledTimes(1);
   });
 });

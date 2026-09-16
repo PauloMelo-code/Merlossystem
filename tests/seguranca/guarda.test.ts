@@ -21,11 +21,10 @@ const RAIZ = process.cwd();
  * é o que impede a trava de virar decorativa quando alguém apaga a pasta de
  * actions.
  *
- * Hoje são três, todos da fundação: a casca de `(app)`, as actions da área
- * pública e `actions/seguranca.ts`. Os oito pacotes da onda 2 acrescentam os
- * seus.
+ * Valor real depois da onda 2: 19 arquivos (os 3 da fundação — casca de
+ * `(app)`, área pública e `actions/seguranca.ts` — mais os dos oito pacotes).
  */
-const PISO_DE_ACTIONS = 3;
+const PISO_DE_ACTIONS = 19;
 
 function varrer(pasta: string): string[] {
   let entradas;
