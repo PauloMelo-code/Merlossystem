@@ -105,14 +105,17 @@ export async function iniciarTrocaDeEmail(
     tx,
   );
 
-  // PENDÊNCIA (bloqueio registrado): `AssuntoDeSeguranca` não tem assunto
-  // próprio para "código de troca de e-mail". Até a fundação criar, o código
-  // segue no FRAGMENTO do link para o endereço novo, como o convite.
-  enfileirarEmailSeguranca("email-trocado", alvo.id, `${env.APP_URL}/perfil#codigo=${codigo}`, {
-    paraEmail: emailNovo,
-  });
-  // Aviso ao endereço ANTIGO: "não foi você? conteste".
-  enfileirarEmailSeguranca("email-trocado", alvo.id);
+  // O código vai no FRAGMENTO do link para o endereço novo, como o convite:
+  // o fragmento não chega a servidor nenhum nem ao log. `/perfil` o lê e
+  // chama `confirmarMeuNovoEmail`.
+  enfileirarEmailSeguranca(
+    "email-troca-codigo",
+    alvo.id,
+    `${env.APP_URL}/perfil#codigo=${codigo}`,
+    { paraEmail: emailNovo },
+  );
+  // Aviso ao endereço ATUAL (ainda o antigo): "não foi você? conteste".
+  enfileirarEmailSeguranca("email-troca-solicitada", alvo.id);
 }
 
 /**

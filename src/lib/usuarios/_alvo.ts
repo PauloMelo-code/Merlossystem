@@ -6,7 +6,7 @@ import { exigirAlvoPermitido } from "@/lib/auth/permissoes/alvo";
 import { registrarEventoAuth } from "@/lib/auth/trilha";
 import type { Transacao } from "@/lib/db/mutacoes";
 import type { EscopoLoja } from "@/lib/auth/loja";
-import { PAPEIS, type Papel } from "@/lib/db/schema/_enums/auth";
+import { ATOR_SISTEMA, PAPEIS, type Papel } from "@/lib/db/schema/_enums/auth";
 import { ErroDeEscopo, ErroDePermissao } from "@/lib/erros";
 import type { Quadro } from "./regras";
 
@@ -75,6 +75,10 @@ function paraLinha(l: LinhaCrua): LinhaTravada | null {
 /**
  * Recusa com trilha. `recusa_403` vai pelo funil best-effort (outra conexão),
  * então fica gravada mesmo com o rollback da transação. Uso: `throw await`.
+ *
+ * A resposta é `SEM_PERMISSAO`, igual à de chave faltando: um código próprio
+ * de alvo diria a quem sonda que a pessoa existe (ADR 0032). O porquê fica só
+ * na trilha, em `detalhes.motivo`.
  */
 export async function recusaDeAlvo(
   ctx: Contexto,
@@ -89,7 +93,7 @@ export async function recusaDeAlvo(
     atorId: ctx.sessao.usuarioId,
     alvoId,
     resultado: "recusado",
-    detalhes: { acao: chave, papel, rota: "ALVO_NAO_PERMITIDO" },
+    detalhes: { acao: chave, papel, motivo: "alvo" },
   });
   return new ErroDePermissao("Você não tem acesso a esta ação sobre esta pessoa.");
 }
@@ -105,7 +109,7 @@ export async function travarAlvo(
     select id, nome, email, papel, loja_id, ativo, precisa_configurar_fator,
            two_factor_enabled, bloqueado_ate, updated_at
     from usuarios
-    where is_deleted = false
+    where is_deleted = false and id <> ${ATOR_SISTEMA}::uuid
       and ((papel in ('dono', 'admin') and ativo)
            or id = ${alvoId}::uuid or id = ${atorId}::uuid)
     order by id
@@ -115,7 +119,8 @@ export async function travarAlvo(
 
   const alvo = linhas.find((l) => l?.id === alvoId) ?? null;
   const ator = linhas.find((l) => l?.id === atorId) ?? null;
-  // Registro inexistente responde 404, nunca 403.
+  // Registro inexistente responde 404, nunca 403. O ATOR_SISTEMA não é
+  // pessoa: some da consulta e cai aqui também.
   if (!alvo) throw new ErroDeEscopo();
   if (!ator || !ator.ativo || !podeChave(ator.papel, chave)) {
     throw await recusaDeAlvo(ctx, chave, alvoId, ator?.papel ?? ctx.sessao.papel);

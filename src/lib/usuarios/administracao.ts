@@ -1,5 +1,6 @@
 import "server-only";
 import { sql } from "drizzle-orm";
+import { CIENCIA_ADMIN_V1 } from "@/lib/auth/convites";
 import type { Contexto } from "@/lib/auth/guard";
 import { podeChave } from "@/lib/auth/permissoes";
 import { estadoDosFatores, fatorQueFalta } from "@/lib/auth/fatores";
@@ -10,7 +11,6 @@ import { usuarios } from "@/lib/db/schema/auth/usuarios";
 import { usuarios_convites } from "@/lib/db/schema/auth/convites";
 import type { Papel } from "@/lib/db/schema/_enums/auth";
 import { ErroDeValidacao } from "@/lib/erros";
-import { CIENCIA_ADMIN_VERSAO } from "@/lib/validadores/usuarios";
 import { ESCOPO_DE_REDE, baseDoEvento, recusaDeAlvo, travarAlvo, type LinhaTravada } from "./_alvo";
 import {
   conferirDestinoDePapel,
@@ -134,7 +134,7 @@ export async function promoverAAdmin(
     {
       tipo: "admin_promovido",
       ...baseDoEvento(ctx, alvo, dados.motivo),
-      detalhes: { papel: "admin", acao: `ciencia:${CIENCIA_ADMIN_VERSAO}` },
+      detalhes: { papel: "admin", ciencia_versao: CIENCIA_ADMIN_V1 },
     },
     tx,
   );
@@ -176,7 +176,7 @@ export async function transferirPosse(
     {
       tipo: "posse_transferida",
       ...baseDoEvento(ctx, alvo, dados.motivo),
-      detalhes: { papel: "dono", acao: `ciencia:${CIENCIA_ADMIN_VERSAO}` },
+      detalhes: { papel: "dono", ciencia_versao: CIENCIA_ADMIN_V1 },
     },
     tx,
   );

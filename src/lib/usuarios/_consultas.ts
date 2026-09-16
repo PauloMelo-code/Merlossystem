@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, gt, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNull, ne, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/lib/db/client";
 import { vivos } from "@/lib/db/consultas";
@@ -7,7 +7,7 @@ import { usuarios } from "@/lib/db/schema/auth/usuarios";
 import { usuarios_convites } from "@/lib/db/schema/auth/convites";
 import { usuarios_trocas_email } from "@/lib/db/schema/auth/trocas-email";
 import { lojas } from "@/lib/db/schema/lojas";
-import type { Papel } from "@/lib/db/schema/_enums/auth";
+import { ATOR_SISTEMA, type Papel } from "@/lib/db/schema/_enums/auth";
 
 /**
  * Leituras de `/configuracoes/usuarios` (04-ui.md §5.6).
@@ -64,7 +64,8 @@ export async function listarUsuarios(): Promise<UsuarioNaLista[]> {
         vivos(usuarios_trocas_email),
       ),
     )
-    .where(vivos(usuarios))
+    // O ATOR_SISTEMA (viewer inativo, "Sistema") assina worker e webhook: não é gente.
+    .where(and(vivos(usuarios), ne(usuarios.id, ATOR_SISTEMA)))
     .orderBy(desc(usuarios.ativo), asc(usuarios.nome));
 
   return linhas.map((l) => ({

@@ -12,12 +12,10 @@ import { emailSchema, motivoSchema, uuidSchema } from "@/lib/validadores/comum";
  * campo de privilégio só muda por action dedicada (H12).
  */
 
-/** Versão da ciência exigida para conceder `admin` (CHECK `convites_ciencia_admin`). */
-export const CIENCIA_ADMIN_VERSAO = "CIENCIA_ADMIN_V1";
-
 /**
  * O que a pessoa DIGITA (04-ui.md §5.6: campo de texto, não checkbox). Mudar a
- * frase é mudar a versão — a trilha guarda qual ciência foi dada.
+ * frase é mudar a versão (`CIENCIA_ADMIN_V1`, em `src/lib/auth/tokens.ts`) — a
+ * trilha guarda qual ciência foi dada em `detalhes.ciencia_versao`.
  */
 export const FRASE_CIENCIA_ADMIN = "CONCEDO ACESSO DE ADMINISTRADOR";
 
