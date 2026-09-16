@@ -41,6 +41,12 @@ anterior.
 | [0022](0022-fk-composta-e-modified-by.md) | FK composta `(id, loja_id)` e FK de `modified_by` por SQL na migracao | Aceito |
 | [0023](0023-fila-sse-borda-e-banco-de-teste.md) | SSE com assinante unico, teto de corpo, anti-SSRF, worker empacotado e `db-teste` recriando schema | Aceito |
 | [0024](0024-excecao-de-tamanho-em-components-ui.md) | Excecao de caminho no auditor: `src/components/ui/` fora da regra de 499 linhas | Aceito |
+| [0025](0025-colunas-do-plugin-em-usuarios-totp.md) | Tres colunas do plugin `twoFactor` em `usuarios_totp` (migracao 0017) | Aceito |
+| [0026](0026-campos-ba-com-fields-dos-plugins.md) | `CAMPOS_BA` com `fields` tambem nos modelos dos plugins | Aceito |
+| [0027](0027-carimbo-de-reautenticacao.md) | Reautenticacao carimba a sessao corrente em vez de criar outra | Aceito |
+| [0028](0028-server-only-e-condicao-react-server.md) | `server-only` fica; fora do Next, o processo liga `--conditions=react-server` | Aceito |
+| [0029](0029-politica-de-fatores.md) | Dono e admin cadastram passkey E aplicativo; conta so-passkey entra pela passkey | Aceito |
+| [0030](0030-familia-de-permissao-conta.md) | Familia `conta:*` na matriz de permissao | Aceito |
 
 ### Historico (sistema anterior)
 

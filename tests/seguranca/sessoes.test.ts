@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { opcoesAuth } from "@/lib/auth/auth";
+import { carimbarReautenticacao } from "@/lib/auth/fatores";
 import {
   TETO_SESSOES,
   TETO_SESSOES_PRIVILEGIADO,
@@ -21,7 +22,8 @@ import {
  *
  * Reprova quando: o `token` entra na projeção; a sessão sobrevive à desativação
  * ou à troca de papel; o uso RENOVA o teto absoluto; a 4ª sessão simultânea não
- * derruba a mais antiga.
+ * derruba a mais antiga; a reautenticação não renova o frescor NATIVO do BA ou
+ * estica o teto absoluto (ADR 0027).
  */
 
 beforeAll(async () => {
@@ -136,5 +138,34 @@ describe("sessão", () => {
   it("toda resposta de auth leva Cache-Control: no-store (F13)", async () => {
     const r = await obter("/get-session");
     expect(r.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("reautenticar renova created_at (frescor nativo) sem esticar expira_em (ADR 0027)", async () => {
+    const u = await criarUsuario("reauth@teste.local");
+    await entrar(u.email, u.senha);
+    await poolDeTeste.query(
+      "update usuarios_sessoes set created_at = now() - interval '1 hour' where usuario_id = $1",
+      [u.id],
+    );
+    const { rows: antes } = await poolDeTeste.query<{ id: string; expira_em: Date }>(
+      "select id, expira_em from usuarios_sessoes where usuario_id = $1",
+      [u.id],
+    );
+    const sessao = antes[0]!;
+
+    await carimbarReautenticacao(sessao.id);
+
+    const { rows } = await poolDeTeste.query<{
+      criada_ha_s: number;
+      expira_em: Date;
+      reautenticada_em: Date | null;
+    }>(
+      `select extract(epoch from now() - created_at)::float as criada_ha_s, expira_em, reautenticada_em
+       from usuarios_sessoes where id = $1`,
+      [sessao.id],
+    );
+    expect(rows[0]!.criada_ha_s).toBeLessThan(60);
+    expect(rows[0]!.reautenticada_em).not.toBeNull();
+    expect(new Date(rows[0]!.expira_em).getTime()).toBe(new Date(sessao.expira_em).getTime());
   });
 });
