@@ -1,9 +1,11 @@
 import "server-only";
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
+import type { Severidade } from "@/lib/db/schema/_enums/plataforma";
 import { STATUS_PEDIDO_SEM_RESERVA } from "@/lib/db/schema/_enums/pedidos";
 import { logger } from "@/lib/logger";
-import type { Leitor } from "./_consultas";
+import { alertasAbertos, type Leitor } from "./_consultas";
+import { abrir, resolver } from "./escrita";
 
 /**
  * Job `reconciliacao` (noturno, fila `manutencao`) — 01-dados-dominio.md §7.2 e
@@ -17,10 +19,9 @@ import type { Leitor } from "./_consultas";
  *      fora de `STATUS_PEDIDO_SEM_RESERVA` (é o que criar e cancelar movem).
  *
  * NÃO CORRIGE NADA. Correção silenciosa esconde o defeito que causou a
- * divergência. O resultado vira ALERTA — e aqui está o limite desta entrega:
- * `TIPOS_ALERTA` não tem um tipo para divergência de espelho (ampliar é
- * migração do CHECK), então a divergência sai hoje como log `error` com os ids
- * e fica registrada como bloqueio do pacote M8.
+ * divergência. Cada divergência vira ALERTA `espelho_divergente`, uma por
+ * (tipo, contato). A reconciliação é o gerador desse tipo: ela também o
+ * RESOLVE quando a divergência some (alguém corrigiu a causa).
  */
 
 export type Divergencia = {
@@ -62,9 +63,61 @@ export async function encontrarDivergencias(
   return resultado.rows.map((l) => ({ tipo: l.tipo, lojaId: l.loja_id, contatoId: l.contato_id }));
 }
 
-/** O job: encontra, registra, não corrige. Devolve quantas achou. */
-export async function reconciliar(lojaId: string | null = null): Promise<Divergencia[]> {
+const TIPO = "espelho_divergente" as const;
+
+const SEVERIDADE: Readonly<Record<Divergencia["tipo"], Severidade>> = {
+  // Opt-out errado para menos = campanha para quem pediu para sair (LGPD).
+  opt_out: "critica",
+  contadores: "media",
+};
+
+/** Sem PII: a mensagem aparece para a equipe inteira da loja. */
+const MENSAGEM: Readonly<Record<Divergencia["tipo"], string>> = {
+  opt_out: "O opt-out do contato diverge do último consentimento registrado. Confira a ficha.",
+  contadores: "Os contadores de pedidos do contato divergem dos pedidos registrados.",
+};
+
+export function chaveDaDivergencia(d: Pick<Divergencia, "tipo" | "contatoId">): string {
+  return `${TIPO}|${d.tipo}|${d.contatoId}`;
+}
+
+/**
+ * O job: encontra, abre alerta, resolve o que deixou de divergir. Não corrige
+ * o dado. Cada gravação na própria transação; falha é contada e relançada.
+ */
+export async function reconciliar(lojaId: string | null = null, agora = new Date()): Promise<Divergencia[]> {
   const divergencias = await encontrarDivergencias(lojaId);
+  const vigentes = new Set(divergencias.map((d) => `${d.lojaId}|${chaveDaDivergencia(d)}`));
+  const abertos = await alertasAbertos([TIPO], lojaId);
+  const jaAbertos = new Set(abertos.map((a) => `${a.lojaId}|${a.chave}`));
+  let falhas = 0;
+  const gravar = (fn: () => Promise<unknown>) =>
+    fn().catch((erro: unknown) => {
+      falhas += 1;
+      logger.error({ erro: erro instanceof Error ? erro.message : String(erro) }, "reconciliacao: alerta não gravado");
+    });
+
+  for (const a of abertos) {
+    if (vigentes.has(`${a.lojaId}|${a.chave}`)) continue;
+    await gravar(() => db.transaction((tx) => resolver(tx, { id: a.id, lojaId: a.lojaId }, agora)));
+  }
+  for (const d of divergencias) {
+    const chave = chaveDaDivergencia(d);
+    if (jaAbertos.has(`${d.lojaId}|${chave}`)) continue;
+    await gravar(() =>
+      db.transaction((tx) =>
+        abrir(tx, {
+          lojaId: d.lojaId,
+          tipo: TIPO,
+          severidade: SEVERIDADE[d.tipo],
+          mensagem: MENSAGEM[d.tipo],
+          chave,
+          contatoId: d.contatoId,
+        }),
+      ),
+    );
+  }
+
   if (divergencias.length > 0) {
     // Só ids: nome e telefone não vão para log.
     logger.error(
@@ -79,5 +132,6 @@ export async function reconciliar(lojaId: string | null = null): Promise<Diverge
   } else {
     logger.info({ lojaId }, "reconciliacao: nenhum espelho divergente");
   }
+  if (falhas > 0) throw new Error(`reconciliacao: ${falhas} gravação(ões) de alerta falharam`);
   return divergencias;
 }

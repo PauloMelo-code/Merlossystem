@@ -1,20 +1,12 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { gerarAlertas } from "@/lib/alertas";
+import { gerarAlertas, reconhecerAlerta } from "@/lib/alertas";
 import { candidatosDe } from "@/lib/alertas/_consultas";
 import { chaveDeDeduplicacao } from "@/lib/alertas/regras";
 import { db, pool } from "@/lib/db/client";
-import { ErroNaoImplementado } from "@/lib/erros";
-import {
-  alertasDaLoja,
-  cenario,
-  contexto,
-  conversaCom,
-  escritaDeTeste,
-  exigirBancoDeTeste,
-  mensagem,
-  umaLinha,
-} from "./auditoria-apoio";
+import { ATOR_SISTEMA } from "@/lib/db/mutacoes";
+import { ErroDeColisao, ErroDeEscopo } from "@/lib/erros";
+import { alertasDaLoja, cenario, contexto, conversaCom, exigirBancoDeTeste, mensagem, umaLinha } from "./auditoria-apoio";
 
 /**
  * O GERADOR de alertas (01-dados.md §6.6). Aceite do pacote M8:
@@ -116,19 +108,54 @@ describe("detecção por tipo", () => {
 });
 
 describe("abrir, reconhecer, resolver e reincidir", () => {
-  it("a gravação real ainda não existe: o gerador FALHA ALTO, não finge", async () => {
+  it("abre pela porta oficial: autor é o ATOR_SISTEMA e abrir não grava trilha", async () => {
     const c = await cenario(db);
     const conversa = await conversaCom(db, c);
     await mensagem(db, c, conversa.conversaId, "entrada", 10);
-    await expect(gerarAlertas({ lojaId: c.lojaId })).rejects.toBeInstanceOf(ErroNaoImplementado);
-    expect(await alertasDaLoja(c.lojaId)).toEqual([]);
+    const resumo = await gerarAlertas({ lojaId: c.lojaId });
+    expect(resumo.abertos).toBeGreaterThanOrEqual(1);
+    const linhas = await alertasDaLoja(c.lojaId);
+    expect(linhas.length).toBe(resumo.abertos);
+    expect(linhas.every((a) => a.modified_by === ATOR_SISTEMA)).toBe(true);
+    const trilha = await umaLinha<{ n: string }>(db, sql`
+      select count(*)::text as n from auditoria_eventos
+       where entidade = 'alertas' and entidade_id in (select id::text from alertas where loja_id = ${c.lojaId})`);
+    expect(trilha.n).toBe("0");
+  });
+
+  it("reconhecer: trava de colisão, trilha alerta_reconhecido e 404 para outra loja", async () => {
+    const c = await cenario(db);
+    const { conversaId } = await conversaCom(db, c);
+    await mensagem(db, c, conversaId, "entrada", 10);
+    await gerarAlertas({ lojaId: c.lojaId });
+    const alerta = (await alertasDaLoja(c.lojaId))[0]!;
+    const visto = new Date(alerta.updated_at);
+
+    const deOutraLoja = contexto(c, { tipo: "uma", lojaId: c.outraLojaId });
+    await expect(
+      db.transaction((tx) => reconhecerAlerta({ id: alerta.id, updatedAt: visto }, deOutraLoja, tx)),
+    ).rejects.toBeInstanceOf(ErroDeEscopo);
+
+    await db.transaction((tx) => reconhecerAlerta({ id: alerta.id, updatedAt: visto }, contexto(c), tx));
+    const depois = (await alertasDaLoja(c.lojaId))[0]!;
+    expect(depois.reconhecido_por).toBe(c.usuarioId);
+    expect(depois.resolvido_em).toBeNull();
+
+    // Segunda pessoa com a tela velha: colisão, não sobrescreve.
+    await expect(
+      db.transaction((tx) => reconhecerAlerta({ id: alerta.id, updatedAt: visto }, contexto(c), tx)),
+    ).rejects.toBeInstanceOf(ErroDeColisao);
+
+    const trilha = await umaLinha<{ acao: string; ator_id: string }>(db, sql`
+      select acao, ator_id from auditoria_eventos where entidade = 'alertas' and entidade_id = ${alerta.id}`);
+    expect(trilha).toEqual({ acao: "alerta_reconhecido", ator_id: c.usuarioId });
   });
 
   it("reconhecido que volta a valer não duplica; resolvido pelo gerador; reincidência abre outro", async () => {
     const c = await cenario(db);
     const { conversaId } = await conversaCom(db, c);
     await mensagem(db, c, conversaId, "entrada", 10);
-    const opcoes = { lojaId: c.lojaId, escrita: escritaDeTeste };
+    const opcoes = { lojaId: c.lojaId };
 
     const primeira = await gerarAlertas(opcoes);
     expect(primeira.abertos).toBeGreaterThanOrEqual(1);
@@ -139,7 +166,7 @@ describe("abrir, reconhecer, resolver e reincidir", () => {
     // A pessoa reconhece; a condição continua valendo.
     const alerta = linhas[0]!;
     await db.transaction((tx) =>
-      escritaDeTeste.reconhecer(tx, { id: alerta.id, escopo: { tipo: "uma", lojaId: c.lojaId }, updatedAtOriginal: new Date(alerta.updated_at) }, contexto(c)),
+      reconhecerAlerta({ id: alerta.id, updatedAt: new Date(alerta.updated_at) }, contexto(c), tx),
     );
     await gerarAlertas(opcoes);
     await gerarAlertas(opcoes);
@@ -186,7 +213,7 @@ describe("abrir, reconhecer, resolver e reincidir", () => {
     await mensagem(db, c, conversaId, "entrada", 10);
     const antes = await umaLinha<{ updated_at: Date }>(db, sql`select updated_at from conversas where id = ${conversaId}`);
 
-    await gerarAlertas({ lojaId: c.lojaId, escrita: escritaDeTeste });
+    await gerarAlertas({ lojaId: c.lojaId });
     let conversa = await umaLinha<{ sla_estourado_em: Date | null; updated_at: Date }>(
       db,
       sql`select sla_estourado_em, updated_at from conversas where id = ${conversaId}`,
@@ -195,7 +222,7 @@ describe("abrir, reconhecer, resolver e reincidir", () => {
     expect(conversa.updated_at).toEqual(antes.updated_at);
 
     await mensagem(db, c, conversaId, "saida", 0);
-    await gerarAlertas({ lojaId: c.lojaId, escrita: escritaDeTeste });
+    await gerarAlertas({ lojaId: c.lojaId });
     conversa = await umaLinha(db, sql`select sla_estourado_em, updated_at from conversas where id = ${conversaId}`);
     expect(conversa.sla_estourado_em).toBeNull();
   });

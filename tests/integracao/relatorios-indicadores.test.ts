@@ -1,16 +1,17 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { encontrarDivergencias } from "@/lib/alertas";
-import { pool } from "@/lib/db/client";
+import { encontrarDivergencias, reconciliar } from "@/lib/alertas";
+import { chaveDaDivergencia } from "@/lib/alertas/reconciliacao";
+import { db, pool } from "@/lib/db/client";
 import { gerarCsv, montarRelatorio } from "@/lib/relatorios";
 import { periodoPadrao } from "@/lib/validadores/auditoria";
-import { cenario, conversaCom, emRollback, exigirBancoDeTeste, umaLinha } from "./auditoria-apoio";
+import { alertasDaLoja, cenario, conversaCom, emRollback, exigirBancoDeTeste, umaLinha } from "./auditoria-apoio";
 
 /**
  * `/relatorios` (04-ui.md §5.5) com as duas definições FIXADAS:
  *   Receita = soma de `pedidos.total` com `masc_status = 'lancado'` no período;
  *   Tempo de primeira resposta = `primeira_resposta_em − created_at`.
- * E a reconciliação, que ACHA divergência e não corrige nada.
+ * E a reconciliação, que ACHA divergência, abre alerta e não corrige nada.
  */
 
 beforeAll(() => exigirBancoDeTeste());
@@ -110,5 +111,37 @@ describe("reconciliação", () => {
         select opt_out, pedidos_contagem from contatos where id = ${contador.id}`);
       expect(intacto).toEqual({ opt_out: false, pedidos_contagem: 2 });
     });
+  });
+
+  it("vira alerta espelho_divergente sem duplicar, e é resolvido quando a divergência some", async () => {
+    const c = await cenario(db);
+    const contato = await umaLinha(db, sql`
+      insert into contatos (loja_id, telefone, opt_out, opt_out_em)
+      values (${c.lojaId}, ${`5551${Date.now().toString().slice(-9)}`}, true, now()) returning id`);
+    const chave = chaveDaDivergencia({ tipo: "opt_out", contatoId: contato.id });
+
+    await reconciliar(c.lojaId);
+    await reconciliar(c.lojaId);
+    let alertas = await alertasDaLoja(c.lojaId);
+    expect(alertas).toHaveLength(1);
+    expect(alertas[0]).toMatchObject({
+      tipo: "espelho_divergente",
+      chave_deduplicacao: chave,
+      severidade: "critica",
+      contato_id: contato.id,
+      resolvido_em: null,
+    });
+    // Não corrigiu o dado.
+    const intacto = await umaLinha<{ opt_out: boolean }>(db, sql`select opt_out from contatos where id = ${contato.id}`);
+    expect(intacto.opt_out).toBe(true);
+
+    // Alguém registra a origem do opt-out: a divergência some e o alerta é resolvido.
+    await db.execute(sql`
+      insert into consentimentos (loja_id, contato_id, tipo, concedido, origem, termo_versao)
+      values (${c.lojaId}, ${contato.id}, 'opt_out', true, 'tela', 'v1')`);
+    expect(await reconciliar(c.lojaId)).toEqual([]);
+    alertas = await alertasDaLoja(c.lojaId);
+    expect(alertas).toHaveLength(1);
+    expect(alertas[0]?.resolvido_em).not.toBeNull();
   });
 });

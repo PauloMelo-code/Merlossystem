@@ -3,7 +3,6 @@
 import { executarAcao } from "@/lib/actions/_base";
 import {
   contarAlertas,
-  ESCRITA_DISPONIVEL,
   listarAlertas,
   PRAZOS_SLA_TEXTO,
   reconhecerAlerta as reconhecerNoDominio,
@@ -28,7 +27,7 @@ export type CentralDeAlertas = {
   prazosSla: string;
   contadores: ContadoresAlertas;
   porPagina: number;
-  /** Botão "Reconhecer": só com a chave E com a gravação existindo (U8). */
+  /** Botão "Reconhecer": só com a chave `alertas:reconhecer`. */
   podeReconhecer: boolean;
 };
 
@@ -59,7 +58,7 @@ export async function centralDeAlertas(bruto: unknown): Promise<Resultado<Centra
           prazosSla: PRAZOS_SLA_TEXTO.map((p) => `${p.canal} ${p.minutos} min`).join(" · "),
           contadores,
           porPagina: dados.porPagina,
-          podeReconhecer: ESCRITA_DISPONIVEL && pode(ctx.sessao.papel, "alertas", "reconhecer"),
+          podeReconhecer: pode(ctx.sessao.papel, "alertas", "reconhecer"),
         };
       },
     },

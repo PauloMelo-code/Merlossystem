@@ -2,7 +2,6 @@ import "server-only";
 import { db } from "@/lib/db/client";
 import { atualizarContador } from "@/lib/db/mutacoes";
 import { conversas } from "@/lib/db/schema/conversas/conversas";
-import { ErroNaoImplementado } from "@/lib/erros";
 import { logger } from "@/lib/logger";
 import {
   alertasAbertos,
@@ -10,7 +9,7 @@ import {
   conversasComSlaMarcado,
   type Candidato,
 } from "./_consultas";
-import { escritaDeAlertas, type EscritaDeAlertas } from "./escrita";
+import { abrir, resolver } from "./escrita";
 import {
   ALVO_POR_TIPO,
   chaveDeDeduplicacao,
@@ -48,7 +47,6 @@ export type ResumoDaGeracao = {
 
 type Opcoes = {
   lojaId?: string | null;
-  escrita?: EscritaDeAlertas;
   agora?: Date;
 };
 
@@ -97,7 +95,6 @@ async function sincronizarCarimboDeSla(
 
 export async function gerarAlertas(opcoes: Opcoes = {}): Promise<ResumoDaGeracao> {
   const lojaId = opcoes.lojaId ?? null;
-  const escrita = opcoes.escrita ?? escritaDeAlertas;
   const agora = opcoes.agora ?? new Date();
   const resumo: ResumoDaGeracao = { abertos: 0, resolvidos: 0, slaMarcados: 0, slaDesmarcados: 0 };
   let falhas = 0;
@@ -117,9 +114,6 @@ export async function gerarAlertas(opcoes: Opcoes = {}): Promise<ResumoDaGeracao
     try {
       await fn();
     } catch (erro) {
-      // Gravação que ainda não existe não é falha de um alerta: é o módulo
-      // inteiro sem saída. Sobe na hora, sem martelar a porta N vezes.
-      if (erro instanceof ErroNaoImplementado) throw erro;
       falhas += 1;
       logger.error({ erro: erro instanceof Error ? erro.message : String(erro) }, "alerta não gravado");
     }
@@ -133,7 +127,7 @@ export async function gerarAlertas(opcoes: Opcoes = {}): Promise<ResumoDaGeracao
     if (!lida) continue; // chave que não é deste gerador: não é ele quem resolve
     if (vigentes.get(lida.tipo)?.has(alerta.chave)) continue;
     await gravar(async () => {
-      await db.transaction((tx) => escrita.resolver(tx, { id: alerta.id, lojaId: alerta.lojaId }, agora));
+      await db.transaction((tx) => resolver(tx, { id: alerta.id, lojaId: alerta.lojaId }, agora));
       resumo.resolvidos += 1;
     });
   }
@@ -143,7 +137,7 @@ export async function gerarAlertas(opcoes: Opcoes = {}): Promise<ResumoDaGeracao
       if (chavesAbertas.has(`${c.lojaId}|${chave}`)) continue;
       await gravar(async () => {
         const nasceu = await db.transaction((tx) =>
-          escrita.abrir(tx, {
+          abrir(tx, {
             lojaId: c.lojaId,
             tipo,
             severidade: SEVERIDADE_POR_TIPO[tipo],

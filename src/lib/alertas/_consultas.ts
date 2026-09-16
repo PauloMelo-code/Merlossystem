@@ -179,7 +179,7 @@ export type AlertaAberto = { id: string; lojaId: string; tipo: string; chave: st
 
 /** Alertas ainda não resolvidos dos tipos que o gerador conhece. */
 export async function alertasAbertos(
-  tipos: readonly TipoGerado[],
+  tipos: readonly TipoAlerta[],
   lojaId: string | null,
   leitor: Leitor = db,
 ): Promise<AlertaAberto[]> {

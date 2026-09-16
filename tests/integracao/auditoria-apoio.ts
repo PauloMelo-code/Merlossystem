@@ -4,15 +4,15 @@ import type { Contexto } from "@/lib/auth/guard";
 import type { EscopoLoja } from "@/lib/auth/loja";
 import { db } from "@/lib/db/client";
 import type { Transacao } from "@/lib/db/mutacoes";
-import type { EscritaDeAlertas } from "@/lib/alertas/escrita";
 
 /**
  * Apoio dos testes de integração do pacote M8 (alertas, auditoria e
  * relatórios). Não termina em `.test.ts`: o Vitest não o coleta.
  *
  * Leitura: transação com ROLLBACK e `set local role merlo_app`.
- * Gerador: ele abre as próprias transações, então a massa é GRAVADA e cada
- * teste usa lojas novas (o filtro por loja isola um teste do outro).
+ * Gerador, reconciliação e jobs de manutenção abrem as próprias transações:
+ * a massa é GRAVADA e cada teste usa lojas novas (o filtro por loja isola um
+ * teste do outro).
  */
 
 export function exigirBancoDeTeste(): void {
@@ -45,18 +45,30 @@ export async function umaLinha<T = { id: string }>(ex: Executor, consulta: Retur
 
 let contador = 0;
 const sufixo = () => `${Date.now().toString(36)}${(contador++).toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-const sigla = () =>
-  Array.from({ length: 3 }, () => String.fromCharCode(65 + Math.floor(Math.random() * 26))).join("");
+/**
+ * Loja com sigla LIVRE (`^[A-Z]{3}$`, única na rede). Sorteada no próprio
+ * banco entre as que ninguém usa: as lojas dos testes ficam gravadas e um
+ * sorteio no cliente colide cedo ou tarde (e aborta a transação do teste).
+ */
+function novaLoja(ex: Executor, nome: string, slug: string) {
+  return umaLinha(ex, sql`
+    insert into lojas (nome, slug, sigla)
+    select ${nome}, ${slug}, c.s
+      from (select chr(65 + floor(random() * 26)::int) || chr(65 + floor(random() * 26)::int)
+                   || chr(65 + floor(random() * 26)::int) as s
+              from generate_series(1, 200)) c
+     where not exists (select 1 from lojas l where l.sigla = c.s)
+     limit 1
+    returning id`);
+}
 
 export type Cenario = { lojaId: string; outraLojaId: string; usuarioId: string; integracaoId: string };
 
 /** Duas lojas, uma pessoa e um número de WhatsApp oficial na primeira loja. */
 export async function cenario(ex: Executor, provedor = "whatsapp_oficial"): Promise<Cenario> {
   const s = sufixo();
-  const loja = await umaLinha(ex, sql`
-    insert into lojas (nome, slug, sigla) values (${`Centro ${s}`}, ${`centro-${s}`}, ${sigla()}) returning id`);
-  const outra = await umaLinha(ex, sql`
-    insert into lojas (nome, slug, sigla) values (${`Sul ${s}`}, ${`sul-${s}`}, ${sigla()}) returning id`);
+  const loja = await novaLoja(ex, `Centro ${s}`, `centro-${s}`);
+  const outra = await novaLoja(ex, `Sul ${s}`, `sul-${s}`);
   const usuario = await umaLinha(ex, sql`
     insert into usuarios (nome, email, papel) values ('Bia de Teste', ${`bia-${s}@exemplo.invalido`}, 'dono')
     returning id`);
@@ -124,43 +136,21 @@ export async function mensagem(
   return linha.id;
 }
 
-/**
- * A gravação de alertas que a fundação ainda não entregou, escrita aqui SÓ
- * para provar as regras do gerador. SQL cru, no formato que o pedido de
- * bloqueio descreve para `mutacoes.ts`.
- */
-export const escritaDeTeste: EscritaDeAlertas = {
-  async abrir(tx, a) {
-    const r = await tx.execute(sql`
-      insert into alertas (loja_id, tipo, severidade, mensagem, chave_deduplicacao, conversa_id, contato_id)
-      values (${a.lojaId}, ${a.tipo}, ${a.severidade}, ${a.mensagem}, ${a.chave}, ${a.conversaId}, ${a.contatoId})
-      on conflict (loja_id, chave_deduplicacao) where resolvido_em is null and is_deleted = false
-      do nothing
-      returning id`);
-    return r.rows.length > 0;
-  },
-  async resolver(tx, alvo, quando) {
-    await tx.execute(sql`
-      update alertas set resolvido_em = ${quando.toISOString()}::timestamptz
-       where id = ${alvo.id} and loja_id = ${alvo.lojaId} and resolvido_em is null`);
-  },
-  async reconhecer(tx, alvo, ctx) {
-    await tx.execute(sql`
-      update alertas set reconhecido_em = now(), reconhecido_por = ${ctx.autorId}, updated_at = now()
-       where id = ${alvo.id} and updated_at = ${alvo.updatedAtOriginal.toISOString()}::timestamptz`);
-  },
-};
-
 export async function alertasDaLoja(lojaId: string) {
   const r = await db.execute<{
     id: string;
     tipo: string;
     chave_deduplicacao: string;
+    severidade: string;
+    contato_id: string | null;
+    modified_by: string | null;
     reconhecido_em: Date | null;
+    reconhecido_por: string | null;
     resolvido_em: Date | null;
     updated_at: Date;
   }>(sql`
-    select id, tipo, chave_deduplicacao, reconhecido_em, resolvido_em, updated_at
+    select id, tipo, chave_deduplicacao, severidade, contato_id, modified_by, reconhecido_em,
+           reconhecido_por, resolvido_em, updated_at
       from alertas where loja_id = ${lojaId} order by created_at, id`);
   return r.rows;
 }

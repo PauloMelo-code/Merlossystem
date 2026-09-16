@@ -1,45 +1,45 @@
-import type { Contexto, EscopoLoja } from "@/lib/auth/guard";
-import type { Transacao } from "@/lib/db/mutacoes";
-import type { Severidade } from "@/lib/db/schema/_enums/plataforma";
-import { naoImplementado } from "@/lib/erros";
-import type { TipoGerado } from "./regras";
+import "server-only";
+import type { EscopoLoja } from "@/lib/auth/loja";
+import {
+  abrirAlerta,
+  atualizarComTrava,
+  atualizarEstado,
+  type ContextoDeGravacao,
+  type NovoAlerta,
+  type Transacao,
+} from "@/lib/db/mutacoes";
+import { alertas } from "@/lib/db/schema/alertas";
 
 /**
- * As TRÊS gravações do módulo de alertas, como porta.
+ * As TRÊS gravações do módulo de alertas (01-dados.md §6.6), todas pelos
+ * helpers de `mutacoes.ts`:
  *
- * POR QUE PORTA, E NÃO CHAMADA DIRETA: `src/lib/db/mutacoes.ts` é o único
- * arquivo com INSERT/UPDATE sobre tabela de domínio (03-arquitetura.md §6.4), e
- * hoje ele NÃO oferece nenhuma das três operações que `alertas` precisa:
- *
- *   1. abrir com dedupe — `INSERT ... ON CONFLICT (loja_id, chave_deduplicacao)
- *      WHERE resolvido_em IS NULL AND is_deleted = false DO NOTHING`, sem trilha
- *      (é estado de sistema, o ator é o gerador);
- *   2. resolver — `alertas.resolvido_em` não está em `ESTADOS_DE_SISTEMA`
- *      (`src/lib/db/listas-fechadas.ts`), então `atualizarEstado()` recusa;
- *   3. reconhecer — `atualizarComTrava()` exige uma `AcaoAuditada`, e
- *      `ACOES_AUDITADAS` não tem `alerta_reconhecido` (ampliar é migração do
- *      CHECK, 01-dados.md §7.4).
- *
- * Os três pedidos estão registrados para a fundação (bloqueio do pacote M8).
- * Até lá, a implementação real é `escritaPendente`, que FALHA ALTO — nunca
- * finge que gravou — e `ESCRITA_DISPONIVEL` é `false`, o que esconde o botão
- * "Reconhecer" da tela (04-ui.md U8: nenhuma tela de fachada).
- *
- * Quando a fundação entregar, a troca é aqui e só aqui:
- *   abrir      -> abrirAlerta(tx, novo)                         (mutacoes.ts)
- *   resolver   -> atualizarEstado(tx, alertas, alvo, { resolvido_em })
- *   reconhecer -> atualizarComTrava(tx, alertas, {...}, ctx, "alerta_reconhecido")
+ *   abrir      estado de sistema: dedupe no único parcial
+ *              `(loja_id, chave_deduplicacao) WHERE resolvido_em IS NULL`,
+ *              sem trilha, autor ATOR_SISTEMA;
+ *   resolver   SÓ quem gera (o gerador, ou a reconciliação para o tipo dela):
+ *              `resolvido_em` é estado de sistema, sem trava nem trilha;
+ *   reconhecer a pessoa marca ciência: trava de colisão e trilha
+ *              `alerta_reconhecido`.
  */
 
-export type NovoAlerta = {
-  lojaId: string;
-  tipo: TipoGerado;
-  severidade: Severidade;
-  mensagem: string;
-  chave: string;
-  conversaId: string | null;
-  contatoId: string | null;
-};
+/** `true` quando nasceu linha nova; `false` quando a dedupe segurou. */
+export async function abrir(tx: Transacao, alerta: NovoAlerta): Promise<boolean> {
+  return (await abrirAlerta(tx, alerta)) !== null;
+}
+
+export async function resolver(
+  tx: Transacao,
+  alvo: { id: string; lojaId: string },
+  quando: Date,
+): Promise<void> {
+  await atualizarEstado(
+    tx,
+    alertas,
+    { id: alvo.id, escopo: { tipo: "uma", lojaId: alvo.lojaId } },
+    { resolvido_em: quando },
+  );
+}
 
 export type AlvoReconhecimento = {
   id: string;
@@ -47,25 +47,17 @@ export type AlvoReconhecimento = {
   updatedAtOriginal: Date;
 };
 
-export type EscritaDeAlertas = {
-  /** `true` quando nasceu linha nova; `false` quando a dedupe segurou. */
-  abrir(tx: Transacao, alerta: NovoAlerta): Promise<boolean>;
-  /** Carimba `resolvido_em`. SÓ o gerador chama. */
-  resolver(tx: Transacao, alvo: { id: string; lojaId: string }, quando: Date): Promise<void>;
-  /** Marca ciência. Com trava de colisão e trilha. */
-  reconhecer(tx: Transacao, alvo: AlvoReconhecimento, ctx: Contexto): Promise<void>;
-};
-
-const PENDENTE = "gravação de alertas (aguarda abrirAlerta, ESTADOS_DE_SISTEMA.alertas e alerta_reconhecido na fundação)";
-
-export const escritaPendente: EscritaDeAlertas = {
-  abrir: () => Promise.reject(naoImplementado(PENDENTE)),
-  resolver: () => Promise.reject(naoImplementado(PENDENTE)),
-  reconhecer: () => Promise.reject(naoImplementado(PENDENTE)),
-};
-
-/** A implementação em uso. Trocar junto com `ESCRITA_DISPONIVEL`. */
-export const escritaDeAlertas: EscritaDeAlertas = escritaPendente;
-
-/** Liga o botão "Reconhecer". Falso enquanto a gravação não existir. */
-export const ESCRITA_DISPONIVEL = false;
+/** Alerta de outra loja vira 404; duas pessoas ao mesmo tempo, 409. */
+export async function reconhecer(
+  tx: Transacao,
+  alvo: AlvoReconhecimento,
+  ctx: ContextoDeGravacao,
+): Promise<void> {
+  await atualizarComTrava(
+    tx,
+    alertas,
+    { ...alvo, dados: { reconhecido_em: new Date(), reconhecido_por: ctx.autorId } },
+    ctx,
+    "alerta_reconhecido",
+  );
+}

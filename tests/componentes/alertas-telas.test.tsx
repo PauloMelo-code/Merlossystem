@@ -4,8 +4,8 @@ import { axe } from "vitest-axe";
 
 /**
  * `/alertas` e `/relatorios` (04-ui.md §5.5), no componente:
- *   - cada alerta abre o objeto; "Reconhecer" só aparece quando pode E quando a
- *     gravação existe (a action decide `podeReconhecer`);
+ *   - cada alerta abre o objeto; "Reconhecer" só aparece com a chave
+ *     `alertas:reconhecer` (a action decide `podeReconhecer`);
  *   - reconhecer manda o `updated_at` visto (trava de colisão) e mostra o erro;
  *   - relatórios: tabela alternativa com caption, exportar chama a action.
  */
