@@ -11,7 +11,8 @@ e §7`, `01-dados-dominio.md §7.2`, `03-arquitetura.md §8.1`, `04-ui.md §5.5`
 | `auditoria_eventos` | só leitura: trilha de negócio (a escrita é `src/lib/auditoria/gravador.ts`, da fundação) |
 | `auth_eventos` | só leitura: trilha de acesso da aba "Acessos" |
 | `lojas_integracoes_eventos` | retenção de 30 dias por ANONIMIZAÇÃO (`UPDATE`), nunca exclusão |
-| `conversas`, `conversas_mensagens`, `contatos`, `pedidos`, `conversas_agendamentos`, `lojas_integracoes`, `consentimentos`, `usuarios_convites` | só leitura: fontes dos alertas, dos indicadores e da reconciliação |
+| `usuarios_convites` | `expirar-convites` fecha o vencido por exclusão lógica, pela porta `fecharConviteVencido` da fundação |
+| `conversas`, `conversas_mensagens`, `contatos`, `pedidos`, `conversas_agendamentos`, `lojas_integracoes`, `consentimentos` | só leitura: fontes dos alertas, dos indicadores e da reconciliação |
 
 ## Onde mora
 
@@ -20,14 +21,14 @@ e §7`, `01-dados-dominio.md §7.2`, `03-arquitetura.md §8.1`, `04-ui.md §5.5`
 | `src/lib/alertas/regras.ts` | SLA por canal (constante), tipos gerados no R1, severidade, chave de dedupe, mensagem e rota do alerta. Puro |
 | `src/lib/alertas/_consultas.ts` | uma consulta por tipo (detecção = reavaliação), abertos, lista e contadores da tela |
 | `src/lib/alertas/gerador.ts` | job `gerar-alertas`: abre, resolve, sincroniza `conversas.sla_estourado_em` |
-| `src/lib/alertas/escrita.ts` | a PORTA das três gravações de `alertas` (ver Bloqueios) |
-| `src/lib/alertas/reconciliacao.ts` | espelho `opt_out` × `consentimentos` e contadores × `pedidos`; acha, registra, não corrige |
+| `src/lib/alertas/escrita.ts` | as três gravações de `alertas`: `abrir` (`abrirAlerta`), `resolver` (`atualizarEstado` em `resolvido_em`) e `reconhecer` (`atualizarComTrava`, trilha `alerta_reconhecido`) |
+| `src/lib/alertas/reconciliacao.ts` | espelho `opt_out` × `consentimentos` e contadores × `pedidos`; abre e resolve alerta `espelho_divergente`, não corrige o dado |
 | `src/lib/auditoria/consulta.ts` | trilha de negócio: lista por cursor, detalhe com diff, pessoas do filtro |
 | `src/lib/auditoria/apresentacao.ts` | máscara de PII e de segredo NA SAÍDA, rótulo de ação e de entidade. Puro |
 | `src/lib/auditoria/qualidade.ts` | os quatro indicadores por pessoa e a lista de ocorrências |
 | `src/lib/auditoria/excluidos.ts` | registros com `is_deleted = true`, por entidade de uma lista fechada |
 | `src/lib/auditoria/seguranca.ts` | trilha de acesso: listagem sem IP, detalhe com IP |
-| `src/lib/auditoria/retencao.ts` | `retencao-eventos` e a contagem de convites vencidos |
+| `src/lib/auditoria/retencao.ts` | `retencao-eventos` e `expirar-convites` (`fecharConvitesVencidos`, com `contextoDeSistema`) |
 | `src/lib/auditoria/cursor.ts` | cursor `(instante, id)` das listas do pacote |
 | `src/lib/relatorios/definicoes.ts` | as métricas, a definição de cada uma e a formatação. Puro |
 | `src/lib/relatorios/_consultas.ts` | indicadores, série diária (dia de São Paulo) e nome do escopo |
@@ -35,7 +36,7 @@ e §7`, `01-dados-dominio.md §7.2`, `03-arquitetura.md §8.1`, `04-ui.md §5.5`
 | `src/lib/relatorios/resumo.ts` | job `resumo-diario` (sai no log; não há provedor de e-mail ainda) |
 | `src/lib/actions/{alertas,auditoria,relatorios}.ts` | actions; as páginas chamam estas funções no servidor |
 | `src/lib/validadores/{alertas,auditoria,relatorios}.ts` | filtros da URL (valor fora da lista vira "sem filtro") e período |
-| `src/server/processadores/manutencao.ts` | fila `manutencao`: só traduz o job para o domínio |
+| `src/server/processadores/manutencao.ts` | fila `manutencao`: só traduz o job para o domínio. `limpar-midia` aceita `{ lojaId, solicitacaoId?, midiaIds? }` |
 
 ## Telas
 
@@ -55,7 +56,7 @@ Os filtros são `<form method="get">` nativo: estado na URL, sem JavaScript.
 | Action | Chave | Faz |
 |---|---|---|
 | `centralDeAlertas` | `alertas:ler` | página, contadores, prazos de SLA e `podeReconhecer` |
-| `reconhecerAlerta` | `alertas:reconhecer` | marca ciência com trava de colisão (depende do bloqueio 1) |
+| `reconhecerAlerta` | `alertas:reconhecer` | marca ciência com trava de colisão e trilha `alerta_reconhecido` |
 | `trilhaDeNegocio` | `trilha:ler` | trilha paginada, pessoas e ações do filtro |
 | `eventoDaTrilha` | `trilha:ler` | detalhe com diff mascarado |
 | `qualidadePorPessoa` | `trilha:ler` | os quatro indicadores por pessoa |
@@ -73,6 +74,8 @@ Os filtros são `<form method="get">` nativo: estado na URL, sem JavaScript.
   o gerador carimba `resolvido_em`; se ela voltar, nasce um alerta novo.
 - **Dedupe no banco**: único parcial `(loja_id, chave_deduplicacao) WHERE
   resolvido_em IS NULL AND is_deleted = false`. Chave = `tipo|objeto|id`.
+- **Autor**: abrir e resolver gravam como `ATOR_SISTEMA`, sem trilha (estado
+  de sistema). Reconhecer grava a pessoa em `reconhecido_por` e na trilha.
 - **"Sem resposta"** = nenhuma mensagem de saída (nota interna não conta) desde
   `ultima_entrada_em`. Ler não é responder.
 - **SLA** (constante): WhatsApp 5 min, Instagram 15, Facebook 30, TikTok 60.
@@ -84,9 +87,19 @@ Os filtros são `<form method="get">` nativo: estado na URL, sem JavaScript.
   fora do R1. A conta Bling da rede (sem loja) não gera alerta: `alertas.loja_id`
   é obrigatório.
 - **Mensagem do alerta sem PII** (aparece no sino da loja inteira).
-- **Retenção**: `corpo = {"anonimizado":true}`, `cabecalhos = {}`, por lote,
-  nenhuma linha some. Idempotente.
-- **Reconciliação não corrige**: correção silenciosa esconde o defeito.
+- **Retenção**: `corpo = {"anonimizado":true}`, `cabecalhos = {}`, `ip = null`,
+  por lote, nenhuma linha some. Idempotente (linha antiga com `ip` também entra).
+- **Reconciliação não corrige**: correção silenciosa esconde o defeito. Cada
+  divergência vira um alerta `espelho_divergente` (chave
+  `espelho_divergente|opt_out|<contato>` ou `...|contadores|<contato>`;
+  severidade crítica para opt-out, média para contadores). A reconciliação é o
+  gerador desse tipo: resolve o alerta quando a divergência some.
+- **Convite vencido**: `expirar-convites` fecha por exclusão lógica, com trilha
+  `convite_expirado` do `ATOR_SISTEMA`, e libera o e-mail para um convite novo.
+- **`limpar-midia` da LGPD**: remove os objetos na hora (sem esperar os 90 dias)
+  e grava a contagem por `registrarObjetosRemovidos` (M2). Ids e solicitação
+  fora do formato uuid são ignorados.
+- **Gráficos**: `var(--chart-1..5)` de `globals.css`, sem fallback.
 - **Trilha**: sem ação de exclusão, edição ou restauração em lugar nenhum. Campo
   de `CAMPOS_PII` aparece como `(alterado)`; chave de segredo não aparece. A
   máscara é repetida na saída (defesa em profundidade).
@@ -98,37 +111,15 @@ Os filtros são `<form method="get">` nativo: estado na URL, sem JavaScript.
   mediana de `primeira_resposta_em − created_at` das conversas abertas no
   período e já respondidas. Dia = dia de São Paulo (deslocamento fixo -03:00).
 
-## Bloqueios (dependem da fundação)
-
-1. **Gravação de `alertas`** — `src/lib/db/mutacoes.ts` não tem (a) `abrirAlerta`
-   (`INSERT ... ON CONFLICT ... WHERE resolvido_em IS NULL AND is_deleted =
-   false DO NOTHING`, sem trilha), (b) `alertas.resolvido_em` em
-   `ESTADOS_DE_SISTEMA` para `atualizarEstado`, (c) ação `alerta_reconhecido` em
-   `ACOES_AUDITADAS` (migração do CHECK) para `atualizarComTrava`. Até lá
-   `escritaDeAlertas` falha alto (`NAO_IMPLEMENTADO`), o job `gerar-alertas` vai
-   para a DLQ depois de sincronizar o carimbo de SLA, e o botão "Reconhecer" não
-   aparece (`ESCRITA_DISPONIVEL = false`). A troca é em `escrita.ts`, só lá; o
-   teste `tests/integracao/alertas-gerador.test.ts` já prova as regras com uma
-   gravação equivalente.
-2. **Reconciliação gera alerta** — `TIPOS_ALERTA` não tem tipo para divergência
-   de espelho. Hoje sai log `error` com os ids.
-3. **Retenção do `ip`** — `ESTADOS_DE_SISTEMA.lojas_integracoes_eventos` não
-   inclui `ip`; o `ip` fica até a lista crescer.
-4. **`expirar-convites`** — o convite vencido já não é aceito, mas continua
-   segurando o único parcial do e-mail. Fechá-lo é gravação em tabela de auth,
-   sem ação auditada; o job só conta e avisa.
-5. **`limpar-midia` da LGPD** — `objetos_removidos` de `lgpd_solicitacoes` não
-   tem gravação exposta pelo módulo LGPD; sai no log.
-6. **`--chart-1..5`** não existem em `globals.css`; o gráfico cai na cor primária.
-
 ## Testes
 
-- `tests/unidade/auditoria-apresentacao.test.ts`, `tests/unidade/relatorios-regras.test.ts`
+- `tests/unidade/auditoria-apresentacao.test.ts`, `tests/unidade/relatorios-regras.test.ts`,
+  `tests/unidade/auditoria-manutencao.test.ts` (carga da fila `manutencao`)
 - `tests/integracao/alertas-gerador.test.ts`, `tests/integracao/auditoria-leituras.test.ts`,
   `tests/integracao/relatorios-indicadores.test.ts` (apoio: `tests/integracao/auditoria-apoio.ts`)
 - `tests/componentes/auditoria-telas.test.tsx`, `tests/componentes/alertas-telas.test.tsx`
 
 ```
 node scripts/db-teste.mjs --sufixo m8
-DATABASE_URL=…/merlostore_test_m8 DATABASE_URL_TESTE=…/merlostore_test_m8 REDIS_URL=redis://localhost:6382/8 npm run test:integracao
+DATABASE_URL=postgres://dev:dev@localhost:5437/merlostore_test_m8 DATABASE_URL_TESTE=postgres://dev:dev@localhost:5437/merlostore_test_m8 REDIS_URL=redis://localhost:6382/8 npm run test:integracao
 ```
