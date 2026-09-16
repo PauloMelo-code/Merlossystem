@@ -13,10 +13,11 @@ titular e anonimização. Fontes: `01-dados-dominio.md §2.1, §2.6, §7, §8`,
 | `src/lib/contatos/_consultas.ts` | leituras da carteira e da ficha, sempre com `condicaoDeLoja` e `vivos` |
 | `src/lib/contatos/index.ts` | API pública: `buscarCarteira`, `exportarCsv`, `lerFicha`, `criarContato`, `editarContato`, `excluirContato`, `definirEtiquetas`, `etiquetarEmMassa` |
 | `src/lib/lgpd/regras.ts` | `optOutDe()` e `TERMO_VIGENTE`. Puro |
-| `src/lib/lgpd/consentimento.ts` | `registrarConsentimento()` — a ÚNICA escrita de `consentimentos` e do espelho `contatos.opt_out` |
-| `src/lib/lgpd/_anonimizacao.ts` | `anonimizarContato()` em transação única |
+| `src/lib/lgpd/consentimento.ts` | `registrarConsentimento()` — a ÚNICA porta de negócio que grava `consentimentos` e o espelho `contatos.opt_out` (sobre `registrarConsentimentoBase` da fundação) |
+| `src/lib/lgpd/_anonimizacao.ts` | `anonimizarContato()` em transação única (sobre `anonimizarTitular` da fundação) |
+| `src/lib/lgpd/objetos-removidos.ts` | costura do M8: `registrarObjetosRemovidos(solicitacaoId, n)` |
 | `src/lib/lgpd/_dossie.ts` | seções do dossiê, paginadas por `(tempo, id)` |
-| `src/lib/lgpd/_consultas.ts` | protocolo, solicitação, histórico |
+| `src/lib/lgpd/_consultas.ts` | protocolo, solicitação, histórico, eliminação travada para o job |
 | `src/lib/lgpd/index.ts` | API pública: as acima + `iniciarExportacao`, `lerDossie`, `registrarSolicitacao`, `lerHistoricoLgpd`, `agendarLimpezaDeMidia` |
 | `src/lib/actions/contatos.ts` | `listarContatos`, `exportarContatosCsv`, `abrirFicha`, `criarContato`, `salvarContato`, `excluirContato`, `definirEtiquetasDoContato`, `etiquetarContatos` |
 | `src/lib/actions/lgpd.ts` | `historicoDoTitular`, `registrarConsentimentoDoContato`, `eliminarDadosDoTitular`, `iniciarExportacaoDoDossie`, `lerPaginaDoDossie`, `registrarPedidoDeCorrecao` |
@@ -68,11 +69,13 @@ Toda escrita é `loja: "grava"`: o formulário manda a loja DO contato no campo
 
 ### Consentimento e opt-out
 
-- `registrarConsentimento(tx, ctx, novo)` trava a linha do contato, grava a
-  prova em `consentimentos` (append-only, `execute(sql)` como o gravador da
-  trilha) e, se o espelho mudar, atualiza `opt_out`/`opt_out_em` pela
-  `atualizarComTrava` com o `updated_at` relido na transação. Sempre registra
-  `consentimento_registrado`.
+- `registrarConsentimento(tx, ctx, novo)` decide o espelho com `optOutDe()` e
+  grava por `registrarConsentimentoBase()` (`@/lib/db/mutacoes`): trava a linha
+  do contato, grava a prova em `consentimentos` (append-only) e, se o espelho
+  mudar, atualiza `opt_out`/`opt_out_em` pela `atualizarComTrava` com o
+  `updated_at` relido na transação. Sempre registra `consentimento_registrado`.
+  Aceita `ContextoDeGravacao`: o contexto da tela ou `contextoDeSistema()`.
+  `termoVersao` ausente vira `TERMO_VIGENTE`.
 - O IP é o de `ipDoCliente()` na action. O validador não tem campo `ip`; se o
   cliente mandar, o Zod descarta.
 - `optOutDe(tipo, concedido)`: `marketing`/`opt_in` → `!concedido`;
@@ -87,25 +90,41 @@ Toda escrita é `loja: "grava"`: o formulário manda a loja DO contato no campo
 ### Anonimização (eliminação, art. 18, VI)
 
 `anonimizarContato(tx, ctx, { contatoId, updatedAt, protocolo, motivo })`, na
-ordem de `01-dados-dominio.md §8`:
+ordem de `01-dados-dominio.md §8` e com o alcance da ADR 0033:
 
 1. `lgpd_anonimizado` em `auditoria_eventos` ANTES do efeito, só com o
    protocolo (sem motivo: texto livre pode ter o nome);
 2. `contatos` → `Titular anonimizado`, identificadores e campos livres `NULL`,
    `anonimizado_em`, com trava de colisão da versão que a tela mostrou;
-3. `conversas_mensagens.conteudo` → `[removido a pedido do titular]` (nunca
-   `NULL`), `metadados = {}`; `conversas.ultima_mensagem_previa` → marcador;
-4. `conversas_mensagens_midias.legenda/transcricao` e
-   `pesquisas_satisfacao.comentario` → `NULL`;
-5. mídias RECEBIDAS do titular: `nome_original = NULL`, `is_deleted`;
-6. `lgpd_solicitacoes` (`eliminacao`) com a contagem por tabela;
-7. pedidos, itens e pagamentos ficam.
+3. os depósitos em lote, por `anonimizarTitular()` (`@/lib/db/mutacoes`):
+   - `conversas_mensagens.conteudo` → `[removido a pedido do titular]` (nunca
+     `NULL`), `metadados = {}`; `conversas.ultima_mensagem_previa` → marcador;
+   - `conversas_mensagens_midias.legenda/transcricao` e
+     `pesquisas_satisfacao.comentario` → `NULL`;
+   - `conversas_agendamentos`: `conteudo` → marcador, `variaveis = []`; o que
+     estava `agendada` vira `cancelada`, com `cancelada_por` = autor;
+   - `pedidos.observacoes` e `pedidos.endereco_entrega` → `NULL`;
+   - mídias RECEBIDAS do titular: `nome_original = NULL`, `is_deleted`;
+4. `lgpd_solicitacoes` (`eliminacao`) com a contagem por tabela (`contatos`,
+   `conversas_mensagens`, `conversas`, `conversas_mensagens_midias`,
+   `pesquisas_satisfacao`, `conversas_agendamentos`, `pedidos`,
+   `lojas_midias`) e `objetos_removidos = 0`;
+5. o pedido (número, valores, itens) e os pagamentos ficam: a venda de verdade
+   mora no Masc.
 
-Os passos 3–5 alcançam também linhas já excluídas. Depois do commit,
+O passo 3 alcança também linhas já excluídas. Depois do commit,
 `eliminarDadosDoTitular` chama `agendarLimpezaDeMidia`, que enfileira
 `manutencao/limpar-midia` com `jobId = lgpd-<solicitacao>` e a carga
-`{ lojaId, solicitacaoId, midiaIds }`. Redis fora: a anonimização vale e fica
-log de erro.
+`{ lojaId, solicitacaoId, midiaIds }` (`DadosManutencao` do M8). Redis fora: a
+anonimização vale e fica log de erro.
+
+O job remove os binários e chama `registrarObjetosRemovidos(solicitacaoId, n)`
+(`@/lib/lgpd/objetos-removidos`), que grava `resultado.objetos_removidos = n`
+pelo ATOR_SISTEMA, com trava de colisão relida em `FOR UPDATE` e a trilha
+`lgpd_anonimizado` na entidade `lgpd_solicitacoes`. Idempotente: o mesmo
+número não regrava nem repete a trilha. Solicitação inexistente, excluída ou
+que não é `eliminacao` → `ErroDeEscopo`; carga inválida → erro do Zod (o job
+falha e vai para a DLQ).
 
 Recusas: contato de outra loja → `NAO_ENCONTRADO`; versão velha → `COLISAO`
 (nada muda, nem a trilha); já anonimizado ou protocolo repetido na loja →
@@ -148,8 +167,8 @@ Recusas: contato de outra loja → `NAO_ENCONTRADO`; versão velha → `COLISAO`
 
 | Arquivo | Prova |
 |---|---|
-| `tests/integracao/lgpd-anonimizacao.test.ts` | aceite: anonimizar contato com texto, mídia com transcrição, pesquisa e pedido lançado fecha a transação e o telefone some de TODA coluna de texto/json; escopo, colisão, repetição |
-| `tests/integracao/contatos-carteira.test.ts` | E.164, telefone repetido por loja, aviso de excluído, colisão, escopo, cursor com `null` e volta, busca, filtros, `all` ignorado, CSV, etiquetas |
+| `tests/integracao/lgpd-anonimizacao.test.ts` | aceite: anonimizar contato com texto, mídia com transcrição, pesquisa, pedido lançado (com observação e endereço) e agendamento pendente fecha a transação e o telefone some de TODA coluna de texto/json; agendamento cancelado; escopo, colisão, repetição; `objetos_removidos` gravado uma vez pelo sistema. O telefone é único por execução: a varredura é global |
+| `tests/integracao/contatos-carteira.test.ts` | E.164, telefone repetido por loja, aviso de excluído, colisão, escopo, cursor com `null` e volta, busca, filtros, `all` ignorado, CSV, etiquetas. A visão "todas" busca por um prefixo único, porque outras suítes gravam contatos no mesmo banco |
 | `tests/integracao/contatos-lgpd.test.ts` | consentimento + espelho + IP + trilha, `merlo_app` não reescreve a prova, dossiê paginado (205 mensagens), expiração, escopo, correção |
 | `tests/unidade/contatos-regras.test.ts` | telefone, cursor adulterado, CSV, filtros, formulário, `optOutDe`, `ip` descartado |
 | `tests/componentes/contatos-telas.test.tsx` | block dos itens 5, 19 e 20, dossiê pela metade não baixa, "Todos" sem `all`, sem exclusão em massa, estados |

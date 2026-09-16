@@ -50,7 +50,10 @@ O modelo de dados que sustenta cada regra esta em `01-dados-dominio.md`.
 ## 3. Contato, consentimento e LGPD
 
 1. Telefone canonico e **E.164 so digitos** (`5551999990001`). Uma unica
-   funcao normaliza, em `src/lib/formato.ts`.
+   funcao normaliza a entrada: `normalizarTelefone()`, em
+   `src/lib/contatos/telefone.ts` (exportada por `@/lib/contatos`, modulo puro
+   que tambem roda no navegador). `src/lib/formato.ts` so formata para
+   exibicao (`telefone()`); ele nao normaliza.
 2. **`registrarConsentimento()` e a unica funcao que grava `consentimentos`** e
    o espelho `contatos.opt_out`, sempre na mesma transacao. A trilha de
    consentimento e append-only; o espelho existe so para a consulta ser rapida.
