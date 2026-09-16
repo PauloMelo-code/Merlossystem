@@ -11,13 +11,20 @@
 #
 # O worker e publicado JUNTO com o app: sem ele o sistema sobe sem quem processe a fila.
 #
+# Deploy: EasyPanel, por WEBHOOK. O CI verifica, migra e chama o webhook de deploy de
+# cada servico (app e worker); quem constroi a imagem a partir do Dockerfile e o
+# proprio EasyPanel. Caminho completo, secrets e rollback: docs/deploy.md.
+#
 # Secrets por Environment (`hml` e `prd`):
-#   <AMB>_DATABASE_URL_MIGRACAO   papel merlo_migracao — migracao e backup
-#   <AMB>_DEPLOY_APP              gatilho de deploy do app
-#   <AMB>_DEPLOY_WORKER           gatilho de deploy do worker
-#   <AMB>_APP_URL                 alvo da fumaca de seguranca
-#   <AMB>_SONDA_SEGREDO           header x-merlo-sonda de /api/pronto
-#   PRD_BACKUP_DEST               destino do backup FORA do servidor do banco
+#   <AMB>_DATABASE_URL_MIGRACAO     papel merlo_migracao — migracao e backup
+#   <AMB>_EASYPANEL_WEBHOOK_APP     URL do webhook de deploy do servico app (https)
+#   <AMB>_EASYPANEL_WEBHOOK_WORKER  URL do webhook de deploy do servico worker (https)
+#   <AMB>_APP_URL                   alvo da fumaca de seguranca
+#   <AMB>_SONDA_SEGREDO             header x-merlo-sonda de /api/pronto
+#   PRD_BACKUP_DEST                 destino do backup FORA do servidor do banco
+#
+# Variavel (nao secreta) por Environment:
+#   EASYPANEL_ESPERA_S              segundos entre o webhook e a fumaca (padrao 300)
 
 name: CI/CD
 
@@ -179,18 +186,39 @@ jobs:
           DATABASE_URL_MIGRACAO: ${{ secrets.HML_DATABASE_URL_MIGRACAO }}
         run: npm run db:migrate
 
-      - name: Publicar app e worker
+      # Fail-closed: sem os DOIS webhooks, nada e disparado. Publicar so o app sobe um
+      # sistema sem quem processe a fila — a mensagem chega no WhatsApp e nao aparece
+      # na tela. A URL do webhook E a credencial (o token vai no caminho): so https,
+      # nunca em `echo`, e o Actions mascara o valor no log.
+      - name: Publicar app e worker (webhook do EasyPanel)
         env:
-          APP: ${{ secrets.HML_DEPLOY_APP }}
-          WORKER: ${{ secrets.HML_DEPLOY_WORKER }}
+          APP: ${{ secrets.HML_EASYPANEL_WEBHOOK_APP }}
+          WORKER: ${{ secrets.HML_EASYPANEL_WEBHOOK_WORKER }}
         run: |
-          if [ -z "$APP" ] || [ -z "$WORKER" ]; then
-            echo "::error::HML_DEPLOY_APP e HML_DEPLOY_WORKER sao obrigatorios."
-            echo "O worker sobe JUNTO com o app; sem ele a fila nao e processada."
-            exit 1
-          fi
-          curl -fsS -X POST "$APP"
-          curl -fsS -X POST "$WORKER"
+          exigir() {
+            case "$2" in
+              https://*) ;;
+              "") echo "::error::$1 nao configurado. Nenhum servico foi disparado."; exit 1 ;;
+              *) echo "::error::$1 precisa ser https: o token do deploy vai na URL."; exit 1 ;;
+            esac
+          }
+          exigir HML_EASYPANEL_WEBHOOK_APP "$APP"
+          exigir HML_EASYPANEL_WEBHOOK_WORKER "$WORKER"
+          curl -fsS --retry 3 --retry-delay 5 --max-time 30 -X POST "$APP" -o /dev/null
+          echo "app: deploy disparado"
+          curl -fsS --retry 3 --retry-delay 5 --max-time 30 -X POST "$WORKER" -o /dev/null
+          echo "worker: deploy disparado"
+
+      # O webhook so ENFILEIRA o deploy: o EasyPanel ainda vai construir a imagem e
+      # trocar o container. Sem a espera, a fumaca testaria a versao ANTERIOR.
+      # ponytail: espera fixa, calibrada por `vars.EASYPANEL_ESPERA_S`. Nao ha como
+      # provar que a versao nova esta no ar — /api/saude nao expoe versao, de
+      # proposito. Trocar por conferencia de commit quando /api/pronto (com segredo)
+      # devolver a versao.
+      - name: Aguardar o EasyPanel trocar a versao
+        env:
+          ESPERA: ${{ vars.EASYPANEL_ESPERA_S || '300' }}
+        run: sleep "$ESPERA"
 
       - name: Fumaca de seguranca
         env:
@@ -207,6 +235,10 @@ jobs:
     if: github.ref == 'refs/heads/master' && github.event_name == 'push'
     runs-on: ubuntu-latest
     environment: prd
+    # O ultimo passo empurra a tag da versao publicada; com o token so de leitura
+    # (padrao de organizacao), o deploy daria certo e o job terminaria vermelho.
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -243,17 +275,32 @@ jobs:
           DATABASE_URL_MIGRACAO: ${{ secrets.PRD_DATABASE_URL_MIGRACAO }}
         run: npm run db:migrate
 
-      - name: Publicar app e worker
+      # Mesmo desenho do HML. O backup JA rodou: se um webhook falhar daqui em
+      # diante, o banco migrado tem copia e o rollback esta em docs/deploy.md §7.
+      - name: Publicar app e worker (webhook do EasyPanel)
         env:
-          APP: ${{ secrets.PRD_DEPLOY_APP }}
-          WORKER: ${{ secrets.PRD_DEPLOY_WORKER }}
+          APP: ${{ secrets.PRD_EASYPANEL_WEBHOOK_APP }}
+          WORKER: ${{ secrets.PRD_EASYPANEL_WEBHOOK_WORKER }}
         run: |
-          if [ -z "$APP" ] || [ -z "$WORKER" ]; then
-            echo "::error::PRD_DEPLOY_APP e PRD_DEPLOY_WORKER sao obrigatorios."
-            exit 1
-          fi
-          curl -fsS -X POST "$APP"
-          curl -fsS -X POST "$WORKER"
+          exigir() {
+            case "$2" in
+              https://*) ;;
+              "") echo "::error::$1 nao configurado. Nenhum servico foi disparado."; exit 1 ;;
+              *) echo "::error::$1 precisa ser https: o token do deploy vai na URL."; exit 1 ;;
+            esac
+          }
+          exigir PRD_EASYPANEL_WEBHOOK_APP "$APP"
+          exigir PRD_EASYPANEL_WEBHOOK_WORKER "$WORKER"
+          curl -fsS --retry 3 --retry-delay 5 --max-time 30 -X POST "$APP" -o /dev/null
+          echo "app: deploy disparado"
+          curl -fsS --retry 3 --retry-delay 5 --max-time 30 -X POST "$WORKER" -o /dev/null
+          echo "worker: deploy disparado"
+
+      # ponytail: espera fixa — mesmo teto e mesmo caminho de troca do job de HML.
+      - name: Aguardar o EasyPanel trocar a versao
+        env:
+          ESPERA: ${{ vars.EASYPANEL_ESPERA_S || '300' }}
+        run: sleep "$ESPERA"
 
       - name: Fumaca de seguranca
         env:
