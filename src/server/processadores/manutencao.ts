@@ -1,6 +1,7 @@
 import type { Job } from "bullmq";
 import { gerarAlertas as gerarNoDominio, reconciliar } from "@/lib/alertas";
-import { anonimizarEventosAntigos, contarConvitesVencidos } from "@/lib/auditoria";
+import { anonimizarEventosAntigos, fecharConvitesVencidos } from "@/lib/auditoria";
+import { registrarObjetosRemovidos } from "@/lib/lgpd/objetos-removidos";
 import { logger } from "@/lib/logger";
 import { limparMidiasExpiradas, removerBinarios } from "@/lib/midias";
 import { resumirDiaAnterior } from "@/lib/relatorios";
@@ -18,8 +19,8 @@ import { resumirDiaAnterior } from "@/lib/relatorios";
  *   retencaoEventos   anonimiza o diário de ingestão com mais de 30 dias
  *   limparMidia       varredura dos 90 dias, ou a lista de mídias de uma
  *                     anonimização LGPD (enfileirada depois do commit)
- *   expirarConvites   conta os convites vencidos que ainda seguram o e-mail
- *   reconciliacao     acha espelho divergente e NÃO corrige
+ *   expirarConvites   fecha (exclusão lógica) o convite vencido e libera o e-mail
+ *   reconciliacao     acha espelho divergente, abre alerta e NÃO corrige
  *   resumoDiario      números do dia anterior
  */
 
@@ -35,10 +36,11 @@ type JobManutencao = Job<DadosManutencao>;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+const uuidOuNulo = (v: unknown): string | null => (typeof v === "string" && UUID.test(v) ? v : null);
+
 /** Carga de fila é entrada externa ao processo: confere antes de usar. */
 function lojaDo(job: JobManutencao): string | null {
-  const lojaId = job.data?.lojaId;
-  return typeof lojaId === "string" && UUID.test(lojaId) ? lojaId : null;
+  return uuidOuNulo(job.data?.lojaId);
 }
 
 export async function gerarAlertas(job: JobManutencao): Promise<void> {
@@ -54,10 +56,12 @@ export async function limparMidia(job: JobManutencao): Promise<void> {
     ? job.data.midiaIds.filter((id): id is string => typeof id === "string" && UUID.test(id))
     : [];
   if (ids.length > 0) {
+    // Remoção na hora, sem esperar os 90 dias. Rodar de novo é seguro: a
+    // remoção e o registro da contagem são idempotentes.
     const removidos = await removerBinarios(ids);
-    // `lgpd_solicitacoes.resultado.objetos_removidos` é do módulo LGPD, que
-    // ainda não expõe a gravação (bloqueio registrado): fica o log.
-    logger.info({ solicitacaoId: job.data.solicitacaoId, removidos }, "limpar-midia (LGPD)");
+    const solicitacaoId = uuidOuNulo(job.data.solicitacaoId);
+    if (solicitacaoId) await registrarObjetosRemovidos(solicitacaoId, removidos);
+    logger.info({ solicitacaoId, removidos }, "limpar-midia (LGPD)");
     return;
   }
   const removidos = await limparMidiasExpiradas(lojaDo(job) ?? undefined);
@@ -65,7 +69,7 @@ export async function limparMidia(job: JobManutencao): Promise<void> {
 }
 
 export async function expirarConvites(): Promise<void> {
-  await contarConvitesVencidos();
+  await fecharConvitesVencidos();
 }
 
 export async function reconciliacao(job: JobManutencao): Promise<void> {

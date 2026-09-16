@@ -27,4 +27,4 @@ export {
 } from "./seguranca";
 export { decodificarCursor, type Pagina } from "./cursor";
 export { ALTERADO, rotuloDaAcao, rotuloDaEntidade, type LinhaDeDiff } from "./apresentacao";
-export { anonimizarEventosAntigos, contarConvitesVencidos, RETENCAO_DIAS } from "./retencao";
+export { anonimizarEventosAntigos, fecharConvitesVencidos, RETENCAO_DIAS } from "./retencao";

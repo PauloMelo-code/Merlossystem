@@ -44,6 +44,8 @@ describe("diff na tela", () => {
       expect(rotuloDaAcao(acao)).toMatch(/^[A-ZÁÉÍÓÚÇ][^_]*: /);
     }
     expect(rotuloDaAcao("pedido_voltou_fila_masc")).toBe("Pedido: voltou para a fila no Masc");
+    expect(rotuloDaAcao("resposta_rapida_criada")).toBe("Resposta rápida: criada");
+    expect(rotuloDaAcao("alerta_reconhecido")).toBe("Alerta: reconhecido");
   });
 });
 

@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   anonimizarEventosAntigos,
   detalheDoEvento,
+  fecharConvitesVencidos,
   detalheDoEventoDeAcesso,
   listarEventosDeAcesso,
   listarExcluidos,
@@ -12,6 +13,7 @@ import {
 } from "@/lib/auditoria";
 import { decodificarCursor } from "@/lib/auditoria/cursor";
 import { db, pool } from "@/lib/db/client";
+import { ATOR_SISTEMA } from "@/lib/db/mutacoes";
 import { ErroDeEscopo } from "@/lib/erros";
 import { cenario, conversaCom, emRollback, exigirBancoDeTeste, mensagem, umaLinha } from "./auditoria-apoio";
 
@@ -210,12 +212,43 @@ describe("retenção do diário de ingestão", () => {
 
     const depois = await umaLinha<{ n: string }>(db, sql`select count(*)::text as n from lojas_integracoes_eventos`);
     expect(depois.n).toBe(antes.n);
-    const linhas = await db.execute<{ id: string; corpo: unknown; cabecalhos: unknown }>(sql`
-      select id, corpo, cabecalhos from lojas_integracoes_eventos where id in (${antigo.id}, ${recente.id})`);
+    const linhas = await db.execute<{ id: string; corpo: unknown; cabecalhos: unknown; ip: string | null }>(sql`
+      select id, corpo, cabecalhos, ip from lojas_integracoes_eventos where id in (${antigo.id}, ${recente.id})`);
     const porId = new Map(linhas.rows.map((l) => [l.id, l]));
-    expect(porId.get(antigo.id)).toMatchObject({ corpo: { anonimizado: true }, cabecalhos: {} });
+    expect(porId.get(antigo.id)).toMatchObject({ corpo: { anonimizado: true }, cabecalhos: {}, ip: null });
     expect(porId.get(recente.id)?.corpo).toEqual({ telefone: "5552" });
     // Idempotente: a segunda rodada não acha mais nada deste lote.
     expect(await anonimizarEventosAntigos()).toBe(0);
+  });
+});
+
+describe("expirar-convites", () => {
+  it("fecha o vencido por exclusão lógica, com trilha do ATOR_SISTEMA, e libera o e-mail", async () => {
+    const c = await cenario(db);
+    const email = `convidada-${c.lojaId}@exemplo.invalido`;
+    const convite = (expira: string) =>
+      umaLinha(db, sql`
+        insert into usuarios_convites (email, papel, loja_id, token_hash, expira_em)
+        values (${email}, 'vendedor', ${c.lojaId}, ${`hash-${expira}-${c.lojaId}`}, now() + ${expira}::interval)
+        returning id`);
+    const vencido = await convite("-1 hour");
+    const antes = await umaLinha<{ n: string }>(db, sql`select count(*)::text as n from usuarios_convites`);
+
+    expect(await fecharConvitesVencidos()).toBeGreaterThanOrEqual(1);
+
+    const depois = await umaLinha<{ n: string }>(db, sql`select count(*)::text as n from usuarios_convites`);
+    expect(depois.n).toBe(antes.n);
+    const linha = await umaLinha<{ is_deleted: boolean; deleted_at: Date | null; modified_by: string }>(db, sql`
+      select is_deleted, deleted_at, modified_by from usuarios_convites where id = ${vencido.id}`);
+    expect(linha).toMatchObject({ is_deleted: true, modified_by: ATOR_SISTEMA });
+    expect(linha.deleted_at).not.toBeNull();
+    const trilha = await umaLinha<{ acao: string; ator_tipo: string; ator_id: string }>(db, sql`
+      select acao, ator_tipo, ator_id from auditoria_eventos
+       where entidade = 'usuarios_convites' and entidade_id = ${vencido.id}`);
+    expect(trilha).toEqual({ acao: "convite_expirado", ator_tipo: "sistema", ator_id: ATOR_SISTEMA });
+
+    // O e-mail está livre: um convite novo para a mesma pessoa nasce.
+    await expect(convite("48 hours")).resolves.toHaveProperty("id");
+    expect(await fecharConvitesVencidos()).toBe(0);
   });
 });

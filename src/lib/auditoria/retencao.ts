@@ -1,8 +1,9 @@
 import "server-only";
 import { and, lt, sql } from "drizzle-orm";
+import { fecharConviteVencido } from "@/lib/auth/convites";
 import { db } from "@/lib/db/client";
 import { vivos } from "@/lib/db/consultas";
-import { atualizarEstado } from "@/lib/db/mutacoes";
+import { atualizarEstado, contextoDeSistema, emTransacao } from "@/lib/db/mutacoes";
 import { lojas_integracoes_eventos } from "@/lib/db/schema/integracoes";
 import { logger } from "@/lib/logger";
 
@@ -10,14 +11,9 @@ import { logger } from "@/lib/logger";
  * Retenção e prazos (jobs `retencao-eventos` e `expirar-convites`).
  *
  * NENHUMA LINHA SOME. A retenção do diário de ingestão é ANONIMIZAÇÃO por
- * `UPDATE` (01-dados.md §6.4): `corpo` vira `{"anonimizado":true}` e
- * `cabecalhos` vira `{}`. A idempotência por `evento_externo_id` continua
- * valendo para sempre.
- *
- * LIMITE DESTA ENTREGA: o documento manda zerar também `ip`, mas
- * `ESTADOS_DE_SISTEMA.lojas_integracoes_eventos` (`src/lib/db/listas-fechadas.ts`)
- * não inclui `ip`, e `atualizarEstado()` recusa par fora da lista. O `ip` fica
- * até a fundação ampliar a lista (bloqueio registrado do pacote M8).
+ * `UPDATE` (01-dados.md §6.4): `corpo` vira `{"anonimizado":true}`,
+ * `cabecalhos` vira `{}` e `ip` vira nulo. A idempotência por
+ * `evento_externo_id` continua valendo para sempre.
  */
 
 export const RETENCAO_DIAS = 30;
@@ -40,7 +36,9 @@ export async function anonimizarEventosAntigos(agora = new Date()): Promise<numb
         and(
           vivos(lojas_integracoes_eventos),
           lt(lojas_integracoes_eventos.created_at, limite),
-          sql`${lojas_integracoes_eventos.corpo} <> ${JSON.stringify(CORPO_ANONIMIZADO)}::jsonb`,
+          // `ip` também: linha anonimizada antes de o ip entrar na retenção.
+          sql`(${lojas_integracoes_eventos.corpo} <> ${JSON.stringify(CORPO_ANONIMIZADO)}::jsonb
+               or ${lojas_integracoes_eventos.ip} is not null)`,
         ),
       )
       .limit(LOTE);
@@ -52,6 +50,7 @@ export async function anonimizarEventosAntigos(agora = new Date()): Promise<numb
         await atualizarEstado(tx, lojas_integracoes_eventos, { id, escopo: { tipo: "todas" } }, {
           corpo: CORPO_ANONIMIZADO,
           cabecalhos: {},
+          ip: null,
         });
       }
     });
@@ -64,21 +63,14 @@ export async function anonimizarEventosAntigos(agora = new Date()): Promise<numb
 }
 
 /**
- * Convite vencido JÁ não é aceitável: `consumirToken()` exige `expira_em >
- * now()` (`src/lib/auth/convites.ts`). O que falta é LIBERAR o e-mail: o único
- * parcial `uq_usuarios_convites_email_aberto` (`usado_em IS NULL AND
- * is_deleted = false`) segura o convite vencido e impede um convite novo para a
- * mesma pessoa. Fechar o vencido é gravação em tabela de auth (fundação) e não
- * tem ação auditada que a descreva — bloqueio registrado do pacote M8. Até lá,
- * o job CONTA e avisa, sem gravar.
+ * Convite vencido já não é aceitável (`consumirToken()` exige `expira_em >
+ * now()`), mas segura o único parcial `uq_usuarios_convites_email_aberto` e
+ * impede um convite novo para a mesma pessoa. O job FECHA o vencido (exclusão
+ * lógica com trilha `convite_expirado`) pela porta da fundação.
  */
-export async function contarConvitesVencidos(): Promise<number> {
-  const resultado = await db.execute<{ n: string }>(sql`
-    select count(*)::text as n from usuarios_convites
-     where is_deleted = false and usado_em is null and expira_em <= now()`);
-  const n = Number(resultado.rows[0]?.n ?? 0);
-  if (n > 0) {
-    logger.warn({ vencidos: n }, "expirar-convites: convites vencidos ainda seguram o e-mail");
-  }
-  return n;
+export async function fecharConvitesVencidos(): Promise<number> {
+  const ctx = contextoDeSistema({ origem: "worker" });
+  const fechados = await emTransacao(ctx, (tx) => fecharConviteVencido(tx, ctx));
+  if (fechados > 0) logger.info({ fechados }, "expirar-convites: convites vencidos fechados");
+  return fechados;
 }

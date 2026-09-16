@@ -84,6 +84,10 @@ const ENTIDADES: Readonly<Record<string, string>> = {
   produto: "Produto",
   lgpd: "LGPD",
   consentimento: "Consentimento",
+  agendamento: "Agendamento",
+  alerta: "Alerta",
+  convite: "Convite",
+  resposta_rapida: "Resposta rápida",
 };
 
 const PALAVRAS: Readonly<Record<string, string>> = {
@@ -106,7 +110,10 @@ const PALAVRAS: Readonly<Record<string, string>> = {
  * cadastrar.
  */
 export function rotuloDaAcao(acao: string): string {
-  const [entidade = "", ...resto] = acao.split("_");
+  const partes = acao.split("_");
+  // Sujeito de duas palavras (`resposta_rapida_criada`) vence o de uma.
+  const duas = partes.slice(0, 2).join("_");
+  const [entidade = "", ...resto] = ENTIDADES[duas] ? [duas, ...partes.slice(2)] : partes;
   const sujeito = ENTIDADES[entidade] ?? entidade;
   const verbo = resto.map((p) => PALAVRAS[p] ?? p).join(" ");
   return verbo ? `${sujeito}: ${verbo}` : sujeito;
