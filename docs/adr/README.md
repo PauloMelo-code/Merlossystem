@@ -47,6 +47,10 @@ anterior.
 | [0028](0028-server-only-e-condicao-react-server.md) | `server-only` fica; fora do Next, o processo liga `--conditions=react-server` | Aceito |
 | [0029](0029-politica-de-fatores.md) | Dono e admin cadastram passkey E aplicativo; conta so-passkey entra pela passkey | Aceito |
 | [0030](0030-familia-de-permissao-conta.md) | Familia `conta:*` na matriz de permissao | Aceito |
+| [0031](0031-ator-de-sistema.md) | Ator de sistema com linha propria e contexto de gravacao sem sessao | Aceito |
+| [0032](0032-helpers-de-sistema-e-migracao-0018.md) | Helpers de sistema em `mutacoes-sistema.ts` e listas fechadas da 0018 | Aceito |
+| [0033](0033-alcance-da-anonimizacao.md) | Alcance completo da anonimizacao LGPD | Aceito |
+| [0034](0034-ritmo-constante-por-provedor.md) | Ritmo de envio constante por provedor | Aceito |
 
 ### Historico (sistema anterior)
 
