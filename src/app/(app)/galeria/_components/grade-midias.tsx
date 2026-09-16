@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { ConfirmarExclusao } from "@/components/comum/confirmar-exclusao";
 import { excluirMidia } from "@/lib/actions/midias";
 import { rotuloDeTamanho } from "@/lib/armazenamento/limites";
-import { rotaDaMidia, type MidiaDto } from "@/lib/midias/dto";
+import { rotaDaMidia, type EtiquetaDaGaleria, type MidiaDto } from "@/lib/midias/dto";
 import { ROTULO_PASTA, ROTULO_TIPO } from "./rotulos";
 import { Visualizador } from "./visualizador";
 
@@ -23,7 +23,17 @@ function nomeDe(m: MidiaDto): string {
   return m.nomeOriginal ?? `${ROTULO_TIPO[m.tipoArquivo]} sem nome`;
 }
 
-export function GradeMidias({ midias, podeExcluir }: { midias: readonly MidiaDto[]; podeExcluir: boolean }) {
+export function GradeMidias({
+  midias,
+  etiquetas,
+  podeEditar,
+  podeExcluir,
+}: {
+  midias: readonly MidiaDto[];
+  etiquetas: readonly EtiquetaDaGaleria[];
+  podeEditar: boolean;
+  podeExcluir: boolean;
+}) {
   const router = useRouter();
   const [aberta, setAberta] = useState<MidiaDto | null>(null);
   const [alvo, setAlvo] = useState<MidiaDto | null>(null);
@@ -100,7 +110,12 @@ export function GradeMidias({ midias, podeExcluir }: { midias: readonly MidiaDto
         })}
       </ul>
 
-      <Visualizador midia={aberta} aoFechar={() => setAberta(null)} />
+      <Visualizador
+        midia={aberta}
+        etiquetas={etiquetas}
+        podeEditar={podeEditar}
+        aoFechar={() => setAberta(null)}
+      />
 
       <ConfirmarExclusao
         aberto={alvo !== null}

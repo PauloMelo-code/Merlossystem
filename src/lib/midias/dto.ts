@@ -17,10 +17,14 @@ export type MidiaDto = {
   origem: OrigemMidia;
   pasta: PastaMidia | null;
   temMiniatura: boolean;
+  /** Etiquetas vivas; o nome vem do catálogo da página. */
+  etiquetaIds: string[];
   criadaEm: string;
   /** Vai no campo oculto da exclusão: é o que a trava de colisão compara. */
   updatedAt: string;
 };
+
+export type EtiquetaDaGaleria = { id: string; lojaId: string; nome: string; cor: string | null };
 
 export type PaginaDeMidias = {
   itens: MidiaDto[];

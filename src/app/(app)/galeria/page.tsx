@@ -28,8 +28,8 @@ function primeiro(valor: string | string[] | undefined): string | undefined {
  * dado pessoal — a galeria de produtos filtra `origem = 'upload'` por
  * construção (D-51).
  *
- * Editar pasta e etiquetas NÃO existe aqui: a matriz não tem `midia:editar` e a
- * trilha não tem ação para isso (bloqueio registrado). Sem backend, sem tela (U8).
+ * Pasta e etiquetas se editam no visualizador (`midia:editar`, ação
+ * `midia_alterada`); não é ação crítica, então não passa pelo block de 3 s.
  */
 export default async function PaginaGaleria({ searchParams }: { searchParams: Promise<Parametros> }) {
   const sessao = await exigirSessao();
@@ -51,6 +51,7 @@ export default async function PaginaGaleria({ searchParams }: { searchParams: Pr
   const resultado = await listarGaleria(atuais);
 
   const podeEnviar = pode(sessao.papel, "midia", "enviar");
+  const podeEditar = pode(sessao.papel, "midia", "editar");
   const podeExcluir = pode(sessao.papel, "midia", "excluir");
 
   /** Link que troca UM filtro e volta à primeira página. */
@@ -173,7 +174,12 @@ export default async function PaginaGaleria({ searchParams }: { searchParams: Pr
         />
       ) : (
         <>
-          <GradeMidias midias={resultado.dados.itens} podeExcluir={podeExcluir} />
+          <GradeMidias
+            midias={resultado.dados.itens}
+            etiquetas={resultado.dados.etiquetas}
+            podeEditar={podeEditar}
+            podeExcluir={podeExcluir}
+          />
           <PaginacaoCursor
             cursorAnterior={resultado.dados.cursorAnterior}
             cursorProximo={resultado.dados.cursorProximo}

@@ -5,9 +5,10 @@ import { db } from "@/lib/db/client";
 import { condicaoDeLoja, vivos, vivosE } from "@/lib/db/consultas";
 import type { Transacao } from "@/lib/db/mutacoes";
 import { conversas_mensagens_midias } from "@/lib/db/schema/conversas/mensagens-midias";
-import { lojas_midias } from "@/lib/db/schema/midias";
+import { lojas_etiquetas } from "@/lib/db/schema/lojas";
+import { lojas_midias, lojas_midias_etiquetas } from "@/lib/db/schema/midias";
 import type { FiltrosGaleria } from "@/lib/validadores/midias";
-import type { MidiaDto, PaginaDeMidias } from "./dto";
+import type { EtiquetaDaGaleria, MidiaDto, PaginaDeMidias } from "./dto";
 
 /**
  * Leituras do domínio de mídia. Toda consulta passa por `condicaoDeLoja` e
@@ -63,6 +64,7 @@ function paraDto(l: Linha): MidiaDto {
     origem: l.origem as MidiaDto["origem"],
     pasta: l.pasta as MidiaDto["pasta"],
     temMiniatura: l.chaveMiniatura !== null,
+    etiquetaIds: [],
     criadaEm: l.criadaEm.toISOString(),
     updatedAt: l.updatedAt.toISOString(),
   };
@@ -111,6 +113,8 @@ export async function listarMidias(escopo: EscopoLoja, f: FiltrosGaleria): Promi
   const pagina = linhas.slice(0, f.porPagina);
   if (voltando) pagina.reverse();
   const itens = pagina.map(paraDto);
+  const etiquetas = await etiquetasPorMidia(escopo, itens.map((i) => i.id));
+  for (const item of itens) item.etiquetaIds = etiquetas.get(item.id) ?? [];
   const primeiro = itens[0];
   const ultimo = itens.at(-1);
 
@@ -189,6 +193,59 @@ export async function chavesDaMidia(lojaId: string, midiaId: string) {
     .where(vivosE(m, eq(m.id, midiaId), eq(m.loja_id, lojaId)))
     .limit(1);
   return linha ?? null;
+}
+
+const me = lojas_midias_etiquetas;
+const e = lojas_etiquetas;
+
+/** Etiquetas VIVAS de cada mídia da página (vínculo e etiqueta vivos). */
+async function etiquetasPorMidia(escopo: EscopoLoja, midiaIds: string[]): Promise<Map<string, string[]>> {
+  const mapa = new Map<string, string[]>();
+  if (midiaIds.length === 0) return mapa;
+  const linhas = await db
+    .select({ midiaId: me.midia_id, etiquetaId: me.etiqueta_id })
+    .from(me)
+    .innerJoin(e, and(eq(e.id, me.etiqueta_id), vivos(e)))
+    .where(vivosE(me, condicaoDeLoja(me, escopo), inArray(me.midia_id, midiaIds)));
+  for (const l of linhas) mapa.set(l.midiaId, [...(mapa.get(l.midiaId) ?? []), l.etiquetaId]);
+  return mapa;
+}
+
+/** Catálogo de etiquetas das lojas do escopo: a tela filtra pela loja da mídia. */
+export async function etiquetasDaGaleria(escopo: EscopoLoja): Promise<EtiquetaDaGaleria[]> {
+  return db
+    .select({ id: e.id, lojaId: e.loja_id, nome: e.nome, cor: e.cor })
+    .from(e)
+    .where(vivosE(e, condicaoDeLoja(e, escopo)))
+    .orderBy(asc(e.nome));
+}
+
+/** A mídia que a edição confere: viva e da loja. */
+export async function midiaParaEditar(tx: Transacao, lojaId: string, id: string) {
+  const [linha] = await tx
+    .select({ origem: m.origem, pasta: m.pasta })
+    .from(m)
+    .where(vivosE(m, eq(m.id, id), eq(m.loja_id, lojaId)))
+    .limit(1);
+  return linha ?? null;
+}
+
+/** Vínculos vivos da mídia, com o `updated_at` que a exclusão lógica confere. */
+export async function vinculosDaMidia(tx: Transacao, lojaId: string, midiaId: string) {
+  return tx
+    .select({ id: me.id, etiquetaId: me.etiqueta_id, atualizadoEm: me.updated_at })
+    .from(me)
+    .where(vivosE(me, eq(me.loja_id, lojaId), eq(me.midia_id, midiaId)));
+}
+
+/** Só os ids vivos NA loja: etiqueta de outra loja nunca vira vínculo. */
+export async function etiquetasDaLoja(tx: Transacao, lojaId: string, ids: readonly string[]) {
+  if (ids.length === 0) return [];
+  const linhas = await tx
+    .select({ id: e.id })
+    .from(e)
+    .where(vivosE(e, eq(e.loja_id, lojaId), inArray(e.id, [...ids])));
+  return linhas.map((l) => l.id);
 }
 
 const a = conversas_mensagens_midias;
