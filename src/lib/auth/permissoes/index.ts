@@ -2,10 +2,12 @@ import type { Papel } from "@/lib/db/schema/_enums/auth";
 import { ATENDIMENTO } from "./atendimento";
 import { COMERCIAL } from "./comercial";
 import { CONTA } from "./conta";
-import { FASE_R2 } from "./fase-r2";
 import { GOVERNANCA } from "./governanca";
+import { INTELIGENCIA } from "./inteligencia";
+import { PAGAMENTOS } from "./pagamentos";
 import { PESSOAS } from "./pessoas";
 import { PLATAFORMA } from "./plataforma";
+import { POS_VENDA } from "./pos-venda";
 import type { ChavePermissao, MapaPermissao } from "./_papeis";
 
 /**
@@ -21,20 +23,21 @@ import type { ChavePermissao, MapaPermissao } from "./_papeis";
 
 export type { ChavePermissao, MapaPermissao } from "./_papeis";
 
-/** O que alguma tela ou action do R1 usa. INV-27 vale sobre este mapa. */
-export const MATRIZ_R1: MapaPermissao = {
+/** Tudo o que alguma tela ou action entregue usa. INV-27 vale sobre este mapa. */
+export const MATRIZ_ENTREGUE: MapaPermissao = {
   ...ATENDIMENTO,
   ...COMERCIAL,
   ...PLATAFORMA,
   ...PESSOAS,
   ...GOVERNANCA,
   ...CONTA,
+  ...POS_VENDA,
+  ...PAGAMENTOS,
+  ...INTELIGENCIA,
 };
 
-export { FASE_R2 };
-
-/** O que `pode()` consulta: R1 + as chaves já decididas da fase R2. */
-export const MATRIZ: MapaPermissao = { ...MATRIZ_R1, ...FASE_R2 };
+/** O que `pode()` consulta. Não existe matriz de fase futura: chave nasce com a tela. */
+export const MATRIZ: MapaPermissao = MATRIZ_ENTREGUE;
 
 /**
  * Papel desconhecido = NENHUMA permissão. Nunca cair para o mais baixo: o

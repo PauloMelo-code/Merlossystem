@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FASE_R2, MATRIZ, MATRIZ_R1, pode, podeChave } from "@/lib/auth/permissoes";
+import { MATRIZ, MATRIZ_ENTREGUE, pode, podeChave } from "@/lib/auth/permissoes";
 import { PAPEIS, type Papel } from "@/lib/db/schema/_enums/auth";
 import { lerFonte } from "./_fonte";
 
@@ -24,7 +24,7 @@ function acaoDe(chave: string): string {
 }
 
 describe("matriz de permissão", () => {
-  it("cobre as famílias do R1 e não está vazia", () => {
+  it("cobre as famílias do R1 e do R2 e não está vazia", () => {
     expect(CHAVES.length).toBeGreaterThan(50);
     for (const prefixo of [
       "conversas:",
@@ -40,6 +40,13 @@ describe("matriz de permissão", () => {
       "lgpd:",
       "seguranca:",
       "conta:",
+      "pagamentos:",
+      "devolucoes:",
+      "negocios:",
+      "pesquisas:",
+      "ia:",
+      "conhecimento:",
+      "conteudo:",
     ]) {
       expect(CHAVES.some((c) => c.startsWith(prefixo)), prefixo).toBe(true);
     }
@@ -141,17 +148,45 @@ describe("matriz de permissão", () => {
     }
   });
 
-  it("as chaves da fase R2 estão SEPARADAS do R1 (INV-27)", () => {
-    // INV-27 ("toda entrada é usada por alguma tela") vale sobre MATRIZ_R1. As
-    // chaves de R2 nascem antes da tela de propósito, para o estorno não nascer
-    // sem dono no dia em que a tela ligar.
-    for (const chave of Object.keys(FASE_R2)) {
-      expect(Object.keys(MATRIZ_R1), chave).not.toContain(chave);
+  it("não existe matriz de fase futura: pode() só consulta o entregue (INV-27)", () => {
+    expect(Object.keys(MATRIZ).sort()).toEqual(Object.keys(MATRIZ_ENTREGUE).sort());
+  });
+
+  it("dinheiro saindo é gestão; cobrança é operação; baixa manual não existe", () => {
+    expect(podeChave("gerente", "devolucoes:concluir_estorno")).toBe(true);
+    expect(podeChave("vendedor", "devolucoes:concluir_estorno")).toBe(false);
+    expect(podeChave("vendedor", "pagamentos:gerar_cobranca")).toBe(true);
+    // Exceção escrita de INV-20 (ADR 0043): a action se chama cancelar_cobranca.
+    expect(podeChave("vendedor", "pagamentos:cancelar_cobranca")).toBe(true);
+    expect(podeChave("viewer", "pagamentos:ler")).toBe(false);
+    // Concatenado: o portão do F-R2 exige `git grep` vazio para a chave morta.
+    expect(CHAVES).not.toContain(["pagamentos", "marcar_pago"].join(":"));
+  });
+
+  it("estorno e painel de CSAT são da gestão", () => {
+    expect(podeChave("gerente", "devolucoes:concluir_estorno")).toBe(true);
+    expect(podeChave("vendedor", "devolucoes:concluir_estorno")).toBe(false);
+    expect(podeChave("vendedor", "pesquisas:ler")).toBe(false);
+    expect(podeChave("viewer", "pesquisas:ler")).toBe(false);
+    expect(podeChave("vendedor", "devolucoes:editar")).toBe(true);
+    expect(podeChave("viewer", "devolucoes:editar")).toBe(false);
+  });
+
+  it("lookbooks: excluir é da gestão e viewer não cria", () => {
+    expect(podeChave("gerente", "conteudo:excluir")).toBe(true);
+    expect(podeChave("vendedor", "conteudo:excluir")).toBe(false);
+    expect(podeChave("viewer", "conteudo:criar")).toBe(false);
+    expect(podeChave("viewer", "conteudo:ler")).toBe(true);
+  });
+
+  it("IA é de quem escreve; a base de conhecimento só a gestão escreve", () => {
+    for (const chave of ["ia:sugerir", "ia:resumir", "ia:transcrever"] as const) {
+      expect(podeChave("vendedor", chave), chave).toBe(true);
+      expect(podeChave("viewer", chave), chave).toBe(false);
     }
-    for (const chave of ["devolucoes:concluir_estorno", "pagamentos:marcar_pago"] as const) {
-      expect(podeChave("gerente", chave), chave).toBe(true);
-      expect(podeChave("vendedor", chave), chave).toBe(false);
-    }
+    expect(podeChave("viewer", "conhecimento:ler")).toBe(true);
+    expect(podeChave("vendedor", "conhecimento:criar")).toBe(false);
+    expect(podeChave("gerente", "conhecimento:editar")).toBe(true);
   });
 
   it("toda entrada da matriz aponta para ao menos um papel", () => {

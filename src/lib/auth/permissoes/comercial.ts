@@ -46,4 +46,13 @@ export const COMERCIAL: MapaPermissao = {
   /** `produtos.preco_custo` sai do DTO quando falso. */
   "produtos:ver_custo": GESTAO,
   "relatorios:exportar": GESTAO,
+
+  /**
+   * Lookbooks (R2-E1, ADR 0058). Todos veem; quem vende monta e edita;
+   * excluir é da gestão. ENVIAR não é chave daqui: é `conversas:escrever`.
+   */
+  "conteudo:ler": TODOS,
+  "conteudo:criar": OPERACAO,
+  "conteudo:editar": OPERACAO,
+  "conteudo:excluir": GESTAO,
 };
