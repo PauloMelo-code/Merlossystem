@@ -32,6 +32,7 @@ const PASTAS_DE_DOMINIO = [
   "src/lib/campanhas/",
   "src/lib/midias/",
   "src/lib/integracoes/",
+  "src/lib/canais-extras/",
   "src/lib/lojas/",
   "src/lib/usuarios/",
   "src/lib/alertas/",
