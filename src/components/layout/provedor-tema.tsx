@@ -13,6 +13,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
  * Padrão `system`: loja de rua com vitrine, o claro é o caso principal, mas
  * quem decide é a pessoa. `suppressHydrationWarning` está no `<html>` do
  * layout raiz, que é onde o `next-themes` escreve a classe antes da hidratação.
+ * O script inline dele precisa do `nonce` da CSP; sem ele o navegador o bloqueia
+ * e o tema salvo só entra depois da hidratação (piscada de tema).
  *
  * O 8º arquivo de `layout/`: não é componente de tela (a tabela de §6.1 lista
  * sete), é a casca que o layout raiz precisa em client.
@@ -20,7 +22,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 
 const LARGURA_CELULAR = "(max-width: 767px)";
 
-export function ProvedorTema({ children }: { children: ReactNode }) {
+export function ProvedorTema({ children, nonce }: { children: ReactNode; nonce: string }) {
   // Toast no canto inferior direito no desktop e no topo central no celular,
   // onde ele não cobre o composer do chat (§9).
   const [noCelular, setNoCelular] = useState(false);
@@ -34,7 +36,13 @@ export function ProvedorTema({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+    <ThemeProvider
+      attribute="class"
+      defaultTheme="system"
+      enableSystem
+      disableTransitionOnChange
+      nonce={nonce}
+    >
       <TooltipProvider delayDuration={300}>
         {children}
         <Toaster

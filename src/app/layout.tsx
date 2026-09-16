@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
+import { headers } from "next/headers";
 import { Inter } from "next/font/google";
 import { ProvedorTema } from "@/components/layout/provedor-tema";
 import { NOME_COMPLETO, TITULO_ABA } from "@/lib/marca";
@@ -14,9 +15,10 @@ import "./globals.css";
  * classe do tema antes da hidratação — sem ele, todo carregamento reclama.
  *
  * O NONCE da CSP é escrito por `src/proxy.ts` no cabeçalho `x-nonce` e o Next
- * o consome sozinho quando a requisição o traz; nenhum `<script>` inline nasce
- * aqui. Consequência já aceita (02-seguranca.md §14.2): nenhuma rota de
- * `(app)` pode usar `generateStaticParams` nem cache estático.
+ * o consome sozinho quando a requisição o traz. O único `<script>` inline que
+ * nasce aqui é o do `next-themes`, que recebe o mesmo nonce. Consequência já
+ * aceita (02-seguranca.md §14.2): nenhuma rota de `(app)` pode usar
+ * `generateStaticParams` nem cache estático.
  */
 
 const inter = Inter({
@@ -40,11 +42,12 @@ export const viewport: Viewport = {
   interactiveWidget: "resizes-content",
 };
 
-export default function LayoutRaiz({ children }: { children: ReactNode }) {
+export default async function LayoutRaiz({ children }: { children: ReactNode }) {
+  const nonce = (await headers()).get("x-nonce") ?? "";
   return (
     <html lang="pt-BR" suppressHydrationWarning className={inter.variable}>
       <body className="min-h-dvh bg-background font-sans text-foreground antialiased">
-        <ProvedorTema>{children}</ProvedorTema>
+        <ProvedorTema nonce={nonce}>{children}</ProvedorTema>
       </body>
     </html>
   );
