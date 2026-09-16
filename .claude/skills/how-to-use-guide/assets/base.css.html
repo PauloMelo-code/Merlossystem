@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<!-- O título vira propriedade do PDF. O montador troca o placeholder TITULO
+     (escrito aqui sem as chaves, porque comentário também é expandido) pelo
+     valor de --titulo, ou por "Como usar — <Marca resolvida>". Título fixo
+     deixaria um guia BahVitrine gravado como "BahTech" no metadado. -->
+<title>{{TITULO}}</title>
+<style>
+  /* Inter é a fonte da plataforma (carregada por next/font no layout do app).
+     Offline o Chrome cai em -apple-system: confira o PDF renderizado.
+     Sem caminho de código neste comentário de propósito: ele é copiado para
+     dentro de TODO guia, e um caminho aqui faria a varredura de vazamento do
+     SKILL.md §7.3 acusar sempre, treinando o operador a ignorar o alarme. */
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+  @page { size: A4; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root{
+    /* ↓↓↓ SUBSTITUA por .tmp_guia/marca/tokens.css (gerado por preparar-marca.ts) ↓↓↓
+       NUNCA escreva hex de marca à mão: a fonte é src/lib/branding/brandIdentity.ts. */
+    --marca:#2A42F2;         /* preenchimento: faixa, número do passo, tag        */
+    --marca-texto:#2A42F2;   /* texto/filete (WCAG >= 4,5 contra papel branco)    */
+    --marca-fundo:#EEF0FE;   /* wash do bloco de nota                             */
+    --marca-glifo:#FFFFFF;   /* texto SOBRE --marca (preto na BahFlash)           */
+    /* ↑↑↑ fim do bloco substituível ↑↑↑ */
+
+    --tinta:#111827; --papel:#FFFFFF; --papel-alt:#F9FAFB; --linha:#E5E7EB;
+    --texto:#262626; --texto-suave:#6B7280; --aviso:#B45309; --aviso-fundo:#FFFBEB;
+  }
+
+  body{ font-family:'Inter',-apple-system,'Helvetica Neue',Helvetica,Arial,sans-serif;
+        color:var(--texto); background:var(--papel);
+        -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+
+  .pagina{ width:210mm; height:297mm; padding:15mm 16mm 12mm; position:relative;
+           page-break-after:always; display:flex; flex-direction:column; overflow:hidden; }
+  .pagina:last-child{ page-break-after:auto; }
+
+  /* ── Capa ───────────────────────────────────────────────────────────────
+     Única superfície escura do documento — e o único lugar onde o logotipo
+     NEGATIVO (branco) funciona. Em página branca use logo-tinta.svg. */
+  .capa{ background:var(--tinta); color:#fff; padding:0; justify-content:space-between; }
+  .capa-topo{ padding:26mm 16mm 0; }
+  /* O logotipo é SVG INLINE (não <img>): sem estas duas regras o SVG usa o
+     tamanho do próprio viewBox (3104 x 592) e estoura a página inteira.
+     Verificado — foi exatamente o que aconteceu no primeiro teste. */
+  .capa-logo{ width:52mm; margin-bottom:22mm; }
+  .capa-logo svg, .capa-logo img{ width:100%; height:auto; display:block; }
+  .capa h1{ font-size:34pt; line-height:1.08; font-weight:600; letter-spacing:-0.6pt; margin-bottom:7mm; }
+  .capa h1 em{ font-style:normal; color:var(--marca); }
+  .capa .sub{ font-size:12.5pt; line-height:1.6; color:#D1D5DB; max-width:118mm; }
+  .capa-rodape{ padding:0 16mm 20mm; }
+  .capa-selo{ display:inline-block; border:1px solid rgba(255,255,255,.35); color:#fff;
+              font-size:8pt; letter-spacing:1.6pt; text-transform:uppercase; padding:3mm 6mm; border-radius:2mm; }
+  .capa-faixa{ height:3mm; background:var(--marca); }
+
+  /* ── Cabeçalho interno ─────────────────────────────────────────────────── */
+  .cab{ display:flex; justify-content:space-between; align-items:center;
+        border-bottom:1px solid var(--linha); padding-bottom:3mm; margin-bottom:6mm; }
+  .cab .marca{ display:flex; align-items:center; gap:2.5mm; font-size:8pt; letter-spacing:1.8pt;
+               text-transform:uppercase; color:var(--marca-texto); font-weight:700; }
+  .cab .marca img{ width:4.5mm; height:4.5mm; border-radius:1mm; }  /* icone.png */
+  .cab .marca svg{ height:5mm; width:auto; display:block; }          /* logo-tinta.svg inline */
+  .cab .secao{ font-size:8pt; letter-spacing:1.2pt; text-transform:uppercase; color:var(--texto-suave); }
+
+  h2{ font-size:19pt; font-weight:600; letter-spacing:-0.3pt; color:var(--tinta); margin-bottom:3mm; }
+  .intro{ font-size:10.5pt; line-height:1.6; color:var(--texto-suave); margin-bottom:5mm; max-width:150mm; }
+
+  /* ── Passo ─────────────────────────────────────────────────────────────── */
+  .passo{ margin-bottom:6mm; break-inside:avoid; }
+  .passo-cab{ display:flex; align-items:flex-start; gap:5mm; margin-bottom:4mm; }
+  .num{ flex:0 0 auto; width:9mm; height:9mm; border-radius:50%; background:var(--marca);
+        color:var(--marca-glifo); font-size:12pt; font-weight:700; display:flex;
+        align-items:center; justify-content:center; margin-top:.5mm; }
+  .passo-txt h3{ font-size:13.5pt; font-weight:600; color:var(--tinta); margin-bottom:1.5mm; }
+  .passo-txt p{ font-size:10.5pt; line-height:1.6; color:var(--texto); max-width:145mm; }
+  .passo-txt p + p{ margin-top:2mm; }
+
+  /* Fundo escuro: dá moldura ao print claro e deixa print faltando ÓBVIO. */
+  .print{ width:150mm; margin:3.5mm auto 0; border:1px solid var(--linha); border-radius:2.5mm;
+          overflow:hidden; background:var(--tinta); }
+  .print img{ width:100%; display:block; }
+  .legenda{ font-size:8.5pt; color:var(--texto-suave); margin-top:2mm; font-style:italic; }
+
+  /* ── Blocos de apoio ───────────────────────────────────────────────────── */
+  .nota{ background:var(--marca-fundo); border-left:3px solid var(--marca-texto);
+         border-radius:0 2mm 2mm 0; padding:4mm 5mm; margin:4mm 0; break-inside:avoid; }
+  .nota strong{ color:var(--marca-texto); }
+  .nota p{ font-size:10pt; line-height:1.6; }
+
+  /* Um por página, no máximo: se tudo é aviso, nada é aviso. */
+  .aviso{ background:var(--aviso-fundo); border-left:3px solid var(--aviso);
+          border-radius:0 2mm 2mm 0; padding:4mm 5mm; margin:4mm 0; break-inside:avoid; }
+  .aviso strong{ color:var(--aviso); }
+  .aviso p{ font-size:10pt; line-height:1.6; }
+
+  table{ width:100%; border-collapse:collapse; margin:4mm 0 5mm; font-size:9.5pt; }
+  thead th{ background:var(--tinta); color:#fff; text-align:left; padding:3mm;
+            font-size:8pt; letter-spacing:1.2pt; text-transform:uppercase; font-weight:600; }
+  tbody td{ padding:3mm; border-bottom:1px solid var(--linha); vertical-align:top; line-height:1.55; }
+  tbody tr:nth-child(even){ background:var(--papel-alt); }
+  tbody td:first-child{ font-weight:600; color:var(--tinta); white-space:nowrap; }
+  /* Dinheiro: à direita e com tabular-nums, senão as vírgulas não alinham. */
+  td.valor, th.valor{ text-align:right; font-variant-numeric:tabular-nums; }
+
+  .cartoes{ display:grid; grid-template-columns:1fr 1fr; gap:4mm; margin:4mm 0 5mm; }
+  .cartao{ border:1px solid var(--linha); border-radius:2.5mm; padding:4mm; background:var(--papel-alt); }
+  .cartao h4{ font-size:11pt; color:var(--tinta); margin-bottom:2mm; }
+  .cartao p{ font-size:9.5pt; line-height:1.55; color:var(--texto-suave); }
+  .cartao .tag{ display:inline-block; background:var(--marca); color:var(--marca-glifo); font-size:7.5pt;
+                font-weight:700; letter-spacing:.8pt; text-transform:uppercase; padding:1mm 3mm;
+                border-radius:1.5mm; margin-bottom:2.5mm; }
+
+  .rodape{ margin-top:auto; padding-top:5mm; border-top:1px solid var(--linha);
+           display:flex; justify-content:space-between; font-size:8pt; color:var(--texto-suave); }
+</style></head><body>

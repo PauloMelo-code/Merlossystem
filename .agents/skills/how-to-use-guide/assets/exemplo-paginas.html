@@ -1,0 +1,105 @@
+<!-- .claude/skills/how-to-use-guide/assets/exemplo-paginas.html
+     ESQUELETO das páginas. Copie para .tmp_guia/paginas.html, troque o texto e
+     monte com:
+       node .claude/skills/how-to-use-guide/scripts/montar-guia.mjs \
+         .tmp_guia/paginas.html .tmp_guia/guia.html
+     NÃO inclua <html>/<head>/<style> aqui: quem traz isso é o base.css.html. -->
+
+<!-- ─────────────────────────── 1. CAPA ─────────────────────────────────
+     Única página escura — e o único lugar onde o logotipo NEGATIVO funciona. -->
+<section class="pagina capa">
+  <div class="capa-topo">
+    <div class="capa-logo">{{LOGO_NEGATIVO}}</div>
+    <h1>Como <em>PALAVRA</em> em poucos minutos</h1>
+    <p class="sub">Uma frase dizendo o que a pessoa vai conseguir. Uma segunda dizendo o que ela precisa ter em mãos.</p>
+  </div>
+  <div class="capa-rodape"><span class="capa-selo">MÊS DE ANO</span></div>
+  <div class="capa-faixa"></div>
+</section>
+
+<!-- ───────────── 2. O QUE VOCÊ VAI CONSEGUIR FAZER + passo 1 ───────────── -->
+<section class="pagina">
+  <div class="cab">
+    <span class="marca"><img src="{{ICONE}}" alt="">NOME DA MARCA</span>
+    <span class="secao">Passo a passo</span>
+  </div>
+
+  <h2>O que você vai conseguir fazer</h2>
+  <p class="intro">A promessa em duas frases, na ótica de quem lê. Sem jargão.</p>
+
+  <div class="cartoes">
+    <div class="cartao"><span class="tag">OPÇÃO A</span><h4>Título curto</h4><p>Quando usar esta opção.</p></div>
+    <div class="cartao"><span class="tag">OPÇÃO B</span><h4>Título curto</h4><p>Quando usar a outra.</p></div>
+  </div>
+
+  <div class="passo">
+    <div class="passo-cab">
+      <div class="num">1</div>
+      <div class="passo-txt">
+        <h3>Verbo no imperativo</h3>
+        <p>Onde clicar e o que vai acontecer. O <strong>negrito</strong> é só no que a pessoa clica ou digita.</p>
+      </div>
+    </div>
+    <div class="print"><img src="{{PRINT:01-nome-do-print}}" alt=""></div>
+    <p class="legenda">Os nomes e valores aparecem ocultados neste guia apenas para proteger os dados dos clientes.</p>
+  </div>
+
+  <div class="nota"><p><strong>A dúvida que vem logo depois?</strong> A resposta em uma frase.</p></div>
+
+  <div class="rodape"><span>MARCA — Assunto do guia</span><span>2 de N</span></div>
+</section>
+
+<!-- ─────── 3. PASSO A PASSO (no máximo DOIS prints por página) ─────────── -->
+<section class="pagina">
+  <div class="cab">
+    <span class="marca"><img src="{{ICONE}}" alt="">NOME DA MARCA</span>
+    <span class="secao">Passo a passo</span>
+  </div>
+
+  <div class="passo">
+    <div class="passo-cab"><div class="num">2</div><div class="passo-txt">
+      <h3>Segundo passo</h3><p>Uma ou duas frases.</p>
+    </div></div>
+    <div class="print"><img src="{{PRINT:02-nome-do-print}}" alt=""></div>
+  </div>
+
+  <div class="passo">
+    <div class="passo-cab"><div class="num">3</div><div class="passo-txt">
+      <h3>Terceiro passo</h3><p>Uma ou duas frases.</p>
+    </div></div>
+    <div class="print"><img src="{{PRINT:03-nome-do-print}}" alt=""></div>
+  </div>
+
+  <div class="rodape"><span>MARCA — Assunto do guia</span><span>3 de N</span></div>
+</section>
+
+<!-- ───── 4. ANTES DE TERMINAR — o que NÃO acontece, prazos, limites ────── -->
+<section class="pagina">
+  <div class="cab">
+    <!-- ATENÇÃO (nomes escritos SEM as chaves duplas de propósito): o
+         placeholder LOGO_TINTA da linha abaixo não existe para a BahSites, e
+         para marca sem logotipo próprio (BahFlash) ele traz o logotipo da
+         BahTech. Nesses dois casos troque a linha pelo trecho do SKILL.md §5,
+         que usa o ícone colorido + o nome da marca escrito. -->
+    <span class="marca" style="height:5mm">{{LOGO_TINTA}}</span>
+    <span class="secao">Antes de terminar</span>
+  </div>
+
+  <h2>Antes de terminar</h2>
+
+  <table>
+    <thead><tr><th>Forma</th><th>Quando confirma</th><th class="valor">Valor</th></tr></thead>
+    <tbody>
+      <tr><td>PIX</td><td>Em segundos</td><td class="valor">R$ 199,00</td></tr>
+      <tr><td>Boleto</td><td>Em até 2 dias úteis</td><td class="valor">R$ 1.199,90</td></tr>
+    </tbody>
+  </table>
+
+  <!-- No máximo UM aviso por página: se tudo é aviso, nada é aviso. -->
+  <div class="aviso"><p><strong>Atenção:</strong> o que NÃO acontece — ex.: cancelar a nota fiscal não devolve valor nenhum.</p></div>
+
+  <h2 style="font-size:14pt;margin-top:6mm">Perguntas rápidas</h2>
+  <p class="intro">Escreva as perguntas que o suporte já recebeu, com a resposta em uma frase.</p>
+
+  <div class="rodape"><span>MARCA</span><span>N de N</span></div>
+</section>

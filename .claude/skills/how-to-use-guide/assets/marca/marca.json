@@ -1,0 +1,10 @@
+{
+  "key": "merlo-store",
+  "label": "Merlo Store",
+  "tokens": {
+    "marca": "#7C3AED",
+    "marca-texto": "#5B21B6"
+  },
+  "logo": { "tipo": "svg" },
+  "avisos": []
+}

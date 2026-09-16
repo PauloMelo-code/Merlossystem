@@ -1,6 +1,6 @@
 # ADR-0002: Transicao de Prisma para Drizzle no MerlostoreChat
 
-- **Status**: Aceito
+- **Status**: Substituído por ADR-0008..0024 (reconstrução na branch `refactor/reconstrucao-estrutura-base`)
 - **Data**: 2026-08-17
 - **Decisores**: Paulo
 

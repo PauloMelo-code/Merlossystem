@@ -1,6 +1,6 @@
 # ADR 0004 — Fontes da verdade: Masc vende, Bling controla estoque
 
-- **Status**: aceito
+- **Status**: Substituído por ADR-0008..0024 (reconstrução na branch `refactor/reconstrucao-estrutura-base`)
 - **Data**: 17/08/2026
 - **Decide**: a decisao 8 de [../integracoes.md](../integracoes.md), que bloqueava a etapa 8
 

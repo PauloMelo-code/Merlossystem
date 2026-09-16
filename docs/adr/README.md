@@ -21,6 +21,6 @@ numerado e imutavel — se a decisao muda, cria-se um novo ADR que supersede o a
 
 | ADR | Titulo | Status |
 |-----|--------|--------|
-| [0001](0001-stack-base.md) | Stack base: Next.js + Drizzle + PostgreSQL | Aceito |
-| [0002](0002-orm-transicao-prisma-drizzle.md) | Transicao de Prisma para Drizzle | Aceito |
-| [0003](0003-multi-loja-em-prisma.md) | Multi-loja implementada em Prisma | Aceito |
+| [0001](0001-stack-base.md) | Stack base: Next.js + Drizzle + PostgreSQL | Substituído por |
+| [0002](0002-orm-transicao-prisma-drizzle.md) | Transicao de Prisma para Drizzle | Substituído por |
+| [0003](0003-multi-loja-em-prisma.md) | Multi-loja implementada em Prisma | Substituído por |

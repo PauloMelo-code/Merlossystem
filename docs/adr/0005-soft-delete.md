@@ -1,6 +1,6 @@
 # ADR 0005 — Soft delete no cliente, nao em cada consulta
 
-- **Status**: aceito
+- **Status**: Substituído por ADR-0008..0024 (reconstrução na branch `refactor/reconstrucao-estrutura-base`)
 - **Data**: 17/08/2026
 - **Contexto**: o [ADR 0002](0002-orm-transicao-prisma-drizzle.md) registrou 25 deletes fisicos em 10 rotas como divida a pagar
 

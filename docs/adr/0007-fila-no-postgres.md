@@ -1,7 +1,7 @@
 # ADR 0007 — Fila de disparo no PostgreSQL, não em BullMQ
 
 Data: 18/08/2026
-Status: aceito
+Status: Substituído por ADR-0008..0024 (reconstrução na branch `refactor/reconstrucao-estrutura-base`)
 
 ## Contexto
 

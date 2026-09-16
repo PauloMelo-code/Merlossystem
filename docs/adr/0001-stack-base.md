@@ -1,6 +1,6 @@
 # ADR-0001: Stack base — Next.js + Drizzle + PostgreSQL
 
-- **Status**: Aceito
+- **Status**: Substituído por ADR-0008..0024 (reconstrução na branch `refactor/reconstrucao-estrutura-base`)
 - **Data**: 2026-05-30
 - **Decisores**: Lucas (lead tecnico), equipe Bah! Tech
 

@@ -1,6 +1,6 @@
 # ADR 0006 — Midia no MinIO, com bucket privado
 
-- **Status**: aceito
+- **Status**: Substituído por ADR-0008..0024 (reconstrução na branch `refactor/reconstrucao-estrutura-base`)
 - **Data**: 17/08/2026
 - **Substitui**: Cloudinary como armazenamento de midia
 

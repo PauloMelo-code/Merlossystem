@@ -1,6 +1,6 @@
 # ADR-0003: Multi-loja implementada em Prisma, nao em Drizzle
 
-- **Status**: Aceito
+- **Status**: Substituído por ADR-0008..0024 (reconstrução na branch `refactor/reconstrucao-estrutura-base`)
 - **Data**: 2026-08-17
 - **Decisores**: Paulo
 

@@ -41,3 +41,6 @@ next-env.d.ts
 
 # Gerado no build da imagem (Dockerfile), a partir da schema.
 prisma/schema.sql
+
+# configuracao local do Claude Code (nao versionar)
+.claude/settings.local.json
