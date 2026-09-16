@@ -65,7 +65,7 @@ export default async function PaginaRelatorios({ searchParams }: { searchParams:
                 </p>
               </details>
             </div>
-            <span className="text-2xl font-semibold tabular-nums">{c.valor}</span>
+            <span className="text-destaque font-semibold tabular-nums">{c.valor}</span>
           </li>
         ))}
       </ul>

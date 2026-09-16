@@ -19,7 +19,7 @@ export type CampoFiltro =
   | { tipo: "oculto"; nome: string; valor?: string | undefined };
 
 const CLASSE_LISTA =
-  "h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm dark:bg-input/30";
+  "h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-1 text-corpo shadow-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 dark:bg-input/30";
 
 export function FormularioFiltros({
   destino,

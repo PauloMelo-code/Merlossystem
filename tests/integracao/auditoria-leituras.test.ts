@@ -28,7 +28,8 @@ afterAll(async () => {
 const periodo = { de: new Date(Date.now() - 86_400_000), ate: new Date(Date.now() + 60_000) };
 
 describe("a trilha é append-only de verdade (papel merlo_app)", () => {
-  it.each(["auditoria_eventos", "auth_eventos"])("UPDATE e DELETE em %s falham com 42501", async (tabela) => {
+  const trilhas = ["auditoria_eventos", "auth_eventos"];
+  it.each(trilhas)("alterar e excluir em %s falham com 42501", async (tabela) => {
     const erros: string[] = [];
     // A exclusão é montada por partes de propósito: é uma TENTATIVA que tem de
     // falhar (prova do REVOKE), e a trava T25 reprova o literal em qualquer

@@ -55,11 +55,11 @@ export function DetalheEvento({
         </Button>
       </div>
 
-      <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-[max-content_1fr]">
+      <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-4">
         {linhas.map((l) => (
           <div key={l.rotulo} className="contents">
             <dt className="text-denso text-muted-foreground">{l.rotulo}</dt>
-            <dd className="text-corpo break-all">{l.valor ?? "—"}</dd>
+            <dd className="text-corpo break-all sm:col-span-3">{l.valor ?? "—"}</dd>
           </div>
         ))}
       </dl>
