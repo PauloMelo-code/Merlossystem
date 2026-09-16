@@ -60,7 +60,7 @@ linhas identicas daria a aparencia de cobertura, nao cobertura.
 
 | REQ | O que exige | Prova | Estado |
 |---|---|---|---|
-| D1-D9 | 2o fator no provisionamento, passkey com `userVerified`, TOTP com anti-replay no banco, sem SMS, sem codigo de resgate | `tests/seguranca/auth-efeito.test.ts`, `tests/seguranca/passkey-uv.test.ts` | entregue |
+| D1-D9 | 2o fator no provisionamento, passkey com `userVerified`, TOTP com anti-replay no banco, sem SMS, sem codigo de resgate | `tests/seguranca/auth-efeito.test.ts`, `tests/seguranca/passkey-uv.test.ts`, `tests/seguranca/totp-replay.test.ts` | entregue |
 | D10-D11 | trocar de fator com reautenticacao e piso de um fator | `tests/seguranca/perfil-proibidos.test.ts`, `tests/componentes/perfil.test.tsx` | entregue |
 | D12-D13 | aviso ao dono da conta, com conferencia do retorno do provedor | `tests/seguranca/trilha.test.ts` | onda 2 |
 | D14-D18 | passkey como acao primaria, sem dispositivo confiavel, desafio amarrado ao login, cooldown de reset | `tests/seguranca/auth-config.test.ts`, `tests/seguranca/reset.test.ts` | entregue |

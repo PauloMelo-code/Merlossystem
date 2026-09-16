@@ -7,6 +7,7 @@ import type { MeioAuth } from "@/lib/db/schema/_enums/auth";
 import { ipDoCliente } from "@/lib/seguranca/ip";
 import { zerarPorId } from "./bloqueio";
 import { registrarEventoAuth } from "./trilha";
+import { consumirPassoDoTotp } from "./totp-replay";
 
 /**
  * Ciclo de vida da sessão (02-seguranca.md §4.3 e §10).
@@ -29,7 +30,7 @@ export const FRESCOR_MS = 15 * 60 * 1000;
 
 type SessaoBA = { id?: string; userId: string; token?: string };
 type ContextoBA =
-  | { path?: string | undefined; headers?: Headers | undefined }
+  | { path?: string | undefined; headers?: Headers | undefined; body?: unknown }
   | null
   | undefined;
 
@@ -73,6 +74,10 @@ async function lerUsuario(usuarioId: string): Promise<LinhaUsuario | undefined> 
  *   4. `bloqueado_ate > now()`                                 -> recusa SOMENTE
  *      quando o meio é senha. No caminho passkey, ignora (C9): a vítima de um
  *      spray não pode ficar trancada fora do próprio sistema
+ *   5. `/two-factor/verify-totp` com passo de código JÁ USADO   -> recusa
+ *      (anti-replay no banco, §9.1). Fica por último: só queima o passo quando
+ *      a sessão nasceria de fato. A recusa vira, no Route Handler, a mesma
+ *      resposta única de credencial inválida
  */
 export async function podeCriarSessao(sessao: SessaoBA, ctx: ContextoBA): Promise<boolean> {
   try {
@@ -85,6 +90,10 @@ export async function podeCriarSessao(sessao: SessaoBA, ctx: ContextoBA): Promis
     const porSenha = rota === "/sign-in/email" || rota.startsWith("/two-factor/");
     if (porSenha && usuario.bloqueado_ate && new Date(usuario.bloqueado_ate) > new Date()) {
       return false;
+    }
+    if (rota === "/two-factor/verify-totp") {
+      const codigo = (ctx?.body as { code?: unknown } | undefined)?.code;
+      return consumirPassoDoTotp(sessao.userId, codigo);
     }
     return true;
   } catch (erro) {
