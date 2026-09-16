@@ -2,6 +2,7 @@ import "server-only";
 import { sql } from "drizzle-orm";
 import type { Contexto } from "@/lib/auth/guard";
 import { enfileirarEmailSeguranca } from "@/lib/auth/emails";
+import { removerTodosOsFatores } from "@/lib/auth/fatores";
 import { revogarSessoesDe } from "@/lib/auth/sessoes";
 import { gravarEventoAuth } from "@/lib/auth/trilha";
 import { atualizarComTrava, type Transacao } from "@/lib/db/mutacoes";
@@ -109,36 +110,6 @@ export async function iniciarResetDeSenha(
   await pedirRedefinicao(alvo.email);
 }
 
-/** Linhas de fator da pessoa. Só os ids: a semente nunca sai do banco. */
-async function idsDeFatores(tx: Transacao, usuarioId: string) {
-  const [totp, chaves] = await Promise.all([
-    tx.execute<{ id: string }>(sql`
-      select id from usuarios_totp where usuario_id = ${usuarioId}::uuid
-    `),
-    tx.execute<{ id: string }>(sql`
-      select id from usuarios_passkeys where usuario_id = ${usuarioId}::uuid
-    `),
-  ]);
-  return { totp: totp.rows.map((l) => l.id), passkeys: chaves.rows.map((l) => l.id) };
-}
-
-/**
- * Remoção dos fatores pelo ADAPTADOR do Better Auth — o único delete físico de
- * auth é o que a biblioteca faz por dentro (S-09); as duas tabelas são
- * `compliance:framework`, sem colunas de soft delete. Uma passkey esquecida
- * aqui continuaria abrindo sessão provisória para quem tem o aparelho perdido.
- */
-async function removerFatores(ids: { totp: string[]; passkeys: string[] }): Promise<void> {
-  const { auth } = await import("@/lib/auth/auth");
-  const adaptador = (await auth.$context).adapter;
-  for (const id of ids.passkeys) {
-    await adaptador.delete({ model: "passkey", where: [{ field: "id", value: id }] });
-  }
-  for (const id of ids.totp) {
-    await adaptador.delete({ model: "twoFactor", where: [{ field: "id", value: id }] });
-  }
-}
-
 /**
  * Recuperação assistida (§9.3, E7): a pessoa perdeu os dois fatores. Quem
  * atende registra COMO confirmou a identidade no próprio motivo.
@@ -158,7 +129,6 @@ export async function recuperarAcessoAssistido(
     { tipo: "recuperacao_assistida", ...baseDoEvento(ctx, alvo, dados.motivo) },
     tx,
   );
-  const fatores = await idsDeFatores(tx, alvo.id);
   await atualizarComTrava(
     tx,
     usuarios,
@@ -171,7 +141,8 @@ export async function recuperarAcessoAssistido(
     naRede(ctx),
     "usuario_alterado",
   );
-  await removerFatores(fatores);
+  // Pelo adaptador do Better Auth, em conexão própria (ADR 0029).
+  await removerTodosOsFatores(alvo.id);
   await revogarSessoesDe(alvo.id);
   await pedirRedefinicao(alvo.email);
   enfileirarEmailSeguranca("recuperacao-assistida", alvo.id);
