@@ -43,6 +43,9 @@ const TAGS = [
    * ampliadas pela onda 2 e a semente do ATOR_SISTEMA. Não cria tabela.
    */
   "0018_consolidacao",
+  /** R2 (onda 3): uma migração gerada para os cinco pacotes e uma custom. ADRs 0035–0061 (0031–0057 nos finais, +4). */
+  "0019_r2",
+  "0020_r2_integridade",
 ];
 
 const arquivos = readdirSync(PASTA)
@@ -51,7 +54,7 @@ const arquivos = readdirSync(PASTA)
 const sql = arquivos.map((nome) => ({ nome, texto: readFileSync(join(PASTA, nome), "utf8") }));
 
 describe("migrações", () => {
-  it("são as 17 de 01-dados.md §9 mais a 0017 e a 0018, na ordem", () => {
+  it("são as de 01-dados.md §9, a 0017 e a 0018 da fundação e as duas do R2, na ordem", () => {
     expect(arquivos).toEqual(TAGS.map((t) => `${t}.sql`));
     const diario = JSON.parse(readFileSync(join(PASTA, "meta", "_journal.json"), "utf8")) as {
       entries: { idx: number; tag: string }[];
@@ -59,12 +62,12 @@ describe("migrações", () => {
     expect(diario.entries.map((e) => e.tag)).toEqual(TAGS);
   });
 
-  it("criam as 48 tabelas", () => {
+  it("criam as 50 tabelas", () => {
     const criadas = sql.flatMap(({ texto }) =>
       [...texto.matchAll(/^CREATE TABLE "([^"]+)"/gm)].map((m) => m[1]),
     );
-    expect(new Set(criadas).size).toBe(48);
-    expect(criadas).toHaveLength(48);
+    expect(new Set(criadas).size).toBe(50);
+    expect(criadas).toHaveLength(50);
   });
 
   it("não têm predicado parametrizado (o bug reincidente do drizzle-kit)", () => {

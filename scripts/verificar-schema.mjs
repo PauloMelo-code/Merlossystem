@@ -9,15 +9,15 @@
  * REVOKE, gatilho) não aparece em lugar nenhum do TS.
  *
  * Confere, conforme 01-dados.md §9:
- *   1. 48 tabelas em `public`;
+ *   1. 50 tabelas em `public`;
  *   2. toda tabela tem as 4 colunas de auditoria OU está numa das duas listas
- *      de exceção (4 trilhas append-only, 4 tabelas de framework);
+ *      de exceção (5 trilhas append-only, 4 tabelas de framework);
  *   3. todo `timestamp` é `timestamptz` com precisão 3;
  *   4. toda FK é RESTRICT no delete E no update;
  *   5. todo índice único de tabela com soft delete é parcial (com a lista
  *      escrita de exceções);
- *   6. as 16 FKs compostas `(id, loja_id)` e as 40 FKs de `modified_by`;
- *   7. os 4 gatilhos de trilha, o REVOKE do papel da aplicação e a ausência
+ *   6. as 21 FKs compostas `(id, loja_id)` e as 41 FKs de `modified_by`;
+ *   7. os 5 gatilhos de trilha, o REVOKE do papel da aplicação e a ausência
  *      total de DELETE para `merlo_app`;
  *   8. o ATOR_SISTEMA semeado pela 0018: inativo, `viewer`, sem credencial.
  *
@@ -28,9 +28,11 @@
 
 import { Client } from "pg";
 
-const TOTAL_TABELAS = 48;
-const TOTAL_MODIFIED_BY = 40;
-const TOTAL_FK_COMPOSTA = 16;
+// R2 (0019/0020): + lojas_ia_usos e lojas_sla; + fk_lojas_sla_modified_by;
+// + as 5 fkc_lookbooks_*.
+const TOTAL_TABELAS = 50;
+const TOTAL_MODIFIED_BY = 41;
+const TOTAL_FK_COMPOSTA = 21;
 /** Espelha `ATOR_SISTEMA` de src/lib/db/schema/_enums/auth.ts. */
 const ATOR_SISTEMA = "00000000-0000-4000-8000-000000000001";
 
@@ -40,6 +42,8 @@ const APPEND_ONLY = [
   "auditoria_eventos",
   "consentimentos",
   "usuarios_senhas_historico",
+  /** Registro de uso da IA (R2-C, ADR 0048): custo que aceita UPDATE não prova gasto. */
+  "lojas_ia_usos",
 ];
 
 /** O Better Auth apaga estas por dentro; `is_deleted = false` ali seria mentira. */

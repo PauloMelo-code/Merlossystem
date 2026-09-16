@@ -8,7 +8,7 @@ import { LISTAS_FECHADAS } from "@/lib/db/schema/_enums";
 // O 3º argumento do `pgTable` é um CALLBACK: o Drizzle só o executa quando
 // alguém pede a configuração da tabela (é o drizzle-kit que faz isso ao gerar a
 // migração). `getTableConfig` força essa execução aqui, que é o que preenche
-// `LISTAS_FECHADAS` — e, de quebra, prova que as 48 configurações montam.
+// `LISTAS_FECHADAS` — e, de quebra, prova que as 50 configurações montam.
 for (const valor of Object.values(schema)) {
   if (isTable(valor)) getTableConfig(valor);
 }

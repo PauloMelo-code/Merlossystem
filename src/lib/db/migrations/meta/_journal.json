@@ -134,6 +134,20 @@
       "when": 1789566694393,
       "tag": "0018_consolidacao",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1789573410053,
+      "tag": "0019_r2",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1789573425230,
+      "tag": "0020_r2_integridade",
+      "breakpoints": true
     }
   ]
 }

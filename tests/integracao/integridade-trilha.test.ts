@@ -29,10 +29,16 @@ afterAll(async () => {
   await c?.end();
 });
 
-const TRILHAS = ["auth_eventos", "auditoria_eventos", "consentimentos", "usuarios_senhas_historico"];
+const TRILHAS = [
+  "auth_eventos",
+  "auditoria_eventos",
+  "consentimentos",
+  "usuarios_senhas_historico",
+  "lojas_ia_usos",
+];
 
 describe("trilhas append-only", () => {
-  it("o papel da aplicação não tem UPDATE nem DELETE nas quatro trilhas", async () => {
+  it("o papel da aplicação não tem UPDATE nem DELETE nas cinco trilhas", async () => {
     for (const tabela of TRILHAS) {
       const { rows } = await c.query<{ u: boolean; d: boolean; i: boolean }>(
         `select has_table_privilege('merlo_app', $1, 'UPDATE') u,
@@ -78,6 +84,29 @@ describe("trilhas append-only", () => {
   });
 });
 
+describe("registro de uso da IA (lojas_ia_usos, ADR 0048)", () => {
+  it("nem o dono das tabelas altera o uso gravado: o gatilho barra", async () => {
+    await c.query("begin");
+    try {
+      const { rows: lojas } = await c.query<{ id: string }>(
+        `insert into lojas (nome, slug, sigla)
+         values ('Loja trilha IA', 'loja-trilha-ia-' || gen_random_uuid(), 'TIA') returning id`,
+      );
+      const { rows } = await c.query<{ id: string }>(
+        `insert into lojas_ia_usos (loja_id, funcao, provedor, modelo, resultado, custo_usd_micros)
+         values ($1, 'sugestao', 'simulado', 'simulado', 'sucesso', 10) returning id`,
+        [lojas[0]!.id],
+      );
+      await expect(
+        c.query(`update lojas_ia_usos set custo_usd_micros = 0 where id = $1`, [rows[0]!.id]),
+      ).rejects.toMatchObject({ code: "P0001" });
+    } finally {
+      await c.query("rollback");
+    }
+  });
+});
+
+// lojas_ia_usos tem FK simples em tudo: não entra na varredura de órfãos.
 describe("órfãos nas trilhas sem FK", () => {
   const varreduras: [string, string][] = [
     [

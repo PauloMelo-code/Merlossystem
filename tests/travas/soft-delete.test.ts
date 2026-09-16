@@ -110,7 +110,13 @@ describe("T25 nenhum delete fisico", () => {
 });
 
 describe("T25 a trilha nunca e alvo de exclusao", () => {
-  const TRILHAS = ["auth_eventos", "auditoria_eventos", "consentimentos", "usuarios_senhas_historico"];
+  const TRILHAS = [
+    "auth_eventos",
+    "auditoria_eventos",
+    "consentimentos",
+    "usuarios_senhas_historico",
+    "lojas_ia_usos",
+  ];
 
   it("nenhum arquivo combina nome de trilha com exclusao", () => {
     const achados = arquivos
