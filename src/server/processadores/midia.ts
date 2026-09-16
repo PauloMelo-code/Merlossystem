@@ -1,18 +1,22 @@
 import type { Job } from "bullmq";
-import { naoImplementado } from "@/lib/erros";
+import { ErroDeIntegracao } from "@/lib/erros";
+import { logComContexto } from "@/lib/logger";
+import { baixarAnexo, gerarMiniaturaDaMidia, type DadosDownload } from "@/lib/midias";
 
 /**
- * COSTURA — dono: M3 (05-plano-construcao.md §5).
+ * Fila `midia`, jobs `baixar-de-url` e `gerar-miniatura`, concorrência 4
+ * (dono: M3).
  *
- * Fila `midia`, jobs `baixar-de-url` e `gerar-miniatura`, concorrência 4.
+ * `baixar-de-url` é o único consumidor de `conversas_mensagens_midias.url_externa`:
+ * a URL chega do provedor e SÓ é buscada por `rede/buscarExterno.ts`. Baixado
+ * o binário, a coluna é limpa (`baixada = true`) e ela NUNCA entra em DTO.
+ * Falhou de vez? A tela mostra "mídia indisponível" — nunca o link.
  *
- * `baixar-de-url` é o único consumidor de `lojas_midias.url_externa`: a URL
- * chega do provedor e SÓ pode ser buscada por `rede/buscarExterno.ts` (a trava
- * de SSRF reprova `fetch(` com URL não literal fora dele). Baixado o binário,
- * a coluna é limpa (`baixada = true`) e ela NUNCA entra em DTO (ADR 0009, R-09).
+ * `gerar-miniatura` usa `sharp`. Objeto ausente no MinIO é SUCESSO.
  *
- * `gerar-miniatura` usa `sharp`. Objeto ausente no MinIO é SUCESSO, não erro:
- * o job é idempotente e a mídia pode ter sido anonimizada por LGPD no meio.
+ * Erro PERMANENTE (SSRF recusado, tipo não aceito, link 4xx) não retenta: é
+ * registrado e o job termina (padrão de `templates/job.ts`). Transitório sobe
+ * e o BullMQ retenta com backoff.
  */
 
 export type DadosMidia = {
@@ -20,10 +24,25 @@ export type DadosMidia = {
   midiaId: string;
 };
 
-export async function baixarDeUrl(job: Job<DadosMidia>): Promise<void> {
-  throw naoImplementado(`baixarDeUrl [${job.name} #${job.id}] (fila midia, pacote M3)`);
+async function executar(job: Job, lojaId: string, trabalho: () => Promise<string>): Promise<string> {
+  const log = logComContexto({ requisicaoId: job.id ?? "sem-id", origem: "worker", lojaId });
+  try {
+    const resultado = await trabalho();
+    log.info({ job: job.name, resultado }, "mídia processada");
+    return resultado;
+  } catch (erro) {
+    if (erro instanceof ErroDeIntegracao && erro.permanente) {
+      log.error({ job: job.name, erro: erro.message }, "falha permanente de mídia: não retenta");
+      return "recusada";
+    }
+    throw erro;
+  }
+}
+
+export async function baixarDeUrl(job: Job<DadosDownload>): Promise<void> {
+  await executar(job, job.data.lojaId, () => baixarAnexo(job.data));
 }
 
 export async function gerarMiniatura(job: Job<DadosMidia>): Promise<void> {
-  throw naoImplementado(`gerarMiniatura [${job.name} #${job.id}] (fila midia, pacote M3)`);
+  await executar(job, job.data.lojaId, () => gerarMiniaturaDaMidia(job.data));
 }
