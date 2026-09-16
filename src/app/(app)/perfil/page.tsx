@@ -1,13 +1,15 @@
 import type { Metadata } from "next";
-import { eq } from "drizzle-orm";
+import { eq, gt, isNull } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { vivosE } from "@/lib/db/consultas";
 import { usuarios } from "@/lib/db/schema/auth/usuarios";
+import { usuarios_trocas_email } from "@/lib/db/schema/auth/trocas-email";
 import { lojas } from "@/lib/db/schema/lojas";
 import { exigirSessao } from "@/lib/auth/guard";
 import { rotuloDePapel } from "@/lib/ui/tons";
 import { CabecalhoPagina } from "@/components/comum/cabecalho-pagina";
 import { EstadoErro } from "@/components/comum/estado-erro";
+import { ConfirmarNovoEmail } from "./_components/confirmar-novo-email";
 import { FormularioPerfil } from "./_components/formulario-perfil";
 import { PreferenciasDoDispositivo } from "./_components/preferencias-do-dispositivo";
 
@@ -40,6 +42,21 @@ export default async function PaginaPerfil() {
     .where(vivosE(usuarios, eq(usuarios.id, sessao.usuarioId)))
     .limit(1);
 
+  // Troca de e-mail aberta pelo admin: só a PRÓPRIA pessoa confirma (§11.2).
+  const [troca] = await db
+    .select({ emailNovo: usuarios_trocas_email.email_novo, expiraEm: usuarios_trocas_email.expira_em })
+    .from(usuarios_trocas_email)
+    .where(
+      vivosE(
+        usuarios_trocas_email,
+        eq(usuarios_trocas_email.usuario_id, sessao.usuarioId),
+        isNull(usuarios_trocas_email.confirmado_em),
+        isNull(usuarios_trocas_email.cancelado_em),
+        gt(usuarios_trocas_email.expira_em, new Date()),
+      ),
+    )
+    .limit(1);
+
   if (!linha) {
     return (
       <EstadoErro
@@ -63,6 +80,10 @@ export default async function PaginaPerfil() {
         papelRotulo={rotuloDePapel(sessao.papel)}
         lojaNome={linha.lojaNome ?? "Todas as lojas"}
       />
+
+      {troca ? (
+        <ConfirmarNovoEmail emailNovo={troca.emailNovo} expiraEm={troca.expiraEm.toISOString()} />
+      ) : null}
 
       <PreferenciasDoDispositivo />
     </div>

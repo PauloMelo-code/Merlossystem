@@ -34,6 +34,8 @@ const ASSUNTOS: Record<AssuntoDeSeguranca, string> = {
   "passkey-adicionada": "Uma chave de acesso foi adicionada à sua conta",
   "passkey-removida": "Uma chave de acesso foi removida da sua conta",
   "email-trocado": "O e-mail da sua conta foi alterado",
+  "email-troca-codigo": "Confirme o novo e-mail da sua conta",
+  "email-troca-solicitada": "Pediram a troca do e-mail da sua conta",
   "conta-bloqueada": "Sua conta foi bloqueada temporariamente",
   "recuperacao-assistida": "Seu acesso foi recuperado por um administrador",
 };

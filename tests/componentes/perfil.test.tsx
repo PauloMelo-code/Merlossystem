@@ -27,7 +27,10 @@ const acoes = vi.hoisted(() => ({
   encerrarTodasAsSessoes: vi.fn(),
 }));
 
+const acoesUsuarios = vi.hoisted(() => ({ confirmarMeuNovoEmail: vi.fn() }));
+
 vi.mock("@/lib/actions/seguranca", () => acoes);
+vi.mock("@/lib/actions/usuarios", () => acoesUsuarios);
 vi.mock("@simplewebauthn/browser", () => ({
   startRegistration: vi.fn(),
   startAuthentication: vi.fn(),
@@ -37,6 +40,9 @@ vi.mock("next/navigation", () => ({
 }));
 
 const { FormularioPerfil } = await import("@/app/(app)/perfil/_components/formulario-perfil");
+const { ConfirmarNovoEmail } = await import(
+  "@/app/(app)/perfil/_components/confirmar-novo-email"
+);
 const { TrocarSenha } = await import("@/app/(app)/perfil/seguranca/_components/trocar-senha");
 const { SubstituirFator } = await import(
   "@/app/(app)/perfil/seguranca/_components/substituir-fator"
@@ -113,6 +119,43 @@ describe("/perfil", () => {
     );
     const oculto = container.querySelector('input[name="updatedAt"]') as HTMLInputElement;
     expect(oculto.value).toBe("2026-09-16T09:00:00.000Z");
+  });
+});
+
+describe("/perfil — confirmar novo e-mail (§11.2)", () => {
+  afterEach(() => {
+    window.history.replaceState(null, "", "/");
+  });
+
+  it("lê o código do fragmento e o tira da barra de endereço", () => {
+    window.history.replaceState(null, "", "/perfil#codigo=123456");
+    render(<ConfirmarNovoEmail emailNovo="ana.nova@merlostore.com.br" expiraEm="2026-09-16T12:10:00.000Z" />);
+    expect((screen.getByLabelText("Código de 6 dígitos") as HTMLInputElement).value).toBe("123456");
+    expect(window.location.hash).toBe("");
+  });
+
+  it("envia o código só da sessão corrente, sem userId no corpo", async () => {
+    acoesUsuarios.confirmarMeuNovoEmail.mockResolvedValue({
+      ok: true,
+      dados: { email: "ana.nova@merlostore.com.br" },
+    });
+    render(<ConfirmarNovoEmail emailNovo="ana.nova@merlostore.com.br" expiraEm="2026-09-16T12:10:00.000Z" />);
+    fireEvent.change(screen.getByLabelText("Código de 6 dígitos"), { target: { value: "654321" } });
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar e-mail" }));
+    await waitFor(() => expect(screen.getByRole("status").textContent).toMatch(/E-mail confirmado/));
+    expect(acoesUsuarios.confirmarMeuNovoEmail).toHaveBeenCalledWith({ codigo: "654321" });
+  });
+
+  it("SESSAO_NAO_FRESCA abre a reautenticação em vez de recusar", async () => {
+    acoesUsuarios.confirmarMeuNovoEmail.mockResolvedValue({
+      ok: false,
+      codigo: "SESSAO_NAO_FRESCA",
+      mensagem: "Confirme sua identidade.",
+    });
+    render(<ConfirmarNovoEmail emailNovo="ana.nova@merlostore.com.br" expiraEm="2026-09-16T12:10:00.000Z" />);
+    fireEvent.change(screen.getByLabelText("Código de 6 dígitos"), { target: { value: "654321" } });
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar e-mail" }));
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeTruthy());
   });
 });
 

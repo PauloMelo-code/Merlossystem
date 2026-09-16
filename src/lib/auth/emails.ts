@@ -25,13 +25,17 @@ export type AssuntoDeSeguranca =
   | "passkey-adicionada"
   | "passkey-removida"
   | "email-trocado"
+  /** Para o endereço NOVO: o link leva o código no fragmento (`/perfil#codigo=`). */
+  | "email-troca-codigo"
+  /** Para o endereço ATUAL: alguém pediu a troca; "não foi você?" contesta. */
+  | "email-troca-solicitada"
   | "conta-bloqueada"
   | "recuperacao-assistida";
 
 export type DadosEmailSeguranca = {
   assunto: AssuntoDeSeguranca;
   usuarioId: string;
-  /** Só para convite e reset: o link JÁ com o token no fragmento (`#t=`). */
+  /** Convite, reset e código de troca de e-mail: o segredo vai no FRAGMENTO. */
   link?: string;
   /** Endereço explícito quando o destino não é o e-mail atual (troca de e-mail). */
   paraEmail?: string;
