@@ -1,1 +1,165 @@
-/* Os tokens de tema claro e escuro entram com o design system (F7). */
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Tokens do design system (04-ui.md §2.2). Valores finais, contrastes já
+ * calculados e aprovados em AA na tabela de §2.3.
+ *
+ * Três camadas: global -> semântico -> domínio. Em TSX só entra utilitário de
+ * token (`bg-card`, `text-muted-foreground`, `bg-aviso-fundo`); hex, `rgb()`,
+ * classe de paleta crua (`bg-zinc-100`) e valor arbitrário (`p-[13px]`) são
+ * proibidos fora de `src/components/ui/**` e reprovam em
+ * `tests/componentes/tokens.test.ts`.
+ */
+
+:root {
+  --radius: 0.5rem;
+  --background: #FAFAFA;  --foreground: #18181B;
+  --card: #FFFFFF;        --card-foreground: #18181B;
+  --popover: #FFFFFF;     --popover-foreground: #18181B;
+  --primary: #7C3AED;     --primary-foreground: #FFFFFF;  --primary-hover: #6D28D9;
+  --secondary: #F4F4F5;   --secondary-foreground: #18181B;
+  --muted: #F4F4F5;       --muted-foreground: #52525B;    --texto-terciario: #71717A;
+  --accent: #F5F3FF;      --accent-foreground: #18181B;   --marca-texto: #5B21B6;
+  --destructive: #DC2626;
+  --border: #E4E4E7;      --input: #8A8A93;               --ring: #7C3AED;
+  --sucesso: #15803D;     --sucesso-fundo: #F0FDF4;       --sucesso-borda: #BBF7D0;
+  --aviso: #B45309;       --aviso-fundo: #FFFBEB;         --aviso-borda: #FDE68A;
+  --perigo: #B91C1C;      --perigo-fundo: #FEF2F2;        --perigo-borda: #FECACA;
+  --info: #1D4ED8;        --info-fundo: #EFF6FF;          --info-borda: #BFDBFE;
+  --neutro: #3F3F46;      --neutro-fundo: #F4F4F5;        --neutro-borda: #E4E4E7;
+  --chat-fundo: #F4F4F5;  --balao-entrada: #FFFFFF;       --balao-saida: #EDE9FE;  --balao-saida-hora: #5B21B6;
+  --nota-interna-fundo: #FEF9C3; --nota-interna-texto: #713F12; --nota-interna-borda: #FDE047;
+  --canal-whatsapp: #128C7E; --canal-instagram: #E1306C; --canal-facebook: #0866FF; --canal-tiktok: #09090B;
+  --duracao-rapida: 100ms; --duracao-normal: 150ms; --duracao-moderada: 200ms; --duracao-lenta: 300ms;
+}
+
+.dark {
+  --background: #09090B;  --foreground: #F4F4F5;
+  --card: #18181B;        --card-foreground: #F4F4F5;
+  --popover: #27272A;     --popover-foreground: #F4F4F5;
+  --primary: #A78BFA;     --primary-foreground: #09090B;  --primary-hover: #C4B5FD;
+  --secondary: #27272A;   --secondary-foreground: #F4F4F5;
+  --muted: #27272A;       --muted-foreground: #A1A1AA;    --texto-terciario: #A1A1AA;
+  --accent: #2A233E;      --accent-foreground: #F4F4F5;   --marca-texto: #A78BFA;
+  --border: #3F3F46;      --input: #71717A;               --ring: #A78BFA;
+  --sucesso: #4ADE80;     --sucesso-fundo: #1A3225;
+  --aviso: #FBBF24;       --aviso-fundo: #392C19;
+  --perigo: #F87171;      --perigo-fundo: #381F21;
+  --info: #60A5FA;        --info-fundo: #1D283C;
+  --neutro: #A1A1AA;      --neutro-fundo: #252529;
+  --chat-fundo: #09090B;  --balao-entrada: #27272A;       --balao-saida: #4C1D95;  --balao-saida-hora: #DDD6FE;
+  --nota-interna-fundo: #312B19; --nota-interna-texto: #FEF08A; --nota-interna-borda: #713F12;
+  /* bordas de tom sao decorativas: no escuro todas iguais a --border */
+  --sucesso-borda: #3F3F46; --aviso-borda: #3F3F46; --perigo-borda: #3F3F46;
+  --info-borda: #3F3F46;    --neutro-borda: #3F3F46;
+  /*
+   * --destructive e --canal-* nao mudam no escuro, de proposito: a cor de
+   * perigo do contrato shadcn e a cor de marca de cada canal sao as mesmas nos
+   * dois temas. Ficam repetidas aqui com o MESMO valor porque a trava de
+   * completude de tokens.test.ts exige toda variavel de cor de :root
+   * declarada em .dark — herdar em silencio esconderia o esquecimento.
+   */
+  --destructive: #DC2626;
+  --canal-whatsapp: #128C7E; --canal-instagram: #E1306C; --canal-facebook: #0866FF; --canal-tiktok: #09090B;
+}
+
+@theme inline {
+  --color-background: var(--background);  --color-foreground: var(--foreground);
+  --color-card: var(--card);              --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);        --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);        --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
+  --color-secondary: var(--secondary);    --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);            --color-muted-foreground: var(--muted-foreground);
+  --color-texto-terciario: var(--texto-terciario);
+  --color-accent: var(--accent);          --color-accent-foreground: var(--accent-foreground);
+  --color-marca-texto: var(--marca-texto);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);          --color-input: var(--input);   --color-ring: var(--ring);
+  --color-sucesso: var(--sucesso);  --color-sucesso-fundo: var(--sucesso-fundo);  --color-sucesso-borda: var(--sucesso-borda);
+  --color-aviso: var(--aviso);      --color-aviso-fundo: var(--aviso-fundo);      --color-aviso-borda: var(--aviso-borda);
+  --color-perigo: var(--perigo);    --color-perigo-fundo: var(--perigo-fundo);    --color-perigo-borda: var(--perigo-borda);
+  --color-info: var(--info);        --color-info-fundo: var(--info-fundo);        --color-info-borda: var(--info-borda);
+  --color-neutro: var(--neutro);    --color-neutro-fundo: var(--neutro-fundo);    --color-neutro-borda: var(--neutro-borda);
+  --color-chat-fundo: var(--chat-fundo);
+  --color-balao-entrada: var(--balao-entrada);
+  --color-balao-saida: var(--balao-saida);
+  --color-balao-saida-hora: var(--balao-saida-hora);
+  --color-nota-interna-fundo: var(--nota-interna-fundo);
+  --color-nota-interna-texto: var(--nota-interna-texto);
+  --color-nota-interna-borda: var(--nota-interna-borda);
+  --color-canal-whatsapp: var(--canal-whatsapp);
+  --color-canal-instagram: var(--canal-instagram);
+  --color-canal-facebook: var(--canal-facebook);
+  --color-canal-tiktok: var(--canal-tiktok);
+
+  --radius-sm: calc(var(--radius) - 4px); --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);             --radius-xl: calc(var(--radius) + 4px);
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --text-legenda: 0.75rem;        --text-legenda--line-height: 1rem;
+  --text-denso: 0.8125rem;        --text-denso--line-height: 1.125rem;
+  --text-corpo: 0.875rem;         --text-corpo--line-height: 1.25rem;
+  --text-titulo-secao: 1rem;      --text-titulo-secao--line-height: 1.5rem;
+  --text-titulo-pagina: 1.25rem;  --text-titulo-pagina--line-height: 1.75rem;
+  --text-destaque: 1.5rem;        --text-destaque--line-height: 2rem;
+  --ease-padrao: cubic-bezier(0.2, 0, 0, 1);
+  --ease-entrada: cubic-bezier(0, 0, 0.2, 1);
+  --ease-saida: cubic-bezier(0.3, 0, 1, 0.3);
+  --shadow-1: 0 1px 2px rgb(9 9 11 / .06), 0 4px 12px rgb(9 9 11 / .08);
+  --shadow-2: 0 8px 24px rgb(9 9 11 / .12), 0 24px 48px rgb(9 9 11 / .12);
+}
+
+/*
+ * Único token com dois valores: 14/22 px no desktop e 16/24 px abaixo de
+ * 768 px (04-ui.md §2.5). Por isso é utilitário próprio, e não entrada do
+ * `@theme` — uma entrada de `@theme` não aceita media query.
+ */
+@utility text-mensagem {
+  font-size: 0.875rem;
+  line-height: 1.375rem;
+  @media (width < 768px) {
+    font-size: 1rem;
+    line-height: 1.5rem;
+  }
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: var(--text-corpo);
+    line-height: var(--text-corpo--line-height);
+  }
+  /* 04-ui.md §2.7: foco por `outline`, nunca `box-shadow` (some em forced-colors). */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  /* Hora, contador, preço e coluna numérica (§2.5). */
+  time,
+  [data-numerico] {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .movimento-essencial {
+    animation-duration: 1s !important;
+    animation-iteration-count: infinite !important;
+  }
+}
