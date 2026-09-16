@@ -46,6 +46,13 @@ async function versao(tx: Tx, id: string): Promise<Date> {
   return new Date(l.updated_at);
 }
 
+async function trilhaDo(tx: Tx, id: string, acao: string) {
+  const r = await tx.execute(sql`
+    select motivo, ator_id from auditoria_eventos
+    where entidade = 'pedidos' and entidade_id = ${id} and acao = ${acao}`);
+  return r.rows;
+}
+
 function codigoPg(erro: unknown): string | undefined {
   for (let a = erro as { code?: string; cause?: unknown } | undefined; a; a = a.cause as typeof a) {
     if (a.code) return a.code;
@@ -194,7 +201,18 @@ describe("ponte manual com o Masc", () => {
       const ctx = contexto(c);
       const p = await criarPedido(novo(c), ctx, tx);
       const lida = await versao(tx, p.id);
+      // Colisão com trilha ANTES do efeito: o savepoint leva a linha da trilha junto.
+      await expect(
+        tx.transaction((sp) =>
+          dispensarDoMasc({ id: p.id, updatedAt: new Date(0), observacao: "versão inventada" }, ctx, sp),
+        ),
+      ).rejects.toBeInstanceOf(ErroDeColisao);
+      expect(await trilhaDo(tx, p.id, "pedido_dispensado_masc")).toEqual([]);
+
       await dispensarDoMasc({ id: p.id, updatedAt: lida, observacao: "venda feita no balcão" }, ctx, tx);
+      expect(await trilhaDo(tx, p.id, "pedido_dispensado_masc")).toEqual([
+        { motivo: "venda feita no balcão", ator_id: c.usuarioId },
+      ]);
       await expect(
         tx.transaction((sp) =>
           dispensarDoMasc({ id: p.id, updatedAt: lida, observacao: "de novo, com versão velha" }, ctx, sp),
@@ -219,7 +237,11 @@ describe("andamento e cancelamento", () => {
         ctx,
         tx,
       );
+      expect(await trilhaDo(tx, p.id, "pedido_rastreio_informado")).toHaveLength(1);
       await cancelarPedido({ id: p.id, updatedAt: v2.atualizadoEm, motivo: "cliente desistiu da compra" }, ctx, tx);
+      expect(await trilhaDo(tx, p.id, "pedido_cancelado")).toEqual([
+        { motivo: "cliente desistiu da compra", ator_id: c.usuarioId },
+      ]);
 
       const linha = await umaLinha<Record<string, unknown>>(tx, sql`
         select status, cancelado_motivo, cancelado_em, rastreio_codigo from pedidos where id = ${p.id}`);

@@ -2,7 +2,12 @@ import "server-only";
 import { eq } from "drizzle-orm";
 import type { Contexto } from "@/lib/auth/guard";
 import { condicaoDeLoja, vivosE } from "@/lib/db/consultas";
-import { atualizarComTrava, atualizarContador, type Transacao } from "@/lib/db/mutacoes";
+import {
+  atualizarComTrava,
+  atualizarContador,
+  type OpcoesDeTrava,
+  type Transacao,
+} from "@/lib/db/mutacoes";
 import { contatos } from "@/lib/db/schema/contatos";
 import { pedidos } from "@/lib/db/schema/pedidos";
 import { ErroDeEscopo, ErroDeValidacao } from "@/lib/erros";
@@ -62,6 +67,7 @@ async function gravar(
   alvo: AlvoDePedido,
   dados: Record<string, unknown>,
   acao: Parameters<typeof atualizarComTrava>[4],
+  opcoes: OpcoesDeTrava = {},
 ): Promise<Versao> {
   const linha = await atualizarComTrava(
     tx,
@@ -69,6 +75,7 @@ async function gravar(
     { id: alvo.id, escopo: ctx.escopo, updatedAtOriginal: alvo.updatedAt, dados },
     ctx,
     acao,
+    opcoes,
   );
   return { id: alvo.id, atualizadoEm: linha.updated_at as Date };
 }
@@ -106,7 +113,11 @@ export async function registrarLancamentoMasc(
   }
 }
 
-/** "Dispensar" — observação obrigatória (o CHECK `pedidos_masc_dispensado` confere de novo). */
+/**
+ * "Dispensar" — observação obrigatória (o CHECK `pedidos_masc_dispensado`
+ * confere de novo). Trilha ANTES do efeito, com a observação como motivo
+ * (01-dados.md §7.4): o pedido sai da fila e ninguém mais olha para ele.
+ */
 export async function dispensarDoMasc(
   dados: DispensarDoMasc,
   ctx: Contexto,
@@ -120,6 +131,7 @@ export async function dispensarDoMasc(
     dados,
     { masc_status: "dispensado", masc_observacao: dados.observacao },
     "pedido_dispensado_masc",
+    { trilhaAntes: true, motivo: dados.observacao },
   );
 }
 
@@ -166,14 +178,15 @@ export async function informarRastreio(
       rastreio_url: dados.rastreioUrl ?? null,
       entrega_metodo: dados.entregaMetodo ?? null,
     },
-    "pedido_status_alterado",
+    "pedido_rastreio_informado",
   );
 }
 
 /**
  * Cancelar — motivo obrigatório. Sai da reserva e da fila do Masc sozinho (o
  * filtro de `status` do índice e da fórmula). Os contadores do contato voltam
- * atrás, como na devolução concluída (01-dados-dominio.md §6.6).
+ * atrás, como na devolução concluída (01-dados-dominio.md §6.6). Trilha ANTES
+ * do efeito, com o motivo (01-dados.md §7.4).
  */
 export async function cancelarPedido(
   dados: CancelarPedido,
@@ -188,6 +201,7 @@ export async function cancelarPedido(
     dados,
     { status: "cancelado", cancelado_em: new Date(), cancelado_motivo: dados.motivo },
     "pedido_cancelado",
+    { trilhaAntes: true, motivo: dados.motivo },
   );
   await atualizarContador(
     tx,

@@ -17,6 +17,7 @@ export const metadata: Metadata = { title: "Pedido" };
 const ROTULO_EVENTO: Record<string, string> = {
   pedido_criado: "Pedido criado",
   pedido_status_alterado: "Andamento atualizado",
+  pedido_rastreio_informado: "Rastreio informado",
   pedido_cancelado: "Pedido cancelado",
   pedido_lancado_masc: "Lançado no Masc",
   pedido_dispensado_masc: "Dispensado do Masc",
