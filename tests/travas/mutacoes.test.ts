@@ -15,10 +15,12 @@ import * as schema from "@/lib/db/schema";
 
 const RAIZ = process.cwd();
 const MUTACOES = "src/lib/db/mutacoes.ts";
+/** A extensão reexportada por mutacoes.ts: ON CONFLICT e lotes da LGPD. */
+const MUTACOES_SISTEMA = "src/lib/db/mutacoes-sistema.ts";
 const PASTAS = ["src", "tests", "scripts"];
 
 /** Este arquivo cita os padrões proibidos como DEFINIÇÃO da regra. */
-const ISENTOS = new Set([MUTACOES, "tests/travas/mutacoes.test.ts"]);
+const ISENTOS = new Set([MUTACOES, MUTACOES_SISTEMA, "tests/travas/mutacoes.test.ts"]);
 
 function varrer(pasta: string): string[] {
   let entradas;
@@ -97,9 +99,23 @@ describe("mutações", () => {
       "avancarStatusDeEntrega",
       "reivindicarReenvio",
       "reservarDestinatarios",
+      "registrarProcessamentoEvento",
+      "registrarConsentimentoBase",
     ]) {
       expect(texto).toContain(`export async function ${nome}`);
     }
+  });
+
+  it("mutacoes-sistema.ts tem os helpers de sistema e é reexportado por mutacoes.ts", () => {
+    const extensao = readFileSync(join(RAIZ, MUTACOES_SISTEMA), "utf8");
+    const principal = readFileSync(join(RAIZ, MUTACOES), "utf8");
+    const nomes = ["registrarEventoDeIngestao", "abrirAlerta", "inserirDestinatariosEmLote", "anonimizarTitular"];
+    for (const nome of nomes) {
+      expect(extensao).toContain(`export async function ${nome}`);
+      expect(principal).toContain(nome);
+    }
+    // Sem import de valor de mutacoes.ts: a reexportação não pode virar ciclo.
+    expect(extensao).not.toMatch(/^import \{[^}]*\} from "\.\/mutacoes";/m);
   });
 
   it("atualizarComTrava e excluirLogico passam por travaDeColisao e condicaoDeLoja", () => {

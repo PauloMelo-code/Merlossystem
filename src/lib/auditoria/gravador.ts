@@ -1,8 +1,8 @@
 import { sql, type SQL } from "drizzle-orm";
-import type { Contexto } from "@/lib/auth/guard";
 import type { AcaoAuditada } from "@/lib/db/schema/_enums/auditoria";
 import { CAMPOS_PII } from "@/lib/db/schema/_enums/auditoria";
 import type { DiffAuditado } from "@/lib/db/schema/auditoria";
+import type { ContextoDeGravacao } from "@/lib/db/sistema";
 
 /**
  * GRAVADOR da trilha de negócio (01-dados.md §7.2 e §7.4, 02-seguranca.md §17).
@@ -78,7 +78,7 @@ export function diffAuditado(
  */
 export async function registrarAuditoria(
   tx: ExecutorAuditoria,
-  ctx: Contexto,
+  ctx: ContextoDeGravacao,
   acao: AcaoAuditada,
   entidade: string,
   entidadeId: string,
