@@ -11,20 +11,20 @@ da Meta. Fontes: `01-dados.md §6`, `03-arquitetura.md §11, §12.2`,
 | `src/lib/lojas/index.ts` | listar, criar, editar (trava de colisão) e desativar loja (exclusão lógica) |
 | `src/lib/integracoes/catalogo-provedores.ts` | provedores conectáveis no R1, chaves de credencial e o que é a `referencia_externa`. Puro, sem import: a tela gera o formulário daqui |
 | `src/lib/integracoes/payload.ts` | roteamento do corpo **depois** de autenticar: conta e id de cada item (Meta e uazapi). Puro |
-| `src/lib/integracoes/roteamento.ts` | os três webhooks sobre `rotaDeMaquina` (`webhookWhatsapp`, `webhookInstagram`, `webhookUazapi`) |
-| `src/lib/integracoes/diario.ts` | `registrarEventoRecebido` (INSERT idempotente) e `registrarProcessamentoEvento` (via `atualizarEstado`) |
+| `src/lib/integracoes/roteamento.ts` | os três webhooks sobre `rotaDeMaquina` (`webhookWhatsapp`, `webhookInstagram`, `webhookUazapi`) e a lista branca de cabeçalhos do diário. O INSERT do diário é `registrarEventoDeIngestao`, de `@/lib/db/mutacoes` |
 | `src/lib/integracoes/contas.ts` | conectar por token, editar, substituir credencial, desconectar, estado escrito pelo sistema |
 | `src/lib/integracoes/oauth.ts` | OAuth do Bling (início, retorno, renovação sob `pg_advisory_xact_lock`) |
 | `src/lib/integracoes/sessao.ts`, `uazapi.ts` | sessão do número não oficial: parear (QR) e conferir |
-| `src/lib/integracoes/meta/graph.ts`, `meta/modelos.ts` | leitura dos modelos na Graph API e sincronização de status |
-| `src/lib/integracoes/_consultas.ts`, `_sistema.ts` | leituras com `vivos()`/`condicaoDeLoja()` e o contexto de sistema |
+| `src/lib/integracoes/meta/graph.ts`, `meta/modelos.ts` | leitura e envio de modelos na Graph API; sincronização de status |
+| `src/lib/integracoes/meta/aprovacao.ts` | costura `enviarModeloParaAprovacao(ctx, templateId)`, consumida pelo M6 |
+| `src/lib/integracoes/_consultas.ts` | leituras com `vivos()`/`condicaoDeLoja()` |
 | `src/lib/actions/lojas.ts` | `listarLojas`, `criarLoja`, `editarLoja`, `desativarLoja` |
 | `src/lib/actions/integracoes.ts` | `listarIntegracoes`, `detalharIntegracao`, `conectarContaPorToken`, `editarIntegracao`, `reautenticarIntegracao`, `desconectarIntegracao`, `parearAparelho`, `consultarSessaoDoAparelho`, `iniciarConexaoBling` |
 | `src/lib/validadores/lojas.ts`, `integracoes.ts` | Zod compartilhado com a tela |
 | `src/app/api/webhooks/whatsapp/route.ts`, `instagram/route.ts`, `uazapi/[integracaoId]/route.ts` | borda de máquina |
 | `src/app/api/integracoes/bling/callback/route.ts` | retorno do OAuth |
 | `src/app/(app)/configuracoes/page.tsx` | índice em cartões, filtrado por papel no servidor |
-| `src/app/(app)/configuracoes/lojas/` | lista, criar/editar com block e diff, desativar |
+| `src/app/(app)/configuracoes/lojas/` | lista, criar/editar com block e diff, depósito escolhido na lista do Bling, desativar |
 | `src/app/(app)/configuracoes/integracoes/` | lista, conectar por token, conectar Bling, detalhe `[id]` |
 | `src/server/processadores/integracoes.ts` | jobs `sincronizar-bling`, `sincronizar-templates`, `renovar-token`, `conferir-sessao-uazapi` |
 
@@ -109,20 +109,51 @@ em `integracoes/bling/` (pacote M4): a conexão é deste pacote.
 
 ## Jobs da fila `integracoes`
 
+Agendadores (`fila/agendamentos.ts`): `sincronizar-templates` a cada 30 min
+(minutos 23 e 53), `renovar-token` de hora em hora (minuto 40; o token de
+acesso do Bling vale 6 h), `sincronizar-bling` de hora em hora (minuto 17) e
+`conferir-sessao-uazapi` a cada 10 min.
+
 Sem carga (agendador), cada job faz o fan-out: um job por conta, `jobId`
 determinístico por janela de 10 minutos. Com `integracaoId`, trabalha a conta.
 
 | Job | O que faz | Erro permanente |
 |---|---|---|
 | `sincronizar-bling` | chama `sincronizarCatalogoBling` (pacote M4) | sobe (a fila e M4 decidem) |
-| `sincronizar-templates` | lê a Graph API e atualiza `status`, `meta_template_id`, `motivo_rejeicao`, `aprovado_em` dos modelos que já existem aqui (casando nome + idioma); rascunho não é tocado | conta vira `erro` com o motivo |
+| `sincronizar-templates` | lê a Graph API e atualiza `status`, `meta_template_id`, `motivo_rejeicao`, `aprovado_em` dos modelos que já existem aqui (casando nome + idioma); rascunho não é tocado. Ações: `template_enviado`, `template_aprovado`, `template_rejeitado`, `template_pausado` | conta vira `erro` com o motivo |
 | `renovar-token` | gira o refresh do Bling sob `pg_advisory_xact_lock` | conta vira `expirado` |
 | `conferir-sessao-uazapi` | pergunta o estado ao uazapi e grava `conectado`/`desconectado` | token recusado: conta vira `erro` |
 
 Mudança de status publica `integracao-atualizada` no canal da loja. Estado
-escrito pelo worker usa o contexto de sistema (`ator_tipo = 'sistema'`,
-`modified_by` nulo); `ultimo_erro` e `ultima_sincronizacao` passam por
-`atualizarContador` (sem trilha).
+escrito pelo worker usa `contextoDeSistema({ origem: "worker", lojaId })`, de
+`@/lib/db/mutacoes`: `ator_tipo = 'sistema'` e `ator_id`/`modified_by` =
+`ATOR_SISTEMA`. `ultimo_erro` e `ultima_sincronizacao` passam por
+`atualizarContador` (sem trilha). O job fecha a linha do diário com
+`registrarProcessamentoEvento(tx, id, { tipo, projecao })`.
+
+## Envio de modelo para aprovação (costura do M6)
+
+`enviarModeloParaAprovacao(ctx: ContextoDeGravacao, templateId)` devolve
+`{ templateId, externoId, status }`. A permissão (`modelos:enviar_aprovacao`,
+gerente para cima) é conferida pela action do M6.
+
+- Só `rascunho` e `rejeitado` saem; outro status é `VALIDACAO`. Modelo de outra
+  loja ou excluído é `NAO_ENCONTRADO`.
+- A conta do modelo precisa ser WhatsApp oficial com `waba_id` e
+  `access_token`; senão, `INTEGRACAO` permanente.
+- Sem `meta_template_id`, cria em `POST /{waba}/message_templates`; rejeitado
+  com id da Meta é editado em `POST /{meta_template_id}` (criar de novo com o
+  mesmo nome é recusado lá).
+- Componentes: cabeçalho de texto, corpo, rodapé e botões (URL, telefone,
+  resposta rápida). A Meta exige um exemplo por variável; vai `exemplo N`.
+  Cabeçalho de mídia e categoria `authentication` são recusados (exigem upload
+  por handle e botão de código).
+- A chamada à Graph fica fora de transação. Depois, `atualizarComTrava` grava
+  `status`, `meta_template_id`, `enviado_em` e limpa `motivo_rejeicao`, com a
+  ação `template_enviado`. Se alguém editou o modelo durante o envio, a trava
+  recusa com `COLISAO`.
+- A Meta recusando o modelo (4xx fora 429) é `INTEGRACAO` permanente com o
+  motivo dela; 429 e 5xx são transitórios.
 
 ## Telas
 
@@ -130,7 +161,10 @@ escrito pelo worker usa o contexto de sistema (`ator_tipo = 'sistema'`,
   quem alcança.
 - `/configuracoes/lojas`: tabela (cartões no celular). Criar e editar passam
   pelo block de 3 s com o diff "de X para Y" (sigla incluída) e o aviso de que
-  a sigla entra no número do pedido. Desativar tem block; é recusado enquanto a
+  a sigla entra no número do pedido. O depósito do Bling é escolhido na lista
+  da conta da rede (`listarDepositosBling`, costura do M4; inativos ficam de
+  fora e o atual que sumiu do Bling continua, marcado). Se o Bling não
+  responde, a página segue aberta e o número é digitado. Desativar tem block; é recusado enquanto a
   loja tiver pessoa ativa ou conta conectada.
 - `/configuracoes/integracoes`: status, validade, último erro e o final da
   credencial. "Conectar número ou conta" (canal e loja em rádio, um campo por
@@ -149,29 +183,19 @@ escrito pelo worker usa o contexto de sistema (`ator_tipo = 'sistema'`,
 | `tests/seguranca/webhooks.test.ts` (T15) | uazapi real: POST forjado não grava, repetido = 1 linha e 1 job, conta com erro descartada, sessão dispara conferência |
 | `tests/integracao/integracoes-meta.test.ts` | lote com duas contas em duas lojas, assinatura forjada, conta desconhecida `recusado`, modelo dispara sincronização, challenge por canal |
 | `tests/integracao/integracoes-oauth.test.ts` | cookie ausente/errado, state de outra sessão, expirado, adulterado e reusado recusados sem tocar a rede; Basic sem segredo no corpo; conta de rede única; refresh e expiração |
-| `tests/integracao/integracoes-contas.test.ts` | cofre, hash do segredo, único da referência, máscara dos 4 caracteres, ilegível, desconectar, colisão, estado de sistema, lojas |
-| `tests/integracao/integracoes-worker.test.ts` | modelos da Meta, fan-out que fecha o evento, sessão do uazapi, falha transitória sobe |
-| `tests/componentes/integracoes-telas.test.tsx` | block de desconectar, parear e desativar loja; campos por chave; segredo mostrado uma vez; estados vazios; axe |
+| `tests/integracao/integracoes-contas.test.ts` | cofre, hash do segredo, único da referência, máscara dos 4 caracteres, ilegível, desconectar, colisão, estado de sistema com `ATOR_SISTEMA`, lojas |
+| `tests/integracao/integracoes-worker.test.ts` | modelos da Meta (aprovado, rejeitado, pausado), fan-out que fecha o evento, sessão do uazapi, falha transitória sobe, envio para aprovação (criar, editar rejeitado, escopo, recusa da Meta, componentes) |
+| `tests/componentes/integracoes-telas.test.tsx` | block de desconectar, parear e desativar loja; campos por chave; segredo mostrado uma vez; depósito em lista ou digitado; estados vazios; axe |
 
 Rodar no banco do pacote: `node scripts/db-teste.mjs --sufixo m5` e os testes
 com `DATABASE_URL_TESTE=postgres://…/merlostore_test_m5` e
 `REDIS_URL=redis://localhost:6382/5`.
 
-## Pendências (dependem da fundação)
+## Pendências
 
-- `registrarProcessamentoEvento` e o INSERT do diário deveriam morar em
-  `src/lib/db/mutacoes.ts`; hoje estão em `diario.ts` (o INSERT por
-  `execute(sql…)`, como `auditoria/gravador.ts`).
-- `ATOR_SISTEMA` não existe: o worker grava com autor nulo (mesma solução do
-  pacote M1).
-- O CHECK `lojas_integracoes_templates_nome` (migração 0011) usa `{1,512}`, que
-  o Postgres recusa: todo INSERT/UPDATE de modelo falha até a migração ser
-  corrigida — inclusive a sincronização. O caso de teste correspondente fica
-  pulado enquanto o CHECK estiver quebrado.
-- `ACOES_AUDITADAS` não tem `template_pausado`: modelo pausado na Meta não é
-  aplicado (fica em log).
-- Agendamentos: `sincronizar-templates` roda de hora em hora (o documento pede
-  30 min), `renovar-token` uma vez por dia (o token de acesso do Bling vale
-  6 h) e não existe agendador de `sincronizar-bling`.
-- A lista de depósitos do Bling na tela de lojas depende do cliente de M4; hoje
-  o depósito é digitado.
+- Os caminhos e o cabeçalho da API do uazapi (`/instance/status`,
+  `/instance/connect`, cabeçalho `token`) vêm do padrão público e não foram
+  conferidos no Swagger da instalação; estão em três constantes de
+  `src/lib/integracoes/uazapi.ts`.
+- Exemplos dos modelos enviados à Meta são genéricos (`exemplo N`): o modelo não
+  guarda exemplo por variável.
