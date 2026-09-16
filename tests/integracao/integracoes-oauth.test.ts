@@ -140,15 +140,19 @@ describe("retorno aceito", () => {
     );
     expect(chamadas).toHaveLength(1);
 
-    // Reconectar atualiza a MESMA conta de rede.
+    // Reconectar atualiza a MESMA conta de rede: nenhuma linha nova.
+    const contar = async () =>
+      (
+        await banco.query<{ n: string }>(
+          "select count(*)::text as n from lojas_integracoes where provedor = 'bling' and is_deleted = false",
+        )
+      ).rows[0]!.n;
+    const antes = await contar();
     const segundo = assinarEstado(admin);
     respostas.push(tokens("dois"));
     const outraVez = await oauth.concluirAutorizacaoBling(entrada(admin, segundo.state, segundo.nonce));
     expect(outraVez.integracaoId).toBe(integracaoId);
-    const { rows } = await banco.query<{ n: string }>(
-      "select count(*)::text as n from lojas_integracoes where provedor = 'bling' and is_deleted = false",
-    );
-    expect(rows[0]!.n).toBe("1");
+    expect(await contar()).toBe(antes);
   });
 
   it("Bling recusando o código não grava nada", async () => {
@@ -162,23 +166,27 @@ describe("retorno aceito", () => {
 });
 
 describe("renovar token", () => {
+  /** A conta de rede, sempre com um par válido e conectado (o banco é reaproveitado). */
   async function contaDeRede(): Promise<string> {
     const { rows } = await banco.query<{ id: string }>(
-      "select id from lojas_integracoes where provedor = 'bling' and is_deleted = false limit 1",
+      "select id from lojas_integracoes where provedor = 'bling' and is_deleted = false order by created_at limit 1",
     );
-    if (rows[0]) return rows[0].id;
-    const { state, nonce } = assinarEstado(admin);
-    respostas.push(tokens("base"));
-    return (await oauth.concluirAutorizacaoBling(entrada(admin, state, nonce))).integracaoId;
-  }
-
-  it("gira o refresh e guarda o par novo cifrado", async () => {
-    const id = await contaDeRede();
+    let id = rows[0]?.id;
+    if (!id) {
+      const { state, nonce } = assinarEstado(admin);
+      respostas.push(tokens("base"));
+      id = (await oauth.concluirAutorizacaoBling(entrada(admin, state, nonce))).integracaoId;
+    }
     await banco.query("update lojas_integracoes set credenciais_cifradas = $1, status = 'conectado' where id = $2", [
       cifrar(JSON.stringify({ access_token: "velho", refresh_token: "refresh-velho" }), id),
       id,
     ]);
     chamadas.length = 0;
+    return id;
+  }
+
+  it("gira o refresh e guarda o par novo cifrado", async () => {
+    const id = await contaDeRede();
     respostas.push(tokens("novo"));
     expect(await oauth.renovarTokenBling(id)).toBe("renovado");
     expect(chamadas[0]!.corpo).toContain("grant_type=refresh_token");
@@ -193,6 +201,15 @@ describe("renovar token", () => {
     const linha = await linhaDaConta(id);
     expect(linha.status).toBe("expirado");
     expect(String(linha.ultimo_erro)).toMatch(/Bling recusou/);
+  });
+
+  it("credencial que o cofre não abre vira conta expirada, sem tocar o Bling", async () => {
+    const id = await contaDeRede();
+    await banco.query("update lojas_integracoes set credenciais_cifradas = 'v1:lixo:lixo:lixo' where id = $1", [id]);
+    chamadas.length = 0;
+    expect(await oauth.renovarTokenBling(id)).toBe("expirado");
+    expect(chamadas).toHaveLength(0);
+    expect(String((await linhaDaConta(id)).ultimo_erro)).toMatch(/ilegível/);
   });
 
   it("conta que não é do Bling é ignorada", async () => {

@@ -6,7 +6,13 @@ import { lojas } from "@/lib/db/schema/lojas";
 import { lojas_integracoes, lojas_integracoes_eventos } from "@/lib/db/schema/integracoes";
 import type { EscopoLoja } from "@/lib/auth/loja";
 import { ErroDeIntegracao } from "@/lib/erros";
-import { credenciaisVisiveis, decifrar, type CredencialVisivel } from "@/lib/seguranca/cofre";
+import {
+  conferirCofre,
+  credenciaisVisiveis,
+  decifrar,
+  ErroDoCofre,
+  type CredencialVisivel,
+} from "@/lib/seguranca/cofre";
 
 /**
  * Leituras do módulo de integrações. Toda consulta passa por `vivos()` e, a de
@@ -106,11 +112,16 @@ export async function contaComCredencial(id: string): Promise<ContaComCredencial
   if (!linha.cifradas || !linha.aad) {
     throw new ErroDeIntegracao("A conta está sem credencial. Conecte de novo.", true);
   }
+  // Chave do cofre ausente é configuração (503), não defeito desta conta: sobe
+  // antes. Daqui para baixo, envelope que não abre é credencial ilegível.
+  conferirCofre();
   let bruto: unknown;
   try {
     bruto = JSON.parse(decifrar(linha.cifradas, linha.aad));
   } catch (erro) {
-    if (erro instanceof SyntaxError) throw new ErroDeIntegracao("Credencial ilegível. Conecte de novo.", true);
+    if (erro instanceof SyntaxError || erro instanceof ErroDoCofre) {
+      throw new ErroDeIntegracao("Credencial ilegível. Conecte de novo.", true);
+    }
     throw erro;
   }
   const credencial: Record<string, string> = {};
@@ -243,6 +254,8 @@ export async function contaDaRede(provedor: "bling"): Promise<{ id: string; upda
     .select({ id: lojas_integracoes.id, updatedAt: lojas_integracoes.updated_at })
     .from(lojas_integracoes)
     .where(vivosE(lojas_integracoes, eq(lojas_integracoes.provedor, provedor), isNull(lojas_integracoes.loja_id)))
+    // Determinístico: se um dia houver duas vivas, reconectar mexe sempre na mais antiga.
+    .orderBy(lojas_integracoes.created_at)
     .limit(1);
   return linha ?? null;
 }

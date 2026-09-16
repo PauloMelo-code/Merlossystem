@@ -146,7 +146,8 @@ describe("desconectar", () => {
     });
     expect(linha.revogada_em).toBeInstanceOf(Date);
     expect(linha.deleted_at).toBeInstanceOf(Date);
-    expect((await trilhaDe(conta.id)).map((t) => t.acao)).toEqual([
+    // Mesma transação = mesmo `criado_em`: a ordem entre as duas não é garantida.
+    expect((await trilhaDe(conta.id)).map((t) => t.acao).sort()).toEqual([
       "integracao_alterada",
       "integracao_desconectada",
     ]);
