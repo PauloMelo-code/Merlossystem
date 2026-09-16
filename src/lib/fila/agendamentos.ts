@@ -56,18 +56,25 @@ export const AGENDAMENTOS: readonly Agendamento[] = [
     porque: "sessão não oficial cai sozinha; sem sonda, ninguém descobre até a campanha falhar",
   },
   {
-    nome: "sincronizar-templates-hora",
+    nome: "sincronizar-templates-30min",
     fila: "integracoes",
     job: "sincronizar-templates",
-    padrao: "23 * * * *",
+    padrao: "23,53 * * * *",
     porque: "modelo reprovado pela Meta faz a campanha por número oficial nascer morta (§8.1)",
   },
   {
-    nome: "renovar-token-diario",
+    nome: "renovar-token-hora",
     fila: "integracoes",
     job: "renovar-token",
-    padrao: "40 3 * * *",
-    porque: "refresh do Bling vence; renovar de madrugada evita a tela quebrar no expediente",
+    padrao: "40 * * * *",
+    porque: "o token de acesso do Bling vale 6 h; de hora em hora sobra folga para falha transitória",
+  },
+  {
+    nome: "sincronizar-bling-hora",
+    fila: "integracoes",
+    job: "sincronizar-bling",
+    padrao: "17 * * * *",
+    porque: "catálogo e saldo são espelho do Bling; sem agendador ninguém atualiza o espelho",
   },
   {
     nome: "retencao-eventos-diario",
@@ -100,11 +107,23 @@ export const AGENDAMENTOS: readonly Agendamento[] = [
 ];
 
 /**
+ * Nomes que já foram publicados e mudaram de cadência. O upsert pelo nome novo
+ * NÃO apaga o antigo: sem removê-lo, o job rodaria nas duas cadências.
+ */
+export const AGENDADORES_APOSENTADOS: readonly { nome: string; fila: NomeDeFila }[] = [
+  { nome: "sincronizar-templates-hora", fila: "integracoes" },
+  { nome: "renovar-token-diario", fila: "integracoes" },
+];
+
+/**
  * Registra (ou atualiza) todos os agendadores. Chamado UMA vez, no boot do
  * worker: quem agenda é quem processa, senão um app sem worker encheria a fila
  * de trabalho que ninguém consome.
  */
 export async function registrarAgendamentos(): Promise<void> {
+  for (const a of AGENDADORES_APOSENTADOS) {
+    await fila(a.fila).removeJobScheduler(a.nome);
+  }
   for (const a of AGENDAMENTOS) {
     // As `defaultJobOptions` da fila NÃO alcançam o job produzido pelo
     // agendador: o BullMQ usa o `opts` do template. Sem repeti-las aqui, todo
