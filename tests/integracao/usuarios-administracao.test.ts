@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Contexto } from "@/lib/auth/guard";
-import type { Papel } from "@/lib/db/schema/_enums/auth";
+import { ATOR_SISTEMA, type Papel } from "@/lib/db/schema/_enums/auth";
 
 /**
  * Administração de acessos no banco real (02-seguranca.md §9.2, §9.3, §11.2).
@@ -11,7 +11,9 @@ import type { Papel } from "@/lib/db/schema/_enums/auth";
  * provisionamento não fecha o provisionamento; reativar abre conta sem fator;
  * destravar conta livre "dá certo"; o reset por admin define senha ou ignora o
  * cooldown; a recuperação assistida deixa fator para trás; e a troca de e-mail
- * muda o endereço antes da confirmação da própria pessoa.
+ * muda o endereço antes da confirmação da própria pessoa. Também quando o
+ * domínio enfileira o convite antes do commit, a trilha perde a ciência, o
+ * convite vencido não é fechado e o ATOR_SISTEMA aparece na lista ou vira alvo.
  */
 
 const enviados: { assunto: string; link?: string; paraEmail?: string }[] = [];
@@ -38,6 +40,7 @@ const { convidarUsuario, reenviarConvite } = await import("@/lib/usuarios/convit
 const adm = await import("@/lib/usuarios/administracao");
 const acesso = await import("@/lib/usuarios/acesso");
 const trocas = await import("@/lib/usuarios/trocas-email");
+const { listarUsuarios } = await import("@/lib/usuarios/_consultas");
 const { redisDoLimitador } = await import("@/lib/seguranca/limite");
 
 type Fn<D, R> = (tx: never, ctx: Contexto, dados: D) => Promise<R>;
@@ -91,8 +94,18 @@ beforeAll(async () => {
   await limparAuth();
   dono = await criarUsuario("dono@teste.local", { papel: "dono" });
   admin = await criarUsuario("admin@teste.local", { papel: "admin" });
+  // `limparAuth` não apaga mais `lojas` (D12): a loja do arquivo é reaproveitada
+  // na rodada seguinte, em vez de colidir no único de slug.
   const { rows } = await poolDeTeste.query<{ id: string }>(
-    `insert into lojas (nome, slug, sigla) values ('Centro', 'centro', 'CEN') returning id`,
+    `with nova as (
+       insert into lojas (nome, slug, sigla)
+       select 'Centro M7', 'centro-m7', 'QMS'
+       where not exists (select 1 from lojas where lower(slug) = 'centro-m7' and not is_deleted)
+       returning id
+     )
+     select id from nova
+     union all
+     select id from lojas where lower(slug) = 'centro-m7' and not is_deleted`,
   );
   lojaId = rows[0]!.id;
 });
@@ -106,7 +119,7 @@ afterAll(async () => {
 });
 
 describe("convite", () => {
-  it("admin convida vendedora; o link vai no fragmento e o e-mail é enfileirado", async () => {
+  it("admin convida vendedora; o link vai no fragmento e o e-mail fica para depois do commit", async () => {
     const alvo = email("vendedora");
     const saida = await rodar(ctxDe(admin.id, "admin"), convidarUsuario, {
       email: alvo,
@@ -115,7 +128,9 @@ describe("convite", () => {
       motivo: MOTIVO,
     });
     expect(saida.link).toMatch(/\/primeiro-acesso#t=[A-Za-z0-9_-]{43}$/);
-    expect(enviados).toEqual([{ assunto: "convite", link: saida.link, paraEmail: alvo }]);
+    expect(saida.email).toBe(alvo);
+    // Quem enfileira é a action, com `enviarConvite`, DEPOIS do commit.
+    expect(enviados).toEqual([]);
     const { rows } = await poolDeTeste.query(
       "select papel, loja_id, criado_por, motivo, token_hash from usuarios_convites where email = $1",
       [alvo],
@@ -137,6 +152,39 @@ describe("convite", () => {
       [alvo],
     );
     expect(rows[0].ciencia_versao).toBe("CIENCIA_ADMIN_V1");
+    const trilha = await poolDeTeste.query(
+      "select detalhes from auth_eventos where tipo = 'convite_emitido' and ator_id = $1",
+      [dono.id],
+    );
+    expect(trilha.rows.at(-1)?.detalhes).toEqual({
+      papel: "admin",
+      ciencia_versao: "CIENCIA_ADMIN_V1",
+    });
+  });
+
+  it("convite vencido é fechado com a trilha convite_expirado antes do novo", async () => {
+    const alvo = email("vencido");
+    await poolDeTeste.query(
+      `insert into usuarios_convites (email, papel, token_hash, expira_em, criado_por)
+       values ($1, 'gerente', $2, now() - interval '1 minute', $3)`,
+      [alvo, randomUUID(), admin.id],
+    );
+    await rodar(ctxDe(admin.id, "admin"), convidarUsuario, {
+      email: alvo,
+      papel: "gerente",
+      lojaId: null,
+      motivo: MOTIVO,
+    });
+    const { rows } = await poolDeTeste.query(
+      "select is_deleted from usuarios_convites where email = $1 order by created_at",
+      [alvo],
+    );
+    expect(rows.map((r) => r.is_deleted)).toEqual([true, false]);
+    const trilha = await poolDeTeste.query(
+      "select count(*)::int as n from auditoria_eventos where acao = 'convite_expirado' and ator_id = $1",
+      [admin.id],
+    );
+    expect(trilha.rows[0].n).toBe(1);
   });
 
   it("recusa e-mail que já tem conta e segundo convite vivo", async () => {
@@ -265,6 +313,11 @@ describe("papel e ativo", () => {
     await rodar(ctx, adm.promoverAAdmin, await dados());
     expect((await lerUsuario(alvo.id)).papel).toBe("admin");
     expect(await contarEventos("admin_promovido")).toBeGreaterThanOrEqual(1);
+    const trilha = await poolDeTeste.query(
+      "select detalhes from auth_eventos where tipo = 'admin_promovido' and alvo_id = $1",
+      [alvo.id],
+    );
+    expect(trilha.rows[0]?.detalhes).toEqual({ papel: "admin", ciencia_versao: "CIENCIA_ADMIN_V1" });
   });
 });
 
@@ -336,6 +389,9 @@ describe("troca de e-mail", () => {
     });
     expect((await lerUsuario(alvo.id)).email).toBe(alvo.email);
     const paraNovo = enviados.find((e) => e.paraEmail === novo);
+    expect(paraNovo?.assunto).toBe("email-troca-codigo");
+    // O aviso vai para o endereço ATUAL (sem `paraEmail`), com assunto próprio.
+    expect(enviados).toContainEqual({ assunto: "email-troca-solicitada" });
     const codigo = paraNovo?.link?.split("#codigo=")[1] ?? "";
     expect(codigo).toMatch(/^\d{6}$/);
 
@@ -352,5 +408,19 @@ describe("troca de e-mail", () => {
     );
     expect(rows[0].tentativas).toBe(2);
     expect(rows[0].confirmado_em).not.toBeNull();
+  });
+});
+
+describe("ATOR_SISTEMA", () => {
+  it("não aparece na lista de /usuarios e não é alvo de ação nenhuma", async () => {
+    const lista = await listarUsuarios();
+    expect(lista.length).toBeGreaterThan(0);
+    expect(lista.some((u) => u.id === ATOR_SISTEMA)).toBe(false);
+    await expect(
+      rodar(ctxDe(dono.id, "dono"), acesso.recuperarAcessoAssistido, {
+        alvoId: ATOR_SISTEMA,
+        motivo: MOTIVO,
+      }),
+    ).rejects.toMatchObject({ codigo: "NAO_ENCONTRADO" });
   });
 });

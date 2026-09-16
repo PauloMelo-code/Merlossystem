@@ -191,9 +191,12 @@ async function contar(consulta: string, parametros: unknown[] = []): Promise<num
 
 const sessoesDe = (id: string) =>
   contar("select count(*)::int as n from usuarios_sessoes where usuario_id = $1", [id]);
+// A recusa de alvo responde SEM_PERMISSAO; o porquê curto fica em
+// `detalhes.motivo` (ADR 0032).
 const recusasSobre = (id: string) =>
   contar(
-    "select count(*)::int as n from auth_eventos where tipo = 'recusa_403' and alvo_id = $1",
+    `select count(*)::int as n from auth_eventos
+     where tipo = 'recusa_403' and alvo_id = $1 and detalhes->>'motivo' = 'alvo'`,
     [id],
   );
 const donosAtivos = () =>
@@ -334,7 +337,12 @@ describe("fonte das actions administrativas", () => {
   const ler = (caminho: string) => readFileSync(join(RAIZ, caminho), "utf8");
 
   it("a trilha vem ANTES do efeito em toda função que troca papel, posse ou acesso", () => {
-    const efeitos = ["atualizarComTrava(", "gravarPapel(", "revogarSessoesDe(", "removerFatores("];
+    const efeitos = [
+      "atualizarComTrava(",
+      "gravarPapel(",
+      "revogarSessoesDe(",
+      "removerTodosOsFatores(",
+    ];
     for (const arquivo of ["src/lib/usuarios/administracao.ts", "src/lib/usuarios/acesso.ts"]) {
       const funcoes = ler(arquivo).split(/\nexport async function /).slice(1);
       expect(funcoes.length, arquivo).toBeGreaterThanOrEqual(4);
@@ -359,5 +367,15 @@ describe("fonte das actions administrativas", () => {
     expect(actions).not.toMatch(/novaSenha|newPassword|senhaSchema|setPassword/);
     expect(ler("src/lib/validadores/usuarios.ts")).not.toMatch(/\bsenha\s*:/i);
     expect(actions).not.toMatch(/\.\.\.(dados|entrada|input)\b/);
+  });
+
+  it("o convite só entra na fila depois do commit e fator só sai pela fundação", () => {
+    // O domínio roda DENTRO da transação: enfileirar ali mandaria link morto.
+    const dominio = ler("src/lib/usuarios/convites.ts");
+    expect(dominio).toContain("emitirConviteEm(");
+    expect(dominio).not.toMatch(/\benviarConvite\(|enfileirarEmailSeguranca\(/);
+    expect(ler("src/lib/actions/convites.ts")).toContain("enviarConvite(convite, autorId)");
+    // Nenhum delete de fator fora de `src/lib/auth/fatores.ts`.
+    expect(ler("src/lib/usuarios/acesso.ts")).not.toMatch(/adapter|\.delete\(/);
   });
 });
