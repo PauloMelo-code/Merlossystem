@@ -11,6 +11,11 @@ const config = [
       "next-env.d.ts",
       // SQL gerado pelo drizzle-kit: não é código-fonte nosso.
       "src/lib/db/migrations/**",
+      // Arquivos-ouro para COPIAR. Citam de propósito módulos que ainda não
+      // existem (`@/lib/db/schema/exemplo`, a chave `exemplo:criar`); compilar
+      // isso exigiria criar um domínio "exemplo" só para o lint ficar feliz.
+      // Também estão fora do `tsconfig.json`.
+      "templates/**",
     ],
   },
   ...nextCoreWebVitals,
