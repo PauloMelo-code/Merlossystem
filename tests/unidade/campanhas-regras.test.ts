@@ -13,6 +13,7 @@ import {
   podeSair,
   RITMO_POR_SEGUNDO,
 } from "@/lib/campanhas/regras";
+import { pode } from "@/lib/auth/permissoes";
 import { assertJobIdPart } from "@/lib/fila/idempotencia";
 import { agendamentoSchema, campanhaSchema, segmentoSchema } from "@/lib/validadores/campanhas";
 import { modeloSchema, respostaSchema } from "@/lib/validadores/conteudo";
@@ -165,5 +166,21 @@ describe("forma das entradas", () => {
     expect(modeloSchema.safeParse(m).success).toBe(true);
     expect(modeloSchema.safeParse({ ...m, nome: "Promo Inverno" }).success).toBe(false);
     expect(modeloSchema.safeParse({ ...m, corpo: "Oi {{2}}" }).success).toBe(false);
+  });
+});
+
+describe("permissões do módulo", () => {
+  it("criar, disparar e excluir campanha e enviar modelo à Meta são de gerente para cima", () => {
+    for (const [recurso, acao] of [
+      ["campanhas", "criar"],
+      ["campanhas", "disparar"],
+      ["campanhas", "excluir"],
+      ["modelos", "enviar_aprovacao"],
+    ] as const) {
+      expect(pode("gerente", recurso, acao), `${recurso}:${acao}`).toBe(true);
+      expect(pode("vendedor", recurso, acao), `${recurso}:${acao}`).toBe(false);
+      expect(pode("viewer", recurso, acao), `${recurso}:${acao}`).toBe(false);
+    }
+    expect(pode("vendedor", "campanhas", "ler")).toBe(true);
   });
 });
