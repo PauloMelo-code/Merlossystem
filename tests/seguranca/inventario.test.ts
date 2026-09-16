@@ -14,6 +14,7 @@ import { arquivosDe, lerFonte } from "./_fonte";
  * AS DUAS DIRECOES: "rota existe em `src/app` implica linha em
  * `docs/seguranca/caminhos-de-acesso.md`" e, desde a integracao da onda 2,
  * "linha `entregue` no doc implica rota no disco" — sem estado `pacote Mx`.
+ * O R2 usa `pacote R2-x` para rota decidida e ainda sem arquivo.
  */
 
 const DOC = "docs/seguranca/caminhos-de-acesso.md";
@@ -58,14 +59,16 @@ describe("T2 direcao estrita: o documento nao promete rota que nao existe", () =
     .filter((l) => /^\| `\//.test(l))
     .map((l) => ({ caminho: /^\| `([^`]+)`/.exec(l)![1]!, estado: l.split("|").at(-2)!.trim() }));
 
-  it("toda linha de rota esta entregue", () => {
+  it("toda linha de rota esta entregue ou decidida para um pacote do R2", () => {
     expect(linhas.length).toBeGreaterThanOrEqual(40);
-    expect(linhas.filter((l) => l.estado !== "entregue").map((l) => l.caminho)).toEqual([]);
+    const invalidas = linhas.filter((l) => l.estado !== "entregue" && !/^pacote R2-[A-E]$/.test(l.estado));
+    expect(invalidas.map((l) => `${l.caminho}: ${l.estado}`)).toEqual([]);
   });
 
   it("toda linha entregue tem arquivo em src/app", () => {
     const naRaiz = existsSync("src/app/page.tsx") ? ["/"] : [];
     const ausentes = linhas
+      .filter((l) => l.estado === "entregue")
       .map((l) => l.caminho)
       .filter((c) => !rotasNoDisco.includes(c) && !naRaiz.includes(c));
     expect(ausentes).toEqual([]);

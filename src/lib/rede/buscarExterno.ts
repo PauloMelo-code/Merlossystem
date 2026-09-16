@@ -13,17 +13,37 @@ import { ErroDeIntegracao } from "@/lib/erros";
  * interna do EasyPanel — e o job `baixar-de-url` recebe a URL do provedor.
  */
 
-export type Provedor = "meta" | "uazapi" | "bling" | "discord";
+export type Provedor =
+  | "meta"
+  | "uazapi"
+  | "bling"
+  | "discord"
+  | "mercadopago"
+  | "openai"
+  | "tiktok";
 
 /**
  * Allowlist de host POR PROVEDOR. Sufixo com ponto na frente casa subdominio
  * (`scontent-gru1-1.xx.fbcdn.net`); o resto e casamento exato.
  */
 const HOSTS: Record<Provedor, readonly string[]> = {
-  meta: ["graph.facebook.com", "lookaside.fbsbx.com", "mmg.whatsapp.net", ".fbcdn.net"],
+  meta: [
+    "graph.facebook.com",
+    "lookaside.fbsbx.com",
+    // Anexo de arquivo do Messenger (ADR 0054). CONFERIR-MESSENGER no 1o download em HML.
+    "cdn.fbsbx.com",
+    "mmg.whatsapp.net",
+    ".fbcdn.net",
+  ],
   uazapi: [],
   bling: ["api.bling.com.br", "www.bling.com.br", "bling.com.br"],
   discord: ["discord.com", "discordapp.com"],
+  /** Pagamentos (R2-B). */
+  mercadopago: ["api.mercadopago.com"],
+  /** Transcricao (R2-C). O audio sai do MinIO, nunca de URL de terceiro. */
+  openai: ["api.openai.com"],
+  // API e CDN de midia do TikTok (ADR 0055). CONFERIR-TIKTOK: host do CDN no 1o download em HML.
+  tiktok: ["business-api.tiktok.com", ".tiktokcdn.com"],
 };
 
 /** Faixas que NUNCA sao destino: loopback, link-local, privadas e metadata. */
@@ -92,9 +112,21 @@ async function conferirDestino(bruta: string, provedor: Provedor): Promise<URL> 
 export const TIMEOUT_MS = 8_000;
 export const TETO_PADRAO = 16 * 1024 * 1024;
 
+/** Teto absoluto: so upload de audio (R2-C) passa de 8 s, e nunca de 60 s. */
+export const TIMEOUT_MAXIMO_MS = 60_000;
+
+/** Cabecalhos com credencial: nunca atravessam para outro host num salto. */
+const CABECALHOS_DE_CREDENCIAL = new Set(["authorization", "access-token", "x-api-key", "cookie"]);
+
+function semCredencial(cabecalhos: Record<string, string> | undefined): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(cabecalhos ?? {}).filter(([nome]) => !CABECALHOS_DE_CREDENCIAL.has(nome.toLowerCase())),
+  );
+}
+
 export type OpcoesBusca = {
   provedor: Provedor;
-  metodo?: "GET" | "POST";
+  metodo?: "GET" | "POST" | "PUT";
   /**
    * JSON/texto, binário ou `FormData` (upload multipart da Graph). Com
    * `FormData`, NÃO passe `content-type`: o `fetch` escreve o boundary.
@@ -103,6 +135,8 @@ export type OpcoesBusca = {
   cabecalhos?: Record<string, string>;
   /** Teto de bytes do corpo lido. O padrao cobre video e audio (16 MB). */
   maxBytes?: number;
+  /** Padrao TIMEOUT_MS; cortado em TIMEOUT_MAXIMO_MS. */
+  timeoutMs?: number;
 };
 
 export type RespostaExterna = {
@@ -121,7 +155,7 @@ async function uma(url: URL, opcoes: OpcoesBusca): Promise<Response> {
       : { body: opcoes.corpo instanceof Uint8Array ? new Uint8Array(opcoes.corpo) : opcoes.corpo }),
     headers: opcoes.cabecalhos ?? {},
     redirect: "manual",
-    signal: AbortSignal.timeout(TIMEOUT_MS),
+    signal: AbortSignal.timeout(Math.min(opcoes.timeoutMs ?? TIMEOUT_MS, TIMEOUT_MAXIMO_MS)),
   });
 }
 
@@ -147,8 +181,9 @@ async function lerComTeto(resposta: Response, maxBytes: number): Promise<Buffer>
 /**
  * Regras 4 a 6: `redirect: "manual"`, no MAXIMO 1 salto, e o destino do salto
  * passa pelas regras 1 a 3 de novo (um host permitido redirecionando para
- * `http://169.254.169.254` era o buraco classico). Timeout de 8 s e teto de
- * bytes lido em streaming, abortado ao passar.
+ * `http://169.254.169.254` era o buraco classico). So GET segue salto, e
+ * credencial nao atravessa para outro host. Timeout de 8 s (teto de 60 s) e
+ * teto de bytes lido em streaming, abortado ao passar.
  */
 export async function buscarExterno(
   urlBruta: string,
@@ -161,8 +196,14 @@ export async function buscarExterno(
     const destino = resposta.headers.get("location");
     if (!destino) recusar("redirecionamento sem destino");
     await resposta.body?.cancel();
-    url = await conferirDestino(new URL(destino, url).toString(), opcoes.provedor);
-    resposta = await uma(url, opcoes);
+    // O corpo nao e reenviado num salto, e o salto poderia leva-lo a outro host.
+    if ((opcoes.metodo ?? "GET") !== "GET") recusar("so GET segue redirecionamento");
+    const proximo = await conferirDestino(new URL(destino, url).toString(), opcoes.provedor);
+    // Credencial nunca atravessa para outro host, nem dentro da allowlist.
+    const cabecalhos =
+      proximo.hostname === url.hostname ? (opcoes.cabecalhos ?? {}) : semCredencial(opcoes.cabecalhos);
+    url = proximo;
+    resposta = await uma(url, { ...opcoes, cabecalhos });
     if (resposta.status >= 300 && resposta.status < 400) {
       await resposta.body?.cancel();
       recusar("mais de um redirecionamento");

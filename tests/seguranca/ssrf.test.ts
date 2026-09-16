@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buscarExterno, ehEnderecoInterno, TIMEOUT_MS } from "@/lib/rede/buscarExterno";
+import { buscarExterno, ehEnderecoInterno, TIMEOUT_MAXIMO_MS, TIMEOUT_MS } from "@/lib/rede/buscarExterno";
 import { arquivosDe, lerFonte, semComentarios } from "./_fonte";
 
 /**
@@ -16,6 +16,11 @@ const enderecos = new Map<string, string>([
   ["graph.facebook.com", "157.240.1.1"],
   ["lookaside.fbsbx.com", "10.0.0.5"],
   ["mmg.whatsapp.net", "157.240.1.2"],
+  ["api.mercadopago.com", "18.231.0.10"],
+  ["api.openai.com", "162.159.140.245"],
+  ["business-api.tiktok.com", "23.50.0.10"],
+  ["p16-sign.tiktokcdn.com", "23.50.0.11"],
+  ["cdn.fbsbx.com", "157.240.1.3"],
 ]);
 
 vi.mock("node:dns/promises", () => ({
@@ -100,6 +105,37 @@ describe("SSRF: allowlist e esquema", () => {
     ).rejects.toThrow(/allowlist/i);
   });
 
+  it("host de um provedor do R2 nao vale para outro", async () => {
+    respondendo();
+    for (const [alvo, provedor] of [
+      ["https://business-api.tiktok.com/x", "meta"],
+      ["https://api.openai.com/v1/audio/transcriptions", "tiktok"],
+      ["https://api.mercadopago.com/v1/payments", "openai"],
+    ] as const) {
+      await expect(buscarExterno(alvo, { provedor }), `${alvo} com ${provedor}`).rejects.toThrow(/allowlist/i);
+    }
+  });
+
+  it("sufixo do CDN do TikTok nao casa dominio do atacante", async () => {
+    respondendo();
+    await expect(
+      buscarExterno("https://evil.tiktokcdn.com.attacker.io/x", { provedor: "tiktok" }),
+    ).rejects.toThrow(/allowlist/i);
+  });
+
+  it("hosts dos provedores do R2 passam com o proprio provedor", async () => {
+    for (const [alvo, provedor] of [
+      ["https://api.mercadopago.com/v1/payments/1", "mercadopago"],
+      ["https://api.openai.com/v1/audio/transcriptions", "openai"],
+      ["https://p16-sign.tiktokcdn.com/midia", "tiktok"],
+      ["https://cdn.fbsbx.com/v/anexo", "meta"],
+    ] as const) {
+      respondendo(new Response("ok", { status: 200 }));
+      const r = await buscarExterno(alvo, { provedor });
+      expect(r.status, alvo).toBe(200);
+    }
+  });
+
   it("host permitido e publico passa", async () => {
     respondendo(new Response("conteudo", { status: 200 }));
     const r = await buscarExterno("https://graph.facebook.com/v23.0/x", { provedor: "meta" });
@@ -160,6 +196,41 @@ describe("SSRF: redirecionamento", () => {
     ).rejects.toThrow(/mais de um redirecionamento/i);
   });
 
+  it("credencial nao atravessa para outro host; no mesmo host, atravessa", async () => {
+    const cabecalhosVistos: Record<string, string>[] = [];
+    const fila = [
+      new Response(null, { status: 302, headers: { location: "https://p16-sign.tiktokcdn.com/x" } }),
+      new Response("midia", { status: 200 }),
+      new Response(null, { status: 302, headers: { location: "https://business-api.tiktok.com/y" } }),
+      new Response("mesmo host", { status: 200 }),
+    ];
+    vi.stubGlobal("fetch", async (_url: URL, init: RequestInit) => {
+      cabecalhosVistos.push({ ...(init.headers as Record<string, string>) });
+      return fila.shift()!;
+    });
+    const cabecalhos = { "Access-Token": "tk", Authorization: "Bearer x", Cookie: "s=1", Accept: "*/*" };
+    await buscarExterno("https://business-api.tiktok.com/a", { provedor: "tiktok", cabecalhos });
+    expect(cabecalhosVistos[1]).toEqual({ Accept: "*/*" });
+
+    await buscarExterno("https://business-api.tiktok.com/b", { provedor: "tiktok", cabecalhos });
+    expect(cabecalhosVistos[3]).toEqual(cabecalhos);
+  });
+
+  it("POST e PUT nao seguem redirecionamento (uma chamada so)", async () => {
+    for (const metodo of ["POST", "PUT"] as const) {
+      const chamadas: string[] = [];
+      vi.stubGlobal("fetch", async (url: URL) => {
+        chamadas.push(String(url));
+        return new Response(null, { status: 302, headers: { location: "https://graph.facebook.com/outro" } });
+      });
+      await expect(
+        buscarExterno("https://graph.facebook.com/x", { provedor: "meta", metodo, corpo: "{}" }),
+        metodo,
+      ).rejects.toThrow(/so GET segue/i);
+      expect(chamadas, metodo).toHaveLength(1);
+    }
+  });
+
   it("redirecionamento sem destino e recusado", async () => {
     respondendo(new Response(null, { status: 302 }));
     await expect(
@@ -178,6 +249,19 @@ describe("SSRF: teto de bytes e timeout", () => {
 
   it("o timeout e de 8 s", () => {
     expect(TIMEOUT_MS).toBe(8_000);
+  });
+
+  it("timeout acima de 60 s e cortado; sem timeoutMs vale o padrao", async () => {
+    const espiao = vi.spyOn(AbortSignal, "timeout");
+    try {
+      respondendo(new Response("a", { status: 200 }), new Response("b", { status: 200 }));
+      await buscarExterno("https://api.openai.com/v1/x", { provedor: "openai", timeoutMs: 120_000 });
+      await buscarExterno("https://api.openai.com/v1/x", { provedor: "openai" });
+      expect(espiao.mock.calls.map((c) => c[0])).toEqual([TIMEOUT_MAXIMO_MS, TIMEOUT_MS]);
+      expect(TIMEOUT_MAXIMO_MS).toBe(60_000);
+    } finally {
+      espiao.mockRestore();
+    }
   });
 });
 

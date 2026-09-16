@@ -100,7 +100,7 @@ linhas identicas daria a aparencia de cobertura, nao cobertura.
 
 | REQ | O que exige | Prova | Estado |
 |---|---|---|---|
-| I1-I15 | ordem fixa da rota de maquina, 401 com corpo nulo, idempotencia, segredo so em cabecalho, `state` de uso unico | `tests/seguranca/webhooks.test.ts`, `tests/seguranca/oauth-integracoes.test.ts` | onda 2 |
+| I1-I15 | ordem fixa da rota de maquina, 401 com corpo nulo, idempotencia, segredo so em cabecalho, `state` de uso unico | `tests/seguranca/webhooks.test.ts`, `tests/seguranca/oauth-integracoes.test.ts`, `tests/seguranca/maquina-balde.test.ts` (REQ-I4: balde por integracao so depois da assinatura, entregue) | onda 2 |
 
 ## 10. Borda
 

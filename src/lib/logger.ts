@@ -24,6 +24,19 @@ const CAMPOS_SENSIVEIS = [
   "authorization",
   "cookie",
   "credenciais",
+  // R2 (pagamentos, IA, canais extras). Nunca nome com hífen: quebra o redact no boot.
+  "accessToken",
+  "segredoWebhook",
+  "pagadorCpf",
+  "pagadorEmail",
+  "cpf",
+  "apiKey",
+  "api_key",
+  "access_token",
+  "refresh_token",
+  "page_access_token",
+  "client_secret",
+  "auth_code",
 ] as const;
 
 // Três níveis de profundidade cobrem `campo`, `corpo.campo` e `req.headers.campo`,

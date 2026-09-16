@@ -67,7 +67,14 @@ export type ConfigMaquina<I> = {
   /** Nome do provedor: entra na trilha, no alerta e na chave do limitador. */
   provedor: string;
   limiteIp?: Regra;
-  limiteIntegracao?: Regra;
+  /**
+   * Teto por integracao, contado SO depois de autenticar (REQ-I4): antes da
+   * assinatura, um balde por chave e arma de bloqueio contra a integracao —
+   * qualquer um esgota o balde com POST sem assinatura. `null` desliga o balde:
+   * rota assinada pelo APP (Messenger, TikTok), em que a chave e constante e um
+   * balde so estrangularia todas as contas juntas.
+   */
+  limiteIntegracao?: Regra | null;
   maxBytes?: number;
   /**
    * Chave de roteamento, extraida SEM JSON.parse — da URL ou de cabecalho
@@ -98,10 +105,10 @@ function recusado(provedor: string, motivo: string, ip: string | null): void {
 }
 
 /**
- * Ordem FIXA (§12), e ela nao muda: teto por IP -> teto por integracao ->
- * content-length -> leitura com teto -> carregar integracao -> validade ->
- * assinatura sobre o corpo cru -> (do chamador) anti-repeticao -> persistir ->
- * enfileirar -> 200. NENHUM JSON.parse antes de autenticar.
+ * Ordem FIXA (§12), e ela nao muda: teto por IP -> content-length -> leitura
+ * com teto -> carregar integracao -> validade -> assinatura sobre o corpo cru
+ * -> teto por integracao (so autenticado) -> (do chamador) anti-repeticao ->
+ * persistir -> enfileirar -> 200. NENHUM JSON.parse antes de autenticar.
  */
 export function rotaDeMaquina<I>(cfg: ConfigMaquina<I>): (req: Request) => Promise<Response> {
   return async function tratar(req: Request): Promise<Response> {
@@ -123,16 +130,6 @@ export function rotaDeMaquina<I>(cfg: ConfigMaquina<I>): (req: Request) => Promi
     if (!porIp.permitido) return excesso(porIp.retryAfter);
 
     const chave = cfg.chave(req);
-
-    // 2. Teto por integracao: tira a rajada dirigida a uma integracao so.
-    if (chave !== null) {
-      const porIntegracao = await limitarPorIp(
-        `maquina:${cfg.provedor}:conta`,
-        chave,
-        cfg.limiteIntegracao ?? LIMITE_INTEGRACAO_PADRAO,
-      );
-      if (!porIntegracao.permitido) return excesso(porIntegracao.retryAfter);
-    }
 
     if (req.method === "GET" || req.method === "HEAD") {
       if (!cfg.verificar) return new Response(null, { status: 404 });
@@ -163,6 +160,17 @@ export function rotaDeMaquina<I>(cfg: ConfigMaquina<I>): (req: Request) => Promi
       recusado(cfg.provedor, motivo, ip);
       await esperarAte(inicio);
       return recusa();
+    }
+
+    // 8. Teto por integracao, SO para quem autenticou (REQ-I4): anti-laco do
+    // provedor. Contar antes da assinatura deixaria qualquer um travar a conta.
+    if (cfg.limiteIntegracao !== null && chave !== null) {
+      const porIntegracao = await limitarPorIp(
+        `maquina:${cfg.provedor}:conta`,
+        chave,
+        cfg.limiteIntegracao ?? LIMITE_INTEGRACAO_PADRAO,
+      );
+      if (!porIntegracao.permitido) return excesso(porIntegracao.retryAfter);
     }
 
     try {

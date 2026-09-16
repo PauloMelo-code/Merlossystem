@@ -27,7 +27,7 @@ export type RotaPublica = {
   /** Por que esta rota pode existir sem sessao. Entra no doc e na trava. */
   motivo: string;
   /** Pacote que entrega o arquivo. "fundacao" ja existe. */
-  dono: "fundacao" | "M5";
+  dono: "fundacao" | "M5" | "R2-B" | "R2-D";
 };
 
 export const ROTAS_PUBLICAS: readonly RotaPublica[] = [
@@ -86,6 +86,34 @@ export const ROTAS_PUBLICAS: readonly RotaPublica[] = [
     portao: "proprio",
     motivo: "redirect do provedor: state assinado, validade de 5 min e uso unico",
     dono: "M5",
+  },
+  {
+    caminho: "/api/webhooks/pagamentos/[provedor]/[integracaoId]",
+    metodos: ["POST"],
+    portao: "maquina",
+    motivo: "confirmacao do provedor de pagamento: HMAC da aplicacao da loja e consulta de volta antes de mudar estado",
+    dono: "R2-B",
+  },
+  {
+    caminho: "/api/webhooks/facebook",
+    metodos: ["GET", "POST"],
+    portao: "maquina",
+    motivo: "Meta entrega evento do Messenger: HMAC do corpo cru, token de challenge proprio",
+    dono: "R2-D",
+  },
+  {
+    caminho: "/api/webhooks/tiktok",
+    metodos: ["POST"],
+    portao: "maquina",
+    motivo: "TikTok entrega mensagem direta: HMAC com o segredo do app e carimbo de tempo",
+    dono: "R2-D",
+  },
+  {
+    caminho: "/api/integracoes/tiktok/callback",
+    metodos: ["GET"],
+    portao: "proprio",
+    motivo: "redirect do provedor: state assinado, 5 min, contexto de uso unico e sessao reconferida",
+    dono: "R2-D",
   },
 ] as const;
 

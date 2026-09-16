@@ -8,12 +8,16 @@ Fonte unica de "o que existe e quem alcanca". Sai da arvore canonica de
 
 - `entregue` — o arquivo existe em `src/app` e o portao esta ligado.
 
+- `pacote R2-x` — rota do R2 decidida e ainda sem arquivo; o pacote da onda 3
+  cria o arquivo e troca o estado para `entregue` no mesmo commit.
+
 Desde a integracao da onda 2, TODA rota do R1 esta entregue: nao existe mais
 estado `pacote Mx`.
 
 **O que a trava cobra**: as duas direcoes. "Rota existe em `src/app` implica
 linha nesta tabela" e "linha `entregue` nesta tabela implica arquivo em
-`src/app`" (`tests/seguranca/inventario.test.ts`). Rota nova nasce com a linha
+`src/app`" (`tests/seguranca/inventario.test.ts`). Nenhum estado alem de
+`entregue` e `pacote R2-x` e aceito. Rota nova nasce com a linha
 aqui, no mesmo commit.
 
 **Regras que valem para a tabela toda**
@@ -53,6 +57,10 @@ Item la sem linha aqui reprova em T2.
 | `/api/webhooks/instagram` | GET, POST | maquina | mesmo HMAC, token de challenge proprio do canal | entregue |
 | `/api/webhooks/uazapi/[integracaoId]` | POST | maquina | segredo POR INTEGRACAO, so em cabecalho | entregue |
 | `/api/integracoes/bling/callback` | GET | proprio (OAuth) | redirect do provedor; `state` assinado, uso unico, 5 min | entregue |
+| `/api/webhooks/facebook` | GET, POST | maquina | Meta entrega evento do Messenger; HMAC do corpo cru, challenge proprio | pacote R2-D |
+| `/api/webhooks/tiktok` | POST | maquina | TikTok entrega mensagem direta; HMAC do app + carimbo de tempo | pacote R2-D |
+| `/api/integracoes/tiktok/callback` | GET | proprio (OAuth) | redirect do provedor; `state` assinado, contexto de uso unico, 5 min | pacote R2-D |
+| `/api/webhooks/pagamentos/[provedor]/[integracaoId]` | POST | maquina | HMAC da aplicacao da loja; consulta de volta; simulado so fora de producao | pacote R2-B |
 
 **Nao existem, e nunca existiram**: `/login`, `/registrar`, `/api/register`,
 `/primeiro-acesso/[token]`, `/redefinir-senha/[token]`, `/api/media/*`. Rota
