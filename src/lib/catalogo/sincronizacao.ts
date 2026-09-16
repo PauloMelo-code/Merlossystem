@@ -1,13 +1,14 @@
 import "server-only";
 import { eq, isNotNull } from "drizzle-orm";
-import type { Contexto } from "@/lib/auth/guard";
 import { db } from "@/lib/db/client";
 import { vivosE } from "@/lib/db/consultas";
 import {
   atualizarComTrava,
   atualizarContador,
+  contextoDeSistema,
   emTransacao,
   inserirAuditado,
+  type ContextoDeSistema,
   type Transacao,
 } from "@/lib/db/mutacoes";
 import { produtos, produtos_variacoes } from "@/lib/db/schema/catalogo";
@@ -32,8 +33,9 @@ import { precoDoBling, tamanhoDoRotulo, tamanhosDaGrade, tipoGradeDe } from "./_
  *
  * - casa por `codigo` do Bling = `produtos.sku`, por loja com depósito;
  * - produto sem `codigo` é ignorado (sem SKU não há elo entre os catálogos);
- * - grava só o que mudou, com ator `sistema` e trilha `produto_sincronizado`
- *   ou `produto_preco_alterado`;
+ * - grava só o que mudou, com `contextoDeSistema` (ator ATOR_SISTEMA, que
+ *   também vai em `modified_by`) e trilha `produto_sincronizado` ou
+ *   `produto_preco_alterado`;
  * - variação por TAMANHO da grade; sem variação reconhecível no Bling, cria a
  *   grade com SKU nulo e a reserva degrada para o nível do produto;
  * - produto que some do Bling NÃO é excluído aqui (pedido antigo aponta para
@@ -44,16 +46,6 @@ export type DadosSincronizacao = { integracaoId: string; lojaId?: string | null 
 export type ResumoSincronizacao = { lidos: number; criados: number; alterados: number; ignorados: number };
 
 const PAGINAS_MAXIMAS = 500;
-
-/** Worker não tem sessão: ator `sistema`, `modified_by` nulo (ver docs/modulos/pedidos.md). */
-function contextoDeSistema(lojaId: string): Contexto {
-  return {
-    sessao: undefined as never,
-    escopo: { tipo: "uma", lojaId },
-    autorId: null as unknown as string,
-    origem: "worker",
-  };
-}
 
 type Variacao = { tamanho: string; sku: string | null; blingId: string | null };
 type ProdutoLido = { base: ProdutoBling; sku: string; pesoGramas: number | null; variacoes: Variacao[]; tipo: ReturnType<typeof tipoGradeDe> };
@@ -80,7 +72,7 @@ async function lerProdutoCompleto(conta: ContaBling, base: ProdutoBling): Promis
 
 async function gravarProduto(
   tx: Transacao,
-  ctx: Contexto,
+  ctx: ContextoDeSistema,
   lojaId: string,
   lido: ProdutoLido,
   agora: Date,
@@ -185,8 +177,9 @@ async function lojasComDeposito(lojaId?: string | null): Promise<string[]> {
   return linhas.map((l) => l.id);
 }
 
-async function marcarConta(integracaoId: string, lojaId: string, erro: string | null): Promise<void> {
-  await emTransacao(contextoDeSistema(lojaId), (tx) =>
+/** A conta Bling é da REDE (sem loja): o contexto é de escopo `todas`. */
+async function marcarConta(integracaoId: string, erro: string | null): Promise<void> {
+  await emTransacao(contextoDeSistema({ origem: "worker" }), (tx) =>
     atualizarContador(
       tx,
       lojas_integracoes,
@@ -205,7 +198,6 @@ export async function sincronizarCatalogoBling(
     logger.info({ integracaoId: dados.integracaoId }, "nenhuma loja com depósito do Bling");
     return resumo;
   }
-  const lojaDoContador = idsDeLoja[0]!;
 
   try {
     const conta = await contaBling();
@@ -224,7 +216,7 @@ export async function sincronizarCatalogoBling(
       }
       const agora = new Date();
       for (const lojaId of idsDeLoja) {
-        const ctx = contextoDeSistema(lojaId);
+        const ctx = contextoDeSistema({ origem: "worker", lojaId });
         await emTransacao(ctx, async (tx) => {
           for (const lido of lidos) {
             const r = await gravarProduto(tx, ctx, lojaId, lido, agora);
@@ -234,11 +226,11 @@ export async function sincronizarCatalogoBling(
         });
       }
     }
-    await marcarConta(dados.integracaoId, lojaDoContador, null);
+    await marcarConta(dados.integracaoId, null);
     return resumo;
   } catch (erro) {
     const mensagem = erro instanceof ErroDeIntegracao ? erro.message : "Falha ao sincronizar o catálogo.";
-    await marcarConta(dados.integracaoId, lojaDoContador, mensagem).catch(() => undefined);
+    await marcarConta(dados.integracaoId, mensagem).catch(() => undefined);
     throw erro;
   }
 }

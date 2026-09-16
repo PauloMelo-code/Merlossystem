@@ -24,6 +24,7 @@ vi.mock("@/lib/integracoes/bling/leitura", () => ({
 const { db, pool } = await import("@/lib/db/client");
 const { sql } = await import("drizzle-orm");
 const { sincronizarCatalogoBling } = await import("@/lib/catalogo/sincronizacao");
+const { ATOR_SISTEMA } = await import("@/lib/db/mutacoes");
 const apoio = await import("./pedidos-apoio");
 
 beforeAll(async () => {
@@ -97,10 +98,15 @@ describe("sincronizarCatalogoBling", () => {
     ]);
 
     const trilha = await apoio.umaLinha<{ n: number; sistema: number }>(db, sql`
-      select count(*)::int as n, count(*) filter (where ator_tipo = 'sistema' and ator_id is null)::int as sistema
+      select count(*)::int as n,
+             count(*) filter (where ator_tipo = 'sistema' and ator_id = ${ATOR_SISTEMA})::int as sistema
       from auditoria_eventos where loja_id = ${c.lojaId} and acao = 'produto_sincronizado'`);
     expect(trilha.n).toBeGreaterThan(0);
     expect(trilha.sistema).toBe(trilha.n);
+    const autores = await db.execute(sql`
+      select distinct modified_by from produtos
+      where loja_id = ${c.lojaId} and sku in (${`BL-${s}`}, ${`CP-${s}`})`);
+    expect(autores.rows).toEqual([{ modified_by: ATOR_SISTEMA }]);
 
     const conta = await apoio.umaLinha<{ ultima_sincronizacao: Date | null; ultimo_erro: string | null }>(db, sql`
       select ultima_sincronizacao, ultimo_erro from lojas_integracoes where id = ${bling.contaId}`);
