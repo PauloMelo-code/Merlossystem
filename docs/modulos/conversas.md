@@ -21,31 +21,45 @@ nota interna, transferência, resolver/reabrir/arquivar e tempo real. Fontes:
 | Caminho | Papel |
 |---|---|
 | `src/lib/canais/tipos.ts` | contrato `AdaptadorDeCanal` (§10.1). Puro |
-| `src/lib/canais/normalizacao.ts` | peças puras: JSON que nunca lança, instante, telefone E.164, prévia, classificação de erro |
-| `src/lib/canais/whatsapp-oficial.ts` · `instagram.ts` · `uazapi.ts` | parser do webhook (puro, nunca lança) e envio pela porta HTTP injetada |
+| `src/lib/canais/normalizacao.ts` | peças puras: JSON que nunca lança, instante, telefone E.164 (pela `normalizarTelefone` do módulo de contatos, com o país), prévia, classificação de erro, teto de anexo |
+| `src/lib/canais/whatsapp-oficial.ts` · `instagram.ts` · `uazapi.ts` | parser do webhook (puro, nunca lança) e envio pela porta HTTP injetada; anexo: multipart da Graph (oficial) e base64 (uazapi) |
 | `src/lib/canais/registro.ts` | fábrica única `criarAdaptador(conta)`, credencial do cofre, sem fallback de ambiente |
 | `src/lib/conversas/regras.ts` | bloqueio do composer, aviso inline, cursor `(instante, id)`, escala de entrega. Puro |
 | `src/lib/conversas/_consultas.ts` | leituras de tela (lista, conversa, mensagens, mídias sem `url_externa`, painel, colegas, modelos, respostas, eventos de sistema) |
-| `src/lib/conversas/_consultas-canal.ts` | leituras do caminho de máquina (evento, conta, par, mensagem para envio) |
-| `src/lib/conversas/_gravacao.ts` | regra ÚNICA de mesclagem de conversa, inserção de mensagem, cache da conversa, `registrarProcessamentoEvento` |
+| `src/lib/conversas/_consultas-canal.ts` | leituras do caminho de máquina (evento, conta, par, mensagem para envio, mídia da galeria, anexos da mensagem) |
+| `src/lib/conversas/_gravacao.ts` | regra ÚNICA de mesclagem de conversa, inserção de mensagem, cache da conversa |
+| `src/lib/conversas/_sistema.ts` | mapa `ACAO` → ação da trilha (`mensagem_recebida`, `conversa_criada`, `conversa_arquivada`, `midia_recebida`…) |
 | `src/lib/conversas/ingestao.ts` | job `processar-evento`: conta → loja → contato → conversa → mensagem, descarte registrado |
 | `src/lib/conversas/saida.ts` | COSTURA `registrarEnvio` (consumida por campanhas/agendadas) e `agendarEnvio` |
-| `src/lib/conversas/envio.ts` | job `enviar-mensagem`/`reenviar`: conta da conversa, ritmo por conta, erro classificado |
+| `src/lib/conversas/envio.ts` | job `enviar-mensagem`/`reenviar`: conta da conversa, ritmo por conta, anexo lido do MinIO pela costura `midias/leitura.ts`, erro classificado |
 | `src/lib/conversas/gestao.ts` | operações da tela: enviar/nota, reenviar, transferir, resolver, reabrir, arquivar, prioridade, marcar lida |
 | `src/lib/conversas/leitura.ts` | montagem dos DTOs (`dto.ts`) |
 | `src/lib/conversas/sessao-do-fluxo.ts` | reavaliação da sessão de um stream SSE aberto |
 | `src/lib/actions/conversas.ts` · `src/lib/validadores/conversas.ts` | actions e entradas |
 | `src/server/processadores/mensagens-{entrada,saida}.ts` | traduzem o job para o domínio e publicam o tempo real depois do commit |
 | `src/server/sse.ts` · `src/app/api/eventos/route.ts` | stream SSE |
-| `src/app/(app)/conversas/**` | telas (exceto `painel-venda.tsx` e `seletor-produto.tsx`, do pacote de pedidos) |
+| `src/app/(app)/conversas/**` | telas (exceto `painel-venda.tsx` e `seletor-produto.tsx`, do pacote de pedidos); `anexos.tsx` = botão, prévia e subida pela rota `POST /api/midias` |
 
-## Permissões
+## Actions e permissões
 
-| Chave | Onde |
-|---|---|
-| `conversas:ler` | lista, conversa, histórico, resumo (polling), opções dos filtros |
-| `conversas:escrever` | enviar, nota interna, reenviar, marcar como lida |
-| `conversas:gerir` | transferir, resolver, reabrir, arquivar, prioridade |
+| Action | Chave | Faz |
+|---|---|---|
+| `listarConversas` | `conversas:ler` | página da lista (filtros da URL, cursor) |
+| `opcoesDosFiltros` | `conversas:ler` | contas e etiquetas do filtro |
+| `abrirConversa` | `conversas:ler` | conversa, mensagens, painel, colegas, modelos e respostas |
+| `carregarMensagensAnteriores` | `conversas:ler` | página mais antiga pelo cursor `(ocorrida_em, id)` |
+| `relerConversa` | `conversas:ler` | o mesmo de `abrirConversa`, SEM renovar a inatividade (evento e polling) |
+| `resumoDoAtendimento` | `conversas:ler` | lista e últimas mensagens, SEM renovar a inatividade |
+| `enviarMensagem` | `conversas:escrever` | resposta, nota interna, modelo ou anexo (`midiaId`); enfileira depois do commit |
+| `reenviarMensagemFalha` | `conversas:escrever` | claim atômico de `falhou` e job `reenviar` |
+| `marcarConversaComoLida` | `conversas:escrever` | zera `nao_lidas` |
+| `transferirConversa` | `conversas:gerir` | troca o responsável (só quem atende a loja) |
+| `resolverConversa` · `reabrirConversa` · `arquivarConversa` | `conversas:gerir` | status com trava e "Desfazer" |
+| `mudarPrioridadeDaConversa` | `conversas:gerir` | prioridade com trava e "Desfazer" |
+
+Subir o anexo é da rota do pacote de mídia (`POST /api/midias`, chave
+`midia:enviar`); o botão "Anexar" só aparece para quem tem as duas chaves, em
+número que sobe anexo.
 
 A loja de quem grava é a da PRÓPRIA conversa, conferida pelo escopo da pessoa:
 gestão em "todas as lojas" não escolhe loja nenhuma, e a trilha sai com a loja
@@ -53,6 +67,9 @@ do registro. Conversa de outra loja responde 404.
 
 ## Regras que o código garante
 
+- **Sem pessoa, autor de sistema**: webhook e worker gravam com
+  `contextoDeSistema()` (`@/lib/db/mutacoes`): `modified_by` e `ator_id` são o
+  `ATOR_SISTEMA`. O diário usa `registrarProcessamentoEvento` da fundação.
 - **Conta de saída**: `conversas.integracao_id`. O dado do job não decide, e não
   existe conta de ambiente. Conta desconectada, sem credencial ou de outra loja
   falha fechado com motivo em texto.
@@ -69,6 +86,17 @@ do registro. Conversa de outra loja responde 404.
   nem conversa: fica na projeção do evento, e evento só com descarte vira
   `tipo = 'descartado'`.
 - **Várias mídias = uma mensagem com N linhas**. Card é `metadados.card`.
+- **Anexo de saída**: o arquivo sobe pela rota do pacote de mídia (portão,
+  assinatura dos bytes, pasta `geral`); a mensagem leva só o `midiaId`, que
+  precisa ser mídia VIVA da loja da conversa (senão 404). O anexo nasce com
+  `midia_id`, `baixada = true` e trilha `midia_enviada`; o texto vira legenda.
+  No envio, o binário é lido do MinIO (`lerBinarioDaMidia`), conferido contra o
+  teto do canal e sobe: WhatsApp oficial em dois passos (multipart
+  `/{phone-number-id}/media`, depois a mensagem cita o id), uazapi em base64.
+  Instagram não tem anexo no R1 (o Direct pede URL pública). Anexo excluído
+  antes do envio vira `falhou` com motivo; MinIO fora é transitório.
+- **`externo_id`** depois do envio é estado do provedor (`atualizarEstado`);
+  id repetido pelo provedor não desfaz o envio.
 - **Mídia**: a tela só vê `/api/midias/<midia_id>`. Binário da Meta é baixado com
   a credencial e guardado pela costura do pacote de mídia; URL (uazapi,
   Instagram) nasce em `url_externa` e o job `midia/baixar-de-url` é agendado
@@ -94,50 +122,47 @@ do registro. Conversa de outra loja responde 404.
   12 h de stream fecham com `sessao-invalidada`. `usuario:<id>:revogar` fecha na hora.
 - O evento não carrega conteúdo. A tela reconcilia com leitura completa a cada
   evento e ao reconectar; duas falhas seguidas passam a polling de 15 s.
+- `/api/eventos` lê a loja escolhida só por `escopoDoCookie()` (porta única,
+  T13). As releituras automáticas (evento e polling) usam `relerConversa` e
+  `resumoDoAtendimento`, com `renovaAtividade: false`: leitura que a tela faz
+  sozinha não segura a inatividade de 60 min.
 
 ## Telas
 
 `/conversas` e `/conversas/[id]`: lista (filtros na URL, "Carregar mais",
 pílula de atualizações), conversa (cabeçalho, linha do tempo, composer com nota
-interna, respostas rápidas por `/`, modelo aprovado quando a janela fecha) e
+interna, respostas rápidas por `/`, Anexar por botão, colar ou arrastar com
+prévia e legenda, modelo aprovado quando a janela fecha) e
 painel do contato (pedidos pelo componente do pacote de pedidos, etiquetas,
-outras conversas, opt-out). Resolver, reabrir, arquivar, transferir e mudar
+outras conversas, opt-out; a seção de pedidos é componente de servidor em
+`Suspense` próprio). Resolver, reabrir, arquivar, transferir e mudar
 prioridade executam já, com "Desfazer" por 5 s usando o `updated_at` devolvido.
 
 ## Testes
 
 | Arquivo | Prova |
 |---|---|
-| `tests/unidade/conversas-parsers.test.ts` | parser dos 3 provedores com payload fixo, envio pela porta HTTP, erro classificado |
+| `tests/unidade/conversas-parsers.test.ts` | parser dos 3 provedores com payload fixo, envio pela porta HTTP, upload multipart, erro classificado, tela × adaptador sobre anexo |
 | `tests/unidade/conversas-regras.test.ts` | bloqueios, avisos, uma prova por transição de entrega, cursor, normalização |
 | `tests/unidade/dto-midia.test.ts` | nenhum `url_externa` no caminho de leitura |
-| `tests/integracao/conversas-ingestao.test.ts` | entrada ponta a ponta, idempotência, reabertura, recibos, descarte, `deMim` |
+| `tests/integracao/conversas-ingestao.test.ts` | entrada ponta a ponta, trilha `conversa_criada`/`mensagem_recebida` pelo `ATOR_SISTEMA`, idempotência, reabertura, recibos, descarte, `deMim` |
 | `tests/integracao/contato-upsert.test.ts` | `upsertContatoPorCanal` com contato de CRM sem `whatsapp_id` |
-| `tests/integracao/conversas-envio.test.ts` | envio, reenvio, transitório × permanente, conta da conversa, janela, costura |
-| `tests/integracao/conversas-gestao.test.ts` | Desfazer, colisão, transferência, 404, cursor sem pular, DTO |
+| `tests/integracao/conversas-envio.test.ts` | envio, reenvio, transitório × permanente, conta da conversa, janela, costura com autor de sistema, anexo (multipart, 404 de outra loja, binário que sumiu); config de plataforma fixa, sem env |
+| `tests/integracao/conversas-gestao.test.ts` | Desfazer, colisão, transferência, arquivar com `conversa_arquivada`, 404, cursor sem pular, DTO |
 | `tests/integracao/conversas-sse.test.ts` | fechamento por sessão e por revogação, teto por pessoa antes do global, fan-out |
-| `tests/componentes/conversas-composer.test.tsx` | quatro bloqueios, nota interna, falha com motivo visível |
+| `tests/componentes/conversas-composer.test.tsx` | quatro bloqueios, nota interna, anexo (prévia, legenda, recusa, falha), falha com motivo visível |
 
 Rodar no banco do pacote: `node scripts/db-teste.mjs --sufixo m1` e os testes com
 `DATABASE_URL_TESTE=postgres://dev:dev@localhost:5437/merlostore_test_m1` e
 `REDIS_URL=redis://localhost:6382/1`.
 
-## Pendências (dependem de arquivo de outro dono)
+## Limites conhecidos
 
-- `upsertContatoPorCanal` (`src/lib/db/mutacoes.ts`) não reconhece a colisão de
-  telefone porque o Drizzle 0.45 embrulha o erro do pg em `cause`. A ingestão
-  roda o passo 2 antes, pelo helper com trava, até a correção.
-- `ACOES_AUDITADAS` não tem `mensagem_recebida`, `conversa_criada` nem
-  `conversa_arquivada`: gravam com a ação mais próxima (`_sistema.ts`), e o
-  `depois` da trilha carrega a verdade.
-- `ATOR_SISTEMA` não existe: worker e webhook gravam com autor nulo.
-- `externo_id` não está em `ESTADOS_DE_SISTEMA.conversas_mensagens`: o id do
-  provedor é gravado por `atualizarComTrava`.
-- `MetadadosMensagem` não declara `modelo` nem `enviada_pelo_aparelho`.
-- Envio de mídia pela tela: falta costura de leitura do binário (pacote de
-  mídia) e `buscarExterno` só aceita corpo texto (upload multipart da Graph).
-  Sem isso não há botão "Anexar" (nada de tela de fachada).
 - O contador "N sem resposta" do topo da lista só se atualiza na navegação
   (vem do servidor com a página).
-- `executarAcao` não aceita `renovaAtividade: false`: o polling de degradação
-  renova a atividade da sessão.
+- Uma mídia por mensagem de saída (é o que o composer manda). Instagram sem
+  anexo até a Graph aceitar binário no Direct.
+- O menu da conversa leva à ficha do contato (`/contatos/[id]`) para etiquetar
+  e para os pedidos do titular (LGPD): as actions são do módulo de contatos.
+- A costura `registrarEnvio` aceita `midiaId`; campanha e agendada ainda não o
+  usam.
