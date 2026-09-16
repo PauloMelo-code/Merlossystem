@@ -114,6 +114,10 @@ const esquema = z
     S3_REGION: z.string().min(1),
 
     // -- E-mail (convite, reset, avisos de segurança) ----------------------
+    /**
+     * `desligado` vale em qualquer ambiente (ADR 0062): convite pelo link
+     * mostrado uma vez, senha pela recuperação assistida, aviso no sino.
+     */
     EMAIL_PROVEDOR: z.string().min(1).optional(),
     EMAIL_REMETENTE: z.email().optional(),
     EMAIL_API_KEY: z.string().min(1).optional(),
@@ -153,9 +157,11 @@ const esquema = z
 
     if (v.NODE_ENV === "production") {
       exigir("DATABASE_URL_MIGRACAO", "em HML e PRD: é o papel que aplica a migração");
-      exigir("EMAIL_PROVEDOR", "em HML e PRD: convite e reset saem por e-mail");
-      exigir("EMAIL_REMETENTE", "em HML e PRD: convite e reset saem por e-mail");
-      exigir("EMAIL_API_KEY", "em HML e PRD: convite e reset saem por e-mail");
+      exigir("EMAIL_PROVEDOR", 'em HML e PRD: o nome do provedor ou "desligado"');
+      if (v.EMAIL_PROVEDOR !== "desligado") {
+        exigir("EMAIL_REMETENTE", "em HML e PRD com provedor de e-mail");
+        exigir("EMAIL_API_KEY", "em HML e PRD com provedor de e-mail");
+      }
       exigir("SONDA_SEGREDO", "em HML e PRD: sem ela /api/pronto recusa toda sonda");
     }
 

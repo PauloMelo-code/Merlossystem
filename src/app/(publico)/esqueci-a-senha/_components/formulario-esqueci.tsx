@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Campo } from "@/components/comum/campo";
 import { pedirLinkDeSenha } from "../../_components/porta-de-auth";
+import { ORIENTACAO_SEM_EMAIL } from "./textos";
 
 /**
  * Pedido de link (04-ui.md §5.1).
@@ -13,11 +14,23 @@ import { pedirLinkDeSenha } from "../../_components/porta-de-auth";
  * Um estado de sucesso só, com o mesmo texto para conta existente e
  * inexistente. O botão fica desabilitado depois do envio para a pessoa não
  * martelar o pedido — o cooldown de verdade é do servidor.
+ *
+ * `emailDesligado` (ADR 0062): o texto não promete e-mail que não sai; manda
+ * procurar o administrador, igual para toda conta.
  */
-export function FormularioEsqueci() {
+export function FormularioEsqueci({ emailDesligado = false }: { emailDesligado?: boolean }) {
   const [email, setEmail] = useState("");
   const [enviado, setEnviado] = useState(false);
   const [ocupado, setOcupado] = useState(false);
+
+  if (enviado && emailDesligado) {
+    return (
+      <div role="status" className="flex flex-col gap-2">
+        <p className="text-corpo">Pedido registrado.</p>
+        <p className="text-denso text-muted-foreground">{ORIENTACAO_SEM_EMAIL}</p>
+      </div>
+    );
+  }
 
   if (enviado) {
     return (

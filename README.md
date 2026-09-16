@@ -59,24 +59,25 @@ que valida tudo com Zod e falha no boot se faltar algo.
 
 ### E-mail: ainda sem provedor
 
-O provedor transacional **não foi escolhido** (pendência do Paulo, antes do primeiro
-convite real). Até lá, **nenhum e-mail de segurança sai** — convite, redefinição de senha
-e avisos de conta:
+O provedor transacional **não foi escolhido** (pendência do Paulo). Até lá, a instalação
+roda com `EMAIL_PROVEDOR=desligado` (ADR 0062), aceito em qualquer ambiente e sem
+`EMAIL_REMETENTE` nem `EMAIL_API_KEY`. Fora de produção, a variável ausente vale o mesmo.
+Em produção ela é obrigatória: o nome do provedor ou `desligado`.
 
-| Situação | O que acontece |
+Com o e-mail desligado, **nenhum e-mail sai**, e cada caso tem outro caminho:
+
+| Caso | Caminho |
 |---|---|
-| Dev/teste, `EMAIL_PROVEDOR` vazio | o worker registra um aviso **sem o link** e o job falha: retentativas, depois a DLQ `bull:emails:dlq`, com `email_seguranca_falhou` na trilha |
-| HML/PRD, `EMAIL_PROVEDOR` com qualquer valor | o `env.ts` exige as três chaves, o app sobe, e o transporte recusa o provedor desconhecido: mesma DLQ, mais o alerta |
+| Convite | a tela de usuários mostra o link **uma vez** a quem convidou (sessão fresca); entregue por canal seguro. "Reenviar" gera link novo e invalida o anterior |
+| Esqueci a senha | a resposta continua igual para toda conta; a tela orienta procurar o administrador, que faz a **recuperação assistida** |
+| Avisos de conta (senha, fator, chave de acesso, e-mail, bloqueio) | viram alerta **Aviso de segurança** no sino, só para dono e admin |
+| Troca de e-mail pela própria pessoa | o código não chega ao endereço novo: o pedido vence sozinho |
 
-**O link do convite nunca vai para o log**, nem em dev: ele carrega o token, e token em log
-é proibido pela régua de segurança. Em dev, o link sai por dois caminhos só:
+**O link do convite nunca vai para o log, nem para a fila**: ele carrega o token. Em dev,
+o primeiro dono sai por `npm run primeiro-dono -- <e-mail>`, que imprime o link uma vez no
+terminal.
 
-- **primeiro dono**: `npm run primeiro-dono -- <e-mail>` imprime o link uma vez no terminal;
-- **demais convites**: a emissão (`emitirConvite`, em `src/lib/auth/convites.ts`) devolve
-  o link para quem emitiu.
-
-O convite vale **24 horas**. Convite que morreu na DLQ provavelmente já venceu: emita outro
-em vez de reenfileirar.
+O convite vale **24 horas**. Link perdido: use "Reenviar" na lista de convites.
 
 **Quando o provedor for escolhido**, nesta ordem:
 

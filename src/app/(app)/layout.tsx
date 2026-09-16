@@ -3,7 +3,8 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
-import { condicaoDeLoja, vivos, vivosE } from "@/lib/db/consultas";
+import { vivos, vivosE } from "@/lib/db/consultas";
+import { alertasVisiveis } from "@/lib/alertas/visibilidade";
 import { alertas } from "@/lib/db/schema/alertas";
 import { lojas } from "@/lib/db/schema/lojas";
 import { usuarios } from "@/lib/db/schema/auth/usuarios";
@@ -63,7 +64,7 @@ export default async function LayoutDoAplicativo({ children }: { children: React
 
   const filtroDoSino = vivosE(
     alertas,
-    condicaoDeLoja(alertas, escopo),
+    alertasVisiveis(escopo, sessao.papel),
     isNull(alertas.reconhecido_em),
     isNull(alertas.resolvido_em),
   );

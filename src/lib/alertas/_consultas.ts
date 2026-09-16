@@ -2,7 +2,9 @@ import "server-only";
 import { and, count, eq, inArray, isNotNull, isNull, sql, type SQL } from "drizzle-orm";
 import type { EscopoLoja } from "@/lib/auth/loja";
 import { db } from "@/lib/db/client";
-import { condicaoDeLoja, vivosE } from "@/lib/db/consultas";
+import { vivosE } from "@/lib/db/consultas";
+import type { Papel } from "@/lib/db/schema/_enums/auth";
+import { alertasVisiveis } from "./visibilidade";
 import type { Transacao } from "@/lib/db/mutacoes";
 import { alertas } from "@/lib/db/schema/alertas";
 import { minutosDeSlaSql, venceEmSql } from "@/lib/sla/prazo";
@@ -235,6 +237,8 @@ export async function conversasComSlaMarcado(
 // -- Tela --------------------------------------------------------------------
 
 export type FiltrosAlertas = {
+  /** Quem lê: `aviso_seguranca` só aparece para dono e admin (ADR 0062). */
+  papel: Papel;
   tipo?: TipoAlerta | undefined;
   severidade?: Severidade | undefined;
   reconhecido?: "sim" | "nao" | undefined;
@@ -262,7 +266,7 @@ export type AlertaNaLista = {
 /** Só os abertos: resolvido é assunto encerrado e some da central. */
 function filtroDaTela(escopo: EscopoLoja, f: Omit<FiltrosAlertas, "cursor" | "direcao" | "porPagina">) {
   return [
-    condicaoDeLoja(alertas, escopo),
+    alertasVisiveis(escopo, f.papel),
     isNull(alertas.resolvido_em),
     f.tipo ? eq(alertas.tipo, f.tipo) : undefined,
     f.severidade ? eq(alertas.severidade, f.severidade) : undefined,
@@ -313,6 +317,7 @@ export type ContadoresAlertas = { abertos: number; naoReconhecidos: number; crit
 
 export async function contarAlertas(
   escopo: EscopoLoja,
+  papel: Papel,
   leitor: Leitor = db,
 ): Promise<ContadoresAlertas> {
   const [linha] = await leitor
@@ -322,7 +327,7 @@ export async function contarAlertas(
       criticos: sql<number>`count(*) filter (where ${alertas.severidade} = 'critica')`,
     })
     .from(alertas)
-    .where(and(vivosE(alertas, condicaoDeLoja(alertas, escopo), isNull(alertas.resolvido_em))));
+    .where(and(vivosE(alertas, alertasVisiveis(escopo, papel), isNull(alertas.resolvido_em))));
   return {
     abertos: Number(linha?.abertos ?? 0),
     naoReconhecidos: Number(linha?.naoReconhecidos ?? 0),

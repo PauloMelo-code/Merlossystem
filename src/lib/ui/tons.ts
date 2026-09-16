@@ -169,6 +169,7 @@ const TIPO_ALERTA_TONS: Record<TipoAlerta, Entrada> = {
   integracao_com_erro: { rotulo: "Integração com erro", tom: "neutro" },
   espelho_divergente: { rotulo: "Dados divergentes", tom: "neutro" },
   pagamento_conferir: { rotulo: "Pagamento para conferir", tom: "neutro" },
+  aviso_seguranca: { rotulo: "Aviso de segurança", tom: "neutro" },
 };
 
 const ESTAGIO_NEGOCIO_TONS: Record<EstagioNegocio, Entrada> = {

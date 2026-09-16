@@ -1,7 +1,10 @@
 import "server-only";
+import { sql } from "drizzle-orm";
 import type { Contexto } from "@/lib/auth/guard";
 import type { Transacao } from "@/lib/db/mutacoes";
+import { ErroDeEscopo } from "@/lib/erros";
 import { reconhecer } from "./escrita";
+import { TIPO_AVISO_SEGURANCA, veAvisoDeSeguranca } from "./visibilidade";
 
 /**
  * API pública do módulo `alertas` (03-arquitetura.md §4.2): regras, geração,
@@ -21,13 +24,20 @@ export { rotaDoAlerta, TIPOS_GERADOS_R1 } from "./regras";
 /**
  * A pessoa só RECONHECE (marca ciência). Nunca resolve: `resolvido_em` é do
  * gerador. Escopo e trava de colisão vão para a gravação — alerta de outra loja
- * vira 404, e duas pessoas reconhecendo ao mesmo tempo, 409.
+ * vira 404, e duas pessoas reconhecendo ao mesmo tempo, 409. Aviso de
+ * segurança que o papel não vê também é 404 (ADR 0062).
  */
 export async function reconhecerAlerta(
   dados: { id: string; updatedAt: Date },
   ctx: Contexto,
   tx: Transacao,
 ): Promise<void> {
+  if (!veAvisoDeSeguranca(ctx.sessao.papel)) {
+    const linhas = await tx.execute<{ tipo: string }>(
+      sql`select tipo from alertas where id = ${dados.id}::uuid and is_deleted = false`,
+    );
+    if (linhas.rows[0]?.tipo === TIPO_AVISO_SEGURANCA) throw new ErroDeEscopo();
+  }
   await reconhecer(
     tx,
     { id: dados.id, escopo: ctx.escopo, updatedAtOriginal: dados.updatedAt },

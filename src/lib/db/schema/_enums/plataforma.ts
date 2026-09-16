@@ -80,6 +80,8 @@ export const TIPOS_ALERTA = [
   "espelho_divergente",
   /** Pagamento que o provedor e o sistema não fecham sozinhos (R2-B, ADR 0044). */
   "pagamento_conferir",
+  /** Aviso de conta que sairia por e-mail, com o e-mail desligado: só dono e admin veem (ADR 0062). */
+  "aviso_seguranca",
 ] as const;
 export type TipoAlerta = (typeof TIPOS_ALERTA)[number];
 

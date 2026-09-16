@@ -42,6 +42,7 @@ export async function centralDeAlertas(bruto: unknown): Promise<Resultado<Centra
           listarAlertas(
             ctx.escopo,
             {
+              papel: ctx.sessao.papel,
               tipo: dados.tipo,
               severidade: dados.severidade,
               reconhecido: dados.reconhecido,
@@ -51,7 +52,7 @@ export async function centralDeAlertas(bruto: unknown): Promise<Resultado<Centra
             },
             tx,
           ),
-          contarAlertas(ctx.escopo, tx),
+          contarAlertas(ctx.escopo, ctx.sessao.papel, tx),
         ]);
         return {
           pagina: { ...pagina, itens: pagina.itens.map((a) => ({ ...a, rota: rotaDoAlerta(a) })) },

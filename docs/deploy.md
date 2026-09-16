@@ -183,14 +183,18 @@ classico para uma conta padrao ficar viva em producao.
 
 ### E-mail em HML e PRD
 
-`src/lib/env.ts` exige `EMAIL_PROVEDOR`, `EMAIL_REMETENTE` e `EMAIL_API_KEY`
-em producao. **O provedor ainda nao foi escolhido**: o transporte em
-`src/server/processadores/emails.ts` so reconhece "sem provedor". Com qualquer
-valor em `EMAIL_PROVEDOR`, o app sobe, mas todo e-mail de seguranca (convite,
-redefinicao, avisos) falha, e o job vai para a DLQ com
-`email_seguranca_falhou` na trilha e alerta. Ou seja: **sem provedor, nenhum
-convite chega por e-mail em HML nem em PRD**. O que preencher quando o provedor
-for escolhido esta no `README.md`.
+**O provedor ainda nao foi escolhido.** Em HML e PRD, configure
+`EMAIL_PROVEDOR=desligado` (ADR 0062): o app sobe sem `EMAIL_REMETENTE` e sem
+`EMAIL_API_KEY`, e nenhum e-mail sai. O convite e entregue pelo link mostrado
+uma vez a quem convidou, a senha esquecida passa pela recuperacao assistida e
+os avisos de conta aparecem no sino de dono e admin. `EMAIL_PROVEDOR` continua
+obrigatoria em producao: o nome do provedor ou `desligado`, escrito de
+proposito.
+
+Com um nome de provedor que o transporte de
+`src/server/processadores/emails.ts` ainda nao conhece, o app sobe, mas todo
+e-mail de seguranca falha e vai para a DLQ com `email_seguranca_falhou` e
+alerta. O que preencher quando o provedor for escolhido esta no `README.md`.
 
 ---
 

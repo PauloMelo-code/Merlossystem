@@ -51,6 +51,7 @@ anterior.
 | [0032](0032-helpers-de-sistema-e-migracao-0018.md) | Helpers de sistema em `mutacoes-sistema.ts` e listas fechadas da 0018 | Aceito |
 | [0033](0033-alcance-da-anonimizacao.md) | Alcance completo da anonimizacao LGPD | Aceito |
 | [0034](0034-ritmo-constante-por-provedor.md) | Ritmo de envio constante por provedor | Aceito |
+| [0062](0062-email-desligado.md) | E-mail desligado como modo de operacao (0035 a 0061 sao do R2, registrados no FR14) | Aceito |
 
 ### Historico (sistema anterior)
 

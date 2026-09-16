@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import type { Job } from "bullmq";
-import type { AssuntoDeSeguranca, DadosEmailSeguranca } from "@/lib/auth/emails";
+import { avisarNoSino, ehAvisoSemLink } from "@/lib/auth/avisos-no-sino";
+import { emailDesligado, type AssuntoDeSeguranca, type DadosEmailSeguranca } from "@/lib/auth/emails";
 import { registrarEventoAuth } from "@/lib/auth/trilha";
 import { db } from "@/lib/db/client";
 import { vivos } from "@/lib/db/consultas";
@@ -91,8 +92,9 @@ function corpo(dados: DadosEmailSeguranca, nome: string): string {
 async function entregar(mensagem: MensagemDeSeguranca): Promise<RespostaDoProvedor> {
   const provedor = env.EMAIL_PROVEDOR;
   if (!provedor || !env.EMAIL_REMETENTE || !env.EMAIL_API_KEY) {
-    // Dev e teste: `env.ts` só exige EMAIL_* em produção. Nem o assunto entra no
-    // log — "reset de senha para fulano" já é informação sobre a conta.
+    // Dev e teste com provedor pela metade: `env.ts` só exige EMAIL_* em
+    // produção. O destinatário não entra no log — "reset de senha para
+    // fulano" já é informação sobre a conta.
     logger.warn({ assunto: mensagem.assunto }, "e-mail de segurança não enviado: sem provedor");
     return { enviado: false, motivo: "sem provedor configurado" };
   }
@@ -101,6 +103,16 @@ async function entregar(mensagem: MensagemDeSeguranca): Promise<RespostaDoProved
 
 export async function emailSeguranca(job: Job<DadosEmailSeguranca>): Promise<void> {
   const dados = job.data;
+  if (emailDesligado()) {
+    // ADR 0062. Job com link (enfileirado antes de desligar) é descartado sem
+    // tocar no link: nem log, nem DLQ.
+    if (dados.link === undefined && ehAvisoSemLink(dados.assunto)) {
+      await avisarNoSino({ usuarioId: dados.usuarioId, assunto: dados.assunto, referencia: String(job.id) });
+    } else {
+      logger.warn({ assunto: dados.assunto }, "e-mail de segurança descartado: envio desligado");
+    }
+    return;
+  }
   const [pessoa] = await db
     .select({ nome: usuarios.nome, email: usuarios.email })
     .from(usuarios)

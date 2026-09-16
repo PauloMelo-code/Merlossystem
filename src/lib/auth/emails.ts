@@ -42,6 +42,16 @@ export type DadosEmailSeguranca = {
   ip?: string | null;
 };
 
+/**
+ * `EMAIL_PROVEDOR=desligado` (ou ausente fora de produção): a instalação não
+ * manda e-mail nenhum, por decisão (ADR 0062). Convite sai pelo link mostrado
+ * uma vez a quem convidou; senha esquecida, pela recuperação assistida; aviso
+ * de conta, pelo sino de dono e admin.
+ */
+export function emailDesligado(): boolean {
+  return env.EMAIL_PROVEDOR === undefined || env.EMAIL_PROVEDOR === "desligado";
+}
+
 // ponytail: a fila `emails` nasce aqui porque F5 precisa dela antes de F9
 // existir. F9 move a construção para `src/lib/fila/filas.ts` e este arquivo
 // passa a importar de lá — a assinatura de `enfileirarEmailSeguranca` não muda.
@@ -73,6 +83,9 @@ export function enfileirarEmailSeguranca(
   link?: string,
   extras: { paraEmail?: string; ip?: string | null } = {},
 ): void {
+  // Com o e-mail desligado, o link com token nunca sai da memória: nem Redis,
+  // nem log, nem DLQ. O aviso sem link segue para o worker, que o põe no sino.
+  if (link !== undefined && emailDesligado()) return;
   const dados: DadosEmailSeguranca = {
     assunto,
     usuarioId,

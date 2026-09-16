@@ -46,6 +46,8 @@ const TAGS = [
   /** R2 (onda 3): uma migração gerada para os cinco pacotes e uma custom. ADRs 0035–0061 (0031–0057 nos finais, +4). */
   "0019_r2",
   "0020_r2_integridade",
+  /** E-mail desligado: tipo de alerta `aviso_seguranca` (ADR 0062). Não cria tabela. */
+  "0021_aviso_seguranca",
 ];
 
 const arquivos = readdirSync(PASTA)
@@ -54,7 +56,7 @@ const arquivos = readdirSync(PASTA)
 const sql = arquivos.map((nome) => ({ nome, texto: readFileSync(join(PASTA, nome), "utf8") }));
 
 describe("migrações", () => {
-  it("são as de 01-dados.md §9, a 0017 e a 0018 da fundação e as duas do R2, na ordem", () => {
+  it("são as de 01-dados.md §9, a 0017 e a 0018 da fundação, as duas do R2 e a 0021, na ordem", () => {
     expect(arquivos).toEqual(TAGS.map((t) => `${t}.sql`));
     const diario = JSON.parse(readFileSync(join(PASTA, "meta", "_journal.json"), "utf8")) as {
       entries: { idx: number; tag: string }[];

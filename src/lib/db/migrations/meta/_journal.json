@@ -148,6 +148,13 @@
       "when": 1789573425230,
       "tag": "0020_r2_integridade",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1789575703455,
+      "tag": "0021_aviso_seguranca",
+      "breakpoints": true
     }
   ]
 }
