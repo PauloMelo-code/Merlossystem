@@ -25,13 +25,14 @@ export const COMERCIAL: MapaPermissao = {
   "agendamentos:editar": OPERACAO,
   /** Exceção escrita de INV-20: é cancelamento LÓGICO, não exclusão. */
   "agendamentos:cancelar": OPERACAO,
-  "campanhas:criar": OPERACAO,
   "campanhas:editar": OPERACAO,
   "respostas:criar": OPERACAO,
   "respostas:editar": OPERACAO,
   "modelos:criar": OPERACAO,
   "modelos:editar": OPERACAO,
 
+  /** Criar campanha já é decidir quem recebe: gerente para cima (05 §6 M6). */
+  "campanhas:criar": GESTAO,
   /** Iniciar/retomar disparo — gasta janela de 24 h e reputação do número. */
   "campanhas:disparar": GESTAO,
   "modelos:enviar_aprovacao": GESTAO,

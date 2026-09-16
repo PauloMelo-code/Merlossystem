@@ -42,6 +42,8 @@ export type ConfigAcao<E extends z.ZodType, T> = {
   provisoria?: boolean;
   /** Área `/perfil/seguranca`: aceita quem está com `precisa_trocar_senha`. */
   trocaDeSenha?: boolean;
+  /** `false` SÓ em polling (degradação do SSE): leitura automática não é uso. */
+  renovaAtividade?: false;
   revalidar?: readonly string[];
   executar: (dados: z.output<E>, ctx: Contexto, tx: Transacao) => Promise<T>;
 };
@@ -120,6 +122,7 @@ export async function executarAcao<E extends z.ZodType, T>(
     const opcoes = {
       ...(cfg.provisoria === undefined ? {} : { provisoria: cfg.provisoria }),
       ...(cfg.trocaDeSenha === undefined ? {} : { trocaDeSenha: cfg.trocaDeSenha }),
+      ...(cfg.renovaAtividade === undefined ? {} : { renovaAtividade: cfg.renovaAtividade }),
     };
     const sessao: Sessao = cfg.fresca
       ? await exigirSessaoFresca(opcoes)

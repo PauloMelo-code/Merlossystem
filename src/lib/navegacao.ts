@@ -140,7 +140,7 @@ export const NAVEGACAO: readonly ItemNav[] = [
     rota: "/relatorios",
     icone: "relatorios",
     grupo: "Gestão",
-    permissao: "pedidos:ler",
+    permissao: "relatorios:ler",
     fase: "R1",
   },
   {

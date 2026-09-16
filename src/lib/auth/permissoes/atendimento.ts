@@ -20,6 +20,8 @@ export const ATENDIMENTO: MapaPermissao = {
   "contatos:editar": OPERACAO,
   "contatos:optout": OPERACAO,
   "midia:enviar": OPERACAO,
+  /** Pasta e etiquetas da galeria; o vendedor só alcança a própria loja pelo escopo. */
+  "midia:editar": OPERACAO,
   "alertas:reconhecer": OPERACAO,
 
   "contatos:excluir": GESTAO,
