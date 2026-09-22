@@ -105,6 +105,8 @@ export const UAZAPI_ENDPOINTS = {
   baixarMidia: "/message/download",
   /** Pede ao celular as mensagens anteriores de um chat. Chegam pelo evento `history`. */
   historico: "/message/history-sync",
+  /** Lista as conversas da instancia. Corpo: `{ sort, limit, offset, wa_isGroup }`. */
+  chats: "/chat/find",
 } as const
 
 /**

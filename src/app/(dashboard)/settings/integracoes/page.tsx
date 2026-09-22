@@ -113,6 +113,29 @@ export default function IntegracoesPage() {
     if (!gerarQr) carregar()
   }
 
+  /** Pede ao celular o histórico das conversas recentes deste número. */
+  async function puxarHistorico(item: Integracao) {
+    const confirmado = window.confirm(
+      `Puxar o histórico de "${item.rotulo}"?\n\n` +
+        `O pedido vai ao celular do número e as mensagens antigas chegam aos poucos. ` +
+        `Mantenha o aparelho ligado e com internet.`
+    )
+    if (!confirmado) return
+
+    toast.info("Pedindo o histórico ao WhatsApp…")
+    const res = await fetch(`/api/integracoes/uazapi/${item.id}/historico`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conversas: 20, mensagens: 50 }),
+    })
+    const d = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      toast.error(d.error || "Não foi possível puxar o histórico.")
+      return
+    }
+    toast.success(d.aviso ?? "Pedido enviado.")
+  }
+
   /** Aponta o webhook da conta para este sistema (uazapi). */
   async function apontarWebhook(item: Integracao) {
     const res = await fetch(`/api/integracoes/uazapi/${item.id}/webhook`, { method: "POST" })
@@ -256,6 +279,9 @@ export default function IntegracoesPage() {
                         mensagem chega no WhatsApp e nunca aparece aqui. */}
                     <Button variant="outline" size="sm" onClick={() => apontarWebhook(item)}>
                       Apontar webhook
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => puxarHistorico(item)}>
+                      Puxar histórico
                     </Button>
                   </>
                 )}

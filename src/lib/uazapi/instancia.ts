@@ -142,6 +142,23 @@ export async function configurarWebhook(token: string): Promise<void> {
 }
 
 /**
+ * As conversas que a instancia conhece, da mais recente para a mais antiga.
+ * Grupo fica de fora: o sistema nao atende grupo.
+ */
+export async function listarChats(token: string, limite = 20): Promise<string[]> {
+  const d = await chamar(UAZAPI_ENDPOINTS.chats, token, "POST", {
+    sort: "-wa_lastMsgTimestamp",
+    limit: Math.min(Math.max(limite, 1), 50),
+    offset: 0,
+    wa_isGroup: false,
+  })
+  const lista = Array.isArray(d.chats) ? d.chats : Array.isArray(d) ? d : []
+  return lista
+    .map((c) => (c as Record<string, unknown>)?.wa_chatid)
+    .filter((id): id is string => typeof id === "string" && id.endsWith("@s.whatsapp.net"))
+}
+
+/**
  * Pede ao celular as mensagens anteriores de uma conversa. O WhatsApp responde
  * quando quer e em lotes, pelo evento `history` — por isso nao devolve as
  * mensagens aqui, so registra o pedido.

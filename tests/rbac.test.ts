@@ -16,8 +16,8 @@ const pares = rotas.flatMap((r) =>
 )
 
 describe("cobertura", () => {
-  it("as 60 rotas protegidas entram na avaliacao", () => {
-    expect(rotas.length).toBe(60)
+  it("as 61 rotas protegidas entram na avaliacao", () => {
+    expect(rotas.length).toBe(61)
     expect(pares.length).toBeGreaterThan(60)
   })
 

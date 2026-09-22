@@ -30,8 +30,8 @@ const PUBLICAS_ESPERADAS = [
 describe("superficie publica da API", () => {
   const rotas = rotasNoDisco()
 
-  it("encontra as 72 rotas", () => {
-    expect(rotas.length).toBe(72)
+  it("encontra as 73 rotas", () => {
+    expect(rotas.length).toBe(73)
   })
 
   it("as publicas sao exatamente as 12 esperadas", () => {
@@ -39,9 +39,9 @@ describe("superficie publica da API", () => {
     expect(publicas).toEqual([...PUBLICAS_ESPERADAS].sort())
   })
 
-  it("as outras 60 exigem sessao", () => {
+  it("as outras 61 exigem sessao", () => {
     const protegidas = rotas.filter((r) => !ehApiPublica(r))
-    expect(protegidas.length).toBe(60)
+    expect(protegidas.length).toBe(61)
     expect(protegidas).toContain("/api/contacts/[id]")
     expect(protegidas).toContain("/api/lgpd")
   })
