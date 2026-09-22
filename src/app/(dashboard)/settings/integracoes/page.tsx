@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { SkeletonTable } from "@/components/ui/skeleton"
 import { toast } from "sonner"
 import { ConectarConta } from "./_components/conectar-conta"
-import { CriarNumero, SeletorDeVendedora, usarPessoas } from "./_components/numero-uazapi"
+import { CriarNumero, SeletorDeVendedora, usePessoas } from "./_components/numero-uazapi"
 
 interface Integracao {
   id: string
@@ -67,7 +67,7 @@ export default function IntegracoesPage() {
   const [semPermissao, setSemPermissao] = useState(false)
   const [sessaoDe, setSessaoDe] = useState<string | null>(null)
   const [estado, setEstado] = useState<EstadoSessao | null>(null)
-  const pessoas = usarPessoas()
+  const pessoas = usePessoas()
 
   const carregar = useCallback(async () => {
     setCarregando(true)

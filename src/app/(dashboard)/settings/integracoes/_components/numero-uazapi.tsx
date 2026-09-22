@@ -32,7 +32,8 @@ export type Pessoa = { id: string; name: string; role: string }
 /** Quem pode ser dona de um numero: quem atende. */
 const ATENDE = ["vendedor", "gerente", "admin"]
 
-export function usarPessoas(): Pessoa[] {
+/** Nome em ingles por exigencia do React: hook precisa comecar com "use". */
+export function usePessoas(): Pessoa[] {
   const [pessoas, setPessoas] = useState<Pessoa[]>([])
   useEffect(() => {
     fetch("/api/usuarios")
