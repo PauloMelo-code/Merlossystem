@@ -16,8 +16,8 @@ const pares = rotas.flatMap((r) =>
 )
 
 describe("cobertura", () => {
-  it("as 61 rotas protegidas entram na avaliacao", () => {
-    expect(rotas.length).toBe(61)
+  it("as 62 rotas protegidas entram na avaliacao", () => {
+    expect(rotas.length).toBe(62)
     expect(pares.length).toBeGreaterThan(60)
   })
 
@@ -179,6 +179,22 @@ describe("casos que motivaram o RBAC", () => {
       expect(podeAcessar("gerente", "/api/lojas", metodo), `gerente ${metodo}`).toBe(false)
       expect(podeAcessar("admin", "/api/lojas", metodo), `admin ${metodo}`).toBe(true)
     }
+  })
+
+  it("a lista de numeros e operacao; a de integracoes continua so do admin", () => {
+    // A vendedora precisa dos numeros para filtrar a caixa de entrada por
+    // "cada numero tem o seu atendimento". A rota devolve apelido, canal e
+    // responsavel — nunca credencial. Se a regra geral de /api/integracoes
+    // passar a vir antes desta, o filtro morre para quem mais usa.
+    for (const papel of ["vendedor", "gerente", "viewer"] as const) {
+      expect(podeAcessar(papel, "/api/integracoes/numeros", "GET"), papel).toBe(true)
+      // O resto da area de integracao segue fechado.
+      expect(podeAcessar(papel, "/api/integracoes", "GET"), papel).toBe(false)
+      expect(podeAcessar(papel, "/api/integracoes/abc", "GET"), papel).toBe(false)
+      expect(podeAcessar(papel, "/api/integracoes/uazapi", "POST"), papel).toBe(false)
+    }
+    // Escrever num caminho que so tem GET liberado cai no padrao fechado.
+    expect(podeAcessar("vendedor", "/api/integracoes/numeros", "POST")).toBe(false)
   })
 
   it("metodo fora da tabela fecha", () => {

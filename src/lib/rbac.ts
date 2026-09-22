@@ -56,6 +56,17 @@ const EXCECOES: { re: RegExp; metodos: Partial<Record<Metodo, Role[]>>; motivo: 
   // === Area de CONFIGURACAO — so admin, em qualquer metodo =================
   // `gerente` pode tudo menos configuracao e usuario (docs/rbac.md).
   {
+    // ANTES da regra geral de integracoes (a primeira que casa vence): a lista
+    // de NUMEROS da loja nao e configuracao — e o filtro da caixa de entrada,
+    // que a vendedora usa para ver so o atendimento do numero dela. A rota
+    // devolve apelido, canal e responsavel; nunca credencial, referencia
+    // externa ou estado de token. Mesmo criterio de `/api/lojas` e
+    // `/api/usuarios` logo abaixo.
+    re: /^\/api\/integracoes\/numeros$/,
+    metodos: { GET: TODOS },
+    motivo: "escolher por qual numero filtrar e operacao, nao configuracao",
+  },
+  {
     re: /^\/api\/integracoes(\/|$)/,
     metodos: { GET: SO_ADMIN, POST: SO_ADMIN, PUT: SO_ADMIN, PATCH: SO_ADMIN, DELETE: SO_ADMIN },
     motivo: "credencial de integracao: chave que movimenta dinheiro e dado de cliente",

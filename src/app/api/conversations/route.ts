@@ -17,6 +17,8 @@ export async function GET(req: Request) {
   const assignedTo = searchParams.get("assignedTo") || ""
   const search = searchParams.get("search") || ""
   const priority = searchParams.get("priority") || ""
+  /** Numero conectado (`stores_integracoes.id`): cada numero tem o seu atendimento. */
+  const integracaoId = searchParams.get("integracaoId") || ""
   const page = paginaAtual(searchParams.get("page"))
   const limit = limiteDaPagina(searchParams.get("limit"), 30)
 
@@ -27,6 +29,9 @@ export async function GET(req: Request) {
   else where.status = { in: ["open", "pending"] }
   if (assignedTo && assignedTo !== "all") where.assignedTo = assignedTo
   if (priority && priority !== "all") where.priority = priority
+  // O escopo de loja continua valendo por cima: pedir o numero de outra loja
+  // simplesmente nao devolve nada, em vez de vazar a conversa dela.
+  if (integracaoId && integracaoId !== "all") where.storeIntegracaoId = integracaoId
   if (search) {
     where.contact = {
       OR: [
@@ -53,6 +58,11 @@ export async function GET(req: Request) {
         },
         agent: {
           select: { id: true, name: true, avatarUrl: true },
+        },
+        // Por qual numero a conversa entrou: na visao geral de todos, e o que
+        // diz de quem e o atendimento sem precisar abrir a conversa.
+        integracao: {
+          select: { id: true, rotulo: true, provedor: true },
         },
       },
       orderBy: { lastMessageAt: { sort: "desc", nulls: "last" } },

@@ -31,6 +31,20 @@ export interface ConversationItem {
     id: string
     name: string
   } | null
+  /** Número conectado por onde a conversa entrou. Nulo em conversa antiga. */
+  integracao: {
+    id: string
+    rotulo: string
+    provedor: string
+  } | null
+}
+
+/** Número conectado, como `/api/integracoes/numeros` devolve. */
+export interface NumeroConectado {
+  id: string
+  rotulo: string
+  provedor: string
+  vendedor: { id: string; nome: string } | null
 }
 
 const priorityBadge: Record<string, string> = {
@@ -50,6 +64,10 @@ interface ConversationListProps {
   onChannelFilterChange: (v: string) => void
   statusFilter: string
   onStatusFilterChange: (v: string) => void
+  /** Números conectados da loja; lista vazia esconde o filtro. */
+  numeros: NumeroConectado[]
+  numeroFilter: string
+  onNumeroFilterChange: (v: string) => void
 }
 
 export function ConversationList({
@@ -62,6 +80,9 @@ export function ConversationList({
   onChannelFilterChange,
   statusFilter,
   onStatusFilterChange,
+  numeros,
+  numeroFilter,
+  onNumeroFilterChange,
 }: ConversationListProps) {
   const unanswered = conversations.filter((c) => c.unreadCount > 0).length
 
@@ -86,6 +107,27 @@ export function ConversationList({
             className="pl-8 h-9 text-sm rounded-lg bg-neutral-50/80 border-neutral-200/60 focus:border-neutral-300 transition-colors"
           />
         </div>
+        {/* Filtro por número conectado: "Todos" é a visão geral da loja; cada
+            número tem o seu atendimento, e é assim que a vendedora vê só o
+            dela. Some quando a loja tem um número só — filtro de uma opção
+            confunde mais do que ajuda. */}
+        {numeros.length > 1 && (
+          <Select value={numeroFilter} onValueChange={(v) => onNumeroFilterChange(v || "all")}>
+            <SelectTrigger className="h-8 text-xs rounded-lg border-neutral-200/60">
+              <SelectValue placeholder="Número" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos os números</SelectItem>
+              {numeros.map((n) => (
+                <SelectItem key={n.id} value={n.id}>
+                  {n.rotulo}
+                  {n.vendedor ? ` — ${n.vendedor.nome}` : ""}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
         <div className="flex gap-1.5">
           <Select value={channelFilter} onValueChange={(v) => onChannelFilterChange(v || "all")}>
             <SelectTrigger className="h-7 text-xs flex-1 rounded-lg border-neutral-200/60">
@@ -157,6 +199,13 @@ export function ConversationList({
                   </div>
                   <div className="flex items-center gap-1 mt-0.5">
                     <ChannelBadge channel={conv.channel} />
+                    {/* Por qual número entrou. Na visão geral é o que diz de
+                        quem é o atendimento sem abrir a conversa. */}
+                    {numeroFilter === "all" && conv.integracao && (
+                      <span className="max-w-[9rem] truncate rounded-md bg-neutral-100 px-1.5 py-0.5 text-[10px] font-medium text-neutral-600">
+                        {conv.integracao.rotulo}
+                      </span>
+                    )}
                     {conv.priority === "urgent" || conv.priority === "high" ? (
                       <span className={cn("text-[10px] font-bold rounded-md px-1.5 py-0.5", priorityBadge[conv.priority])}>
                         {conv.priority === "urgent" ? "URGENTE" : "ALTA"}

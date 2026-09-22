@@ -1,7 +1,11 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
-import { ConversationList, type ConversationItem } from "@/components/inbox/ConversationList"
+import {
+  ConversationList,
+  type ConversationItem,
+  type NumeroConectado,
+} from "@/components/inbox/ConversationList"
 import { ChatWindow } from "@/components/inbox/ChatWindow"
 import { ContactPanel } from "@/components/inbox/ContactPanel"
 import { PainelVenda } from "./_components/painel-venda"
@@ -17,6 +21,9 @@ export default function InboxPage() {
   const [search, setSearch] = useState("")
   const [channelFilter, setChannelFilter] = useState("all")
   const [statusFilter, setStatusFilter] = useState("all")
+  /** Número conectado escolhido. "all" = visão geral de todos os números. */
+  const [numeroFilter, setNumeroFilter] = useState("all")
+  const [numeros, setNumeros] = useState<NumeroConectado[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [vendendo, setVendendo] = useState(false)
 
@@ -36,6 +43,7 @@ export default function InboxPage() {
     if (buscaAplicada) params.set("search", buscaAplicada)
     if (channelFilter !== "all") params.set("channel", channelFilter)
     if (statusFilter !== "all") params.set("status", statusFilter)
+    if (numeroFilter !== "all") params.set("integracaoId", numeroFilter)
 
     const res = await fetch(`/api/conversations?${params}`)
     if (res.ok) {
@@ -43,7 +51,21 @@ export default function InboxPage() {
       setConversations(data.conversations)
     }
     setIsLoading(false)
-  }, [buscaAplicada, channelFilter, statusFilter])
+  }, [buscaAplicada, channelFilter, statusFilter, numeroFilter])
+
+  // Os números da loja mudam raramente: carrega uma vez, fora do polling.
+  useEffect(() => {
+    fetch("/api/integracoes/numeros")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((d: NumeroConectado[]) => setNumeros(Array.isArray(d) ? d : []))
+      .catch(() => setNumeros([]))
+  }, [])
+
+  // Trocar de número com uma conversa aberta deixaria na tela uma conversa que
+  // sumiu da lista, com o nome da cliente errada no topo.
+  useEffect(() => {
+    setSelectedId(null)
+  }, [numeroFilter])
 
   useEffect(() => {
     loadConversations()
@@ -80,6 +102,9 @@ export default function InboxPage() {
             onChannelFilterChange={setChannelFilter}
             statusFilter={statusFilter}
             onStatusFilterChange={setStatusFilter}
+            numeros={numeros}
+            numeroFilter={numeroFilter}
+            onNumeroFilterChange={setNumeroFilter}
           />
         )}
       </div>
