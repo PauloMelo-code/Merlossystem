@@ -14,7 +14,7 @@ import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { fonteEfetiva } from "./rotas"
 import { getAdapter, getAdapterDaConta } from "@/lib/channels"
-import { criarUazapiAdapter, parseUazapiMessages } from "@/lib/channels/uazapi"
+import { criarUazapiAdapter, ehLoteDeHistorico, parseUazapiMessages } from "@/lib/channels/uazapi"
 import { verificarWebhookUazapi } from "@/lib/webhook-auth"
 import {
   PROVEDORES,
@@ -67,7 +67,7 @@ describe("dois provedores para o canal whatsapp", () => {
 
   it("o webhook do uazapi resolve por uazapi", () => {
     const src = ler("src", "app", "api", "webhooks", "uazapi", "route.ts")
-    expect(src).toContain('contaDoEvento("uazapi"')
+    expect(src).toContain('contaPorIdentificadores("uazapi"')
   })
 })
 
@@ -205,18 +205,82 @@ describe("parseUazapiMessages", () => {
     expect(m.text).toBe("oi")
   })
 
-  it("ignora o eco das mensagens que nos enviamos", () => {
-    // Sem isto, toda resposta do atendente entraria de novo como se fosse do
-    // cliente e a conversa duplicaria.
+  it("ignora o eco do que o sistema enviou, mas guarda o que saiu do celular", () => {
+    // O eco do envio pela API duplicaria a bolha: o envio ja gravou. Ja o que a
+    // vendedora responde pelo CELULAR so existe no WhatsApp — sem isto, a
+    // conversa na tela fica so com um lado.
     const msgs = parseUazapiMessages({
-      instance: "i",
+      instanceName: "i",
       messages: [
-        { id: "m1", sender: "555@x", text: "do cliente" },
-        { id: "m2", sender: "555@x", text: "nossa", fromMe: true },
-        { id: "m3", key: { id: "m3", fromMe: true, remoteJid: "555@x" }, text: "nossa 2" },
+        { messageid: "m1", chatid: "555@s.whatsapp.net", sender: "555@s.whatsapp.net", text: "do cliente" },
+        { messageid: "m2", chatid: "555@s.whatsapp.net", text: "pela API", fromMe: true, wasSentByApi: true },
+        { messageid: "m3", chatid: "555@s.whatsapp.net", text: "do celular", fromMe: true },
       ],
     })
-    expect(msgs.map((m) => m.text)).toEqual(["do cliente"])
+    expect(msgs.map((m) => [m.text, m.fromMe === true])).toEqual([
+      ["do cliente", false],
+      ["do celular", true],
+    ])
+    // Nos dois casos o contato da conversa e a cliente, nunca o proprio numero.
+    expect(msgs.map((m) => m.senderId)).toEqual(["555", "555"])
+  })
+
+  it("acha a conta pelo nome da instancia, como o uazapi manda de verdade", () => {
+    // O payload real traz `instanceName` e `owner`; procurar por `instance`
+    // fazia toda mensagem ser descartada por "instancia nao conectada".
+    const [msg] = parseUazapiMessages({
+      EventType: "messages",
+      instanceName: "vendas-ana",
+      owner: "5541999990000",
+      message: { messageid: "m1", chatid: "555@s.whatsapp.net", text: "oi" },
+    })
+    expect(msg?.contaExterna).toBe("vendas-ana")
+  })
+
+  it("foto e audio nao viram texto vazio, e a midia vai pelo id da mensagem", () => {
+    // O uazapi escreve o tipo com maiuscula ("ImageMessage") e NAO manda URL
+    // publica: quem resolve e `downloadMedia`, por /message/download.
+    const [foto] = parseUazapiMessages({
+      instanceName: "i",
+      message: {
+        messageid: "F1",
+        chatid: "555@s.whatsapp.net",
+        messageType: "ImageMessage",
+        content: { mimetype: "image/jpeg" },
+      },
+    })
+    expect(foto?.contentType).toBe("image")
+    expect(foto?.mediaId).toBe("F1")
+    expect(foto?.mediaMimeType).toBe("image/jpeg")
+    expect(foto?.text).toBeUndefined()
+  })
+
+  it("remetente em LID responde pelo telefone, nunca pelo LID", () => {
+    const [msg] = parseUazapiMessages({
+      instanceName: "i",
+      message: {
+        messageid: "L1",
+        chatid: "5541999990000@s.whatsapp.net",
+        sender: "123456789012345@lid",
+        sender_pn: "5541999990000@s.whatsapp.net",
+        text: "oi",
+      },
+    })
+    expect(msg?.senderId).toBe("5541999990000")
+  })
+
+  it("mensagem de grupo fica de fora", () => {
+    expect(
+      parseUazapiMessages({
+        instanceName: "i",
+        message: { messageid: "G1", chatid: "12036@g.us", isGroup: true, text: "oi" },
+      })
+    ).toEqual([])
+  })
+
+  it("reconhece o lote de historico", () => {
+    expect(ehLoteDeHistorico({ EventType: "history", event: "messages", messages: [] })).toBe(true)
+    expect(ehLoteDeHistorico({ EventType: "messages", message: {} })).toBe(false)
   })
 
   it("nao estoura em payload desconhecido — devolve vazio", () => {

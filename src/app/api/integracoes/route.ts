@@ -25,7 +25,7 @@ export async function GET(req: Request) {
       // o Bling e uma conta so para as duas.
       ...(loja.storeId ? { OR: [{ storeId: loja.storeId }, { storeId: null }] } : {}),
     },
-    include: { store: { select: { id: true, nome: true } } },
+    include: { store: { select: { id: true, nome: true } }, vendedor: { select: { id: true, name: true } } },
     orderBy: [{ provedor: "asc" }, { rotulo: "asc" }],
   })
 
@@ -93,7 +93,7 @@ export async function POST(req: Request) {
         expiraEm: data.expiraEm ? new Date(data.expiraEm) : null,
         modifiedBy: usuario.id,
       },
-      include: { store: { select: { id: true, nome: true } } },
+      include: { store: { select: { id: true, nome: true } }, vendedor: { select: { id: true, name: true } } },
     })
 
     // Conectar credencial e a acao mais sensivel do sistema: e a chave que

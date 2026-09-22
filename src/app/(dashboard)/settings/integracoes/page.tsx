@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { SkeletonTable } from "@/components/ui/skeleton"
 import { toast } from "sonner"
 import { ConectarConta } from "./_components/conectar-conta"
+import { CriarNumero, SeletorDeVendedora, usarPessoas } from "./_components/numero-uazapi"
 
 interface Integracao {
   id: string
@@ -16,6 +17,9 @@ interface Integracao {
   escopo: "loja" | "rede"
   loja: { id: string; nome: string } | null
   referenciaExterna: string
+  /** Vendedora dona do número: a conversa que entra por ele já nasce dela. */
+  vendedorId: string | null
+  vendedor: { id: string; nome: string } | null
   credenciais: Record<string, string>
   expiraEm: string | null
   expirada: boolean
@@ -63,6 +67,7 @@ export default function IntegracoesPage() {
   const [semPermissao, setSemPermissao] = useState(false)
   const [sessaoDe, setSessaoDe] = useState<string | null>(null)
   const [estado, setEstado] = useState<EstadoSessao | null>(null)
+  const pessoas = usarPessoas()
 
   const carregar = useCallback(async () => {
     setCarregando(true)
@@ -153,6 +158,15 @@ export default function IntegracoesPage() {
             OAuth tinham botao, e Instagram, Facebook e os dois WhatsApp nao
             tinham nenhuma forma de ser conectados pela interface. */}
         <div className="flex flex-wrap gap-2">
+          <CriarNumero
+            pessoas={pessoas}
+            onCriado={async (id) => {
+              await carregar()
+              // Já abre o QR: criar sem parear deixa o número mudo.
+              const criada = { id } as Integracao
+              sessao(criada, true)
+            }}
+          />
           <ConectarConta onConectado={carregar} />
           <Button variant="outline" onClick={() => conectar("bling")}>
             {integracoes.some((i) => i.provedor === "bling") ? "Reconectar Bling" : "Conectar Bling"}
@@ -201,6 +215,17 @@ export default function IntegracoesPage() {
                     </span>
                   ))}
                 </div>
+
+                {item.provedor === "uazapi" && (
+                  <div className="mt-2">
+                    <SeletorDeVendedora
+                      integracaoId={item.id}
+                      vendedorId={item.vendedorId}
+                      pessoas={pessoas}
+                      onTrocado={carregar}
+                    />
+                  </div>
+                )}
 
                 {item.ultimoErro && (
                   <p className="mt-2 inline-flex items-start gap-1.5 text-sm text-red-600">

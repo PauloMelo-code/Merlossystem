@@ -34,6 +34,12 @@ export interface IncomingMessage {
   contaExterna?: string
   // Sender identification (channel-specific ID)
   senderId: string
+  /**
+   * Mensagem que saiu do numero conectado, e nao da cliente — tipicamente a
+   * vendedora respondendo pelo celular, e tudo o que vem do historico dela.
+   * Entra na conversa como mensagem do atendimento, nunca como da cliente.
+   */
+  fromMe?: boolean
   senderName?: string
   senderAvatarUrl?: string
   // Content

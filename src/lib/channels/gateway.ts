@@ -32,10 +32,22 @@ const CHANNEL_ID_FIELD: Record<ChannelType, string> = {
  */
 export async function processIncomingMessage(
   msg: IncomingMessage,
-  conta: { id: string; storeId: string }
+  /**
+   * `vendedorId` e a vendedora dona do numero: a conversa que nasce por esta
+   * conta ja cai na mao dela, em vez de ficar sem ninguem responsavel.
+   */
+  conta: { id: string; storeId: string; vendedorId?: string | null },
+  /**
+   * Lote de historico (evento `history` do uazapi): mensagem antiga, que a
+   * loja ja respondeu. Entra na conversa, mas NAO conta como nao lida, nao
+   * reabre conversa resolvida e nao mexe no "ultima mensagem" mais recente.
+   */
+  opcoes: { historico?: boolean } = {}
 ) {
   const storeId = conta.storeId
   const idField = CHANNEL_ID_FIELD[msg.channel]
+  const historico = opcoes.historico === true
+  const daLoja = msg.fromMe === true
 
   // Reentrega do mesmo evento: sai antes de fazer qualquer coisa.
   //
@@ -91,6 +103,11 @@ export async function processIncomingMessage(
     orderBy: { lastMessageAt: "desc" },
   })
 
+  // Mensagem que a cliente ainda nao viu respondida: so a dela conta como nao
+  // lida. O que saiu do numero (celular da vendedora) e historico nao contam.
+  const naoLida = !daLoja && !historico ? 1 : 0
+  const resumo = msg.text?.slice(0, 100) || `[${msg.contentType}]`
+
   if (!conversation) {
     conversation = await prisma.conversation.create({
       data: {
@@ -98,21 +115,26 @@ export async function processIncomingMessage(
         storeIntegracaoId: conta.id,
         contactId: contact.id,
         channel: msg.channel,
+        // A vendedora dona do numero ja entra como responsavel; sem ela, a
+        // conversa nasce sem dono, como antes.
+        assignedTo: conta.vendedorId ?? null,
         status: "open",
         priority: "medium",
         lastMessageAt: msg.timestamp,
-        lastMessagePreview: msg.text?.slice(0, 100) || `[${msg.contentType}]`,
-        unreadCount: 1,
+        lastMessagePreview: resumo,
+        unreadCount: naoLida,
       },
     })
   } else {
+    // No historico, a mensagem e antiga: nao pode sobrescrever a ultima
+    // mensagem da conversa nem reabrir o que a loja ja resolveu.
+    const maisNova = !conversation.lastMessageAt || msg.timestamp > conversation.lastMessageAt
     await prisma.conversation.update({
       where: { id: conversation.id },
       data: {
-        lastMessageAt: msg.timestamp,
-        lastMessagePreview: msg.text?.slice(0, 100) || `[${msg.contentType}]`,
-        unreadCount: { increment: 1 },
-        status: "open",
+        ...(maisNova ? { lastMessageAt: msg.timestamp, lastMessagePreview: resumo } : {}),
+        ...(naoLida ? { unreadCount: { increment: naoLida }, status: "open" } : {}),
+        ...(conversation.assignedTo || !conta.vendedorId ? {} : { assignedTo: conta.vendedorId }),
       },
     })
   }
@@ -178,7 +200,10 @@ export async function processIncomingMessage(
       data: {
         storeId,
         conversationId: conversation.id,
-        senderType: "customer",
+        // O que saiu do numero e mensagem do atendimento, com a vendedora dona
+        // do numero como autora quando ela existe.
+        senderType: daLoja ? "agent" : "customer",
+        senderId: daLoja ? (conta.vendedorId ?? null) : null,
         content: msg.text || null,
         contentType: msg.contentType,
         externalId: msg.externalId,
@@ -209,11 +234,14 @@ export async function processIncomingMessage(
     })
   }
 
-  // 6. Update contact lastContactAt
-  await prisma.contact.update({
-    where: { id: contact.id },
-    data: { lastContactAt: msg.timestamp },
-  })
+  // 6. Update contact lastContactAt — no historico, so se for mais recente:
+  // importar conversa velha nao pode "envelhecer" o ultimo contato.
+  if (!contact.lastContactAt || msg.timestamp > contact.lastContactAt) {
+    await prisma.contact.update({
+      where: { id: contact.id },
+      data: { lastContactAt: msg.timestamp },
+    })
+  }
 
   return { contact, conversation, message }
 }

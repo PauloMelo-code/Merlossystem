@@ -16,6 +16,7 @@ import { armarAviso, tocarBipe, notificarSeEscondido } from "@/lib/chat/aviso-so
 import { mesclarMensagens } from "@/lib/chat/mesclar"
 import { subirEEnviar, enviarDaBiblioteca } from "@/lib/chat/midia"
 import { toast } from "sonner"
+import { PuxarHistorico } from "./PuxarHistorico"
 
 const PAGINA = 40
 const INTERVALO_POLLING = 5000
@@ -351,6 +352,9 @@ export function ChatWindow({
       />
 
       <ScrollArea className="flex-1 bg-[#fafaf8] p-4" viewportRef={viewportRef}>
+        {/* O que veio antes da conexão só existe no celular — ver o componente. */}
+        {channel === "whatsapp" && <PuxarHistorico conversationId={conversationId} />}
+
         {temMais && (
           <div className="mb-3 flex justify-center">
             <Button

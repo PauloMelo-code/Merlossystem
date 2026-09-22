@@ -1,8 +1,11 @@
 import {
   baseDaApi,
+  EVENTOS_WEBHOOK,
   UAZAPI_ENDPOINTS,
   HEADER_TOKEN,
   UazapiConfigError,
+  tokenDeAdmin,
+  urlDoWebhook,
 } from "./config"
 
 /**
@@ -46,13 +49,19 @@ function normalizar(bruto: unknown): EstadoInstancia["status"] {
 async function chamar(
   caminho: string,
   token: string,
-  metodo: "GET" | "POST"
+  metodo: "GET" | "POST",
+  corpo?: unknown,
+  cabecalhoDoToken: string = HEADER_TOKEN
 ): Promise<Record<string, unknown>> {
   let res: Response
   try {
     res = await fetch(`${baseDaApi()}${caminho}`, {
       method: metodo,
-      headers: { [HEADER_TOKEN]: token },
+      headers: {
+        [cabecalhoDoToken]: token,
+        ...(corpo === undefined ? {} : { "Content-Type": "application/json" }),
+      },
+      ...(corpo === undefined ? {} : { body: JSON.stringify(corpo) }),
     })
   } catch (e) {
     throw new UazapiConfigError(`uazapi inacessivel: ${(e as Error).message}`)
@@ -88,4 +97,64 @@ export async function estadoDaInstancia(token: string): Promise<EstadoInstancia>
  */
 export async function iniciarPareamento(token: string): Promise<EstadoInstancia> {
   return ler(await chamar(UAZAPI_ENDPOINTS.conectar, token, "POST"))
+}
+
+/**
+ * Cria uma instancia no servidor uazapi e devolve o token dela.
+ *
+ * E o que tira o vai-e-volta do painel: antes era preciso criar a instancia la,
+ * copiar o token, voltar e colar aqui. Exige `admintoken` (ambiente), nasce
+ * DESCONECTADA e so vira numero depois do QR.
+ */
+export async function criarInstancia(nome: string): Promise<{ token: string; nome: string }> {
+  const d = await chamar(
+    UAZAPI_ENDPOINTS.criarInstancia,
+    tokenDeAdmin(),
+    "POST",
+    { name: nome },
+    "admintoken"
+  )
+  const instancia = (d.instance ?? d) as Record<string, unknown>
+  const token = (d.token ?? instancia.token) as string | undefined
+  if (!token) {
+    throw new UazapiConfigError("O uazapi criou a instancia mas nao devolveu o token dela.")
+  }
+  return { token, nome: ((instancia.name ?? nome) as string) || nome }
+}
+
+/**
+ * Aponta o webhook da instancia para este sistema, com os eventos que ele
+ * consome. Feito na criacao: webhook esquecido e numero mudo — a mensagem
+ * chega no WhatsApp e nunca aparece na tela.
+ *
+ * `wasSentByApi` fica de fora: o eco do que o proprio sistema enviou ja esta
+ * gravado, e regrava-lo duplicaria a bolha.
+ */
+export async function configurarWebhook(token: string): Promise<void> {
+  await chamar(UAZAPI_ENDPOINTS.webhook, token, "POST", {
+    enabled: true,
+    url: urlDoWebhook(),
+    events: [...EVENTOS_WEBHOOK],
+    excludeMessages: ["wasSentByApi"],
+    addUrlEvents: false,
+    addUrlTypesMessages: false,
+  })
+}
+
+/**
+ * Pede ao celular as mensagens anteriores de uma conversa. O WhatsApp responde
+ * quando quer e em lotes, pelo evento `history` — por isso nao devolve as
+ * mensagens aqui, so registra o pedido.
+ */
+export async function pedirHistorico(
+  token: string,
+  numero: string,
+  quantidade = 50
+): Promise<void> {
+  const jid = numero.includes("@") ? numero : `${numero}@s.whatsapp.net`
+  await chamar(UAZAPI_ENDPOINTS.historico, token, "POST", {
+    number: jid,
+    mode: "history",
+    count: quantidade,
+  })
 }

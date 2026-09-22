@@ -70,6 +70,11 @@ model StoreIntegracao {
   rotulo   String
   status   String  @default("desconectado") // desconectado | conectado | expirado | erro
 
+  /// Vendedora dona deste numero: a conversa que entra por ele ja nasce
+  /// atribuida a ela. Nulo = numero da loja, sem dono (comportamento antigo).
+  /// So faz sentido em canal de conversa; conta da rede (Bling) nunca tem.
+  vendedorId String? @map("vendedor_id")
+
   /// AES-256-GCM (src/lib/cofre.ts). NUNCA em texto plano, NUNCA devolvido
   /// pela API — a tela recebe so o resumo mascarado.
   credenciaisCifradas String? @map("credenciais_cifradas")
@@ -92,11 +97,13 @@ model StoreIntegracao {
   isDeleted  Boolean   @default(false) @map("is_deleted")
   modifiedBy String?   @map("modified_by")
 
-  store Store? @relation(fields: [storeId], references: [id])
+  store    Store? @relation(fields: [storeId], references: [id])
+  vendedor User?  @relation("NumeroDaVendedora", fields: [vendedorId], references: [id])
 
   /// A mesma conta nao pode estar conectada em duas lojas ao mesmo tempo:
   /// a mensagem que chega nao teria dono definido.
   @@unique([provedor, referenciaExterna])
+  @@index([vendedorId])
   @@index([storeId])
   /// Busca que roda em TODO webhook recebido.
   @@index([provedor, referenciaExterna])
@@ -125,6 +132,7 @@ model User {
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
   assignedConversations Conversation[]     @relation("AssignedAgent")
+  numerosProprios       StoreIntegracao[]  @relation("NumeroDaVendedora")
   sentMessages          Message[]          @relation("SenderAgent")
   uploadedMedia         MediaFile[]        @relation("Uploader")
   acknowledgedAlerts    Alert[]            @relation("AcknowledgedBy")

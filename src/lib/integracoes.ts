@@ -25,6 +25,8 @@ export const atualizacaoSchema = z.object({
   status: z.enum(STATUS).optional(),
   credenciais: z.record(z.string(), z.string()).optional(),
   expiraEm: z.string().datetime().optional().nullable(),
+  /** Vendedora dona do numero. `null` tira o dono; ausente nao mexe. */
+  vendedorId: z.string().uuid().nullable().optional(),
 })
 
 /** Campos do registro que a API pode devolver. */
@@ -42,6 +44,8 @@ type RegistroInterno = {
   createdAt: Date
   updatedAt: Date
   store?: { id: string; nome: string } | null
+  vendedorId?: string | null
+  vendedor?: { id: string; name: string } | null
 }
 
 /**
@@ -60,6 +64,8 @@ export function paraApi(r: RegistroInterno) {
     rotulo: r.rotulo,
     status: r.status,
     referenciaExterna: r.referenciaExterna,
+    vendedorId: r.vendedorId ?? null,
+    vendedor: r.vendedor ? { id: r.vendedor.id, nome: r.vendedor.name } : null,
     credenciais: resumoPublico(r.credenciaisCifradas),
     expiraEm: r.expiraEm,
     expirada: r.expiraEm ? r.expiraEm.getTime() < Date.now() : false,

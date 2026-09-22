@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
-import { parseUazapiMessages } from "@/lib/channels/uazapi"
+import { ehLoteDeHistorico, parseUazapiMessages } from "@/lib/channels/uazapi"
 import { processIncomingMessage } from "@/lib/channels/gateway"
-import { contaDoEvento } from "@/lib/roteamento"
+import { contaPorIdentificadores } from "@/lib/roteamento"
 import { verificarWebhookUazapi } from "@/lib/webhook-auth"
 
 /**
@@ -30,7 +30,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true })
     }
 
-    const conta = await contaDoEvento("uazapi", mensagens[0]?.contaExterna)
+    // O payload traz o nome da instancia e o numero conectado; qual deles foi
+    // cadastrado em `referencia_externa` depende de quem conectou.
+    const conta = await contaPorIdentificadores("uazapi", [
+      body?.instanceName,
+      body?.owner,
+      mensagens[0]?.contaExterna,
+    ])
     if (!conta) {
       console.warn(
         "[uazapi] Evento descartado: instancia",
@@ -40,8 +46,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true })
     }
 
+    // Lote de historico: mensagem antiga, que nao pode aparecer como nova.
+    const historico = ehLoteDeHistorico(body)
     for (const msg of mensagens) {
-      await processIncomingMessage(msg, conta)
+      await processIncomingMessage(msg, conta, { historico })
     }
 
     return NextResponse.json({ success: true })

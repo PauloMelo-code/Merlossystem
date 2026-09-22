@@ -114,17 +114,30 @@ export function criarUazapiAdapter(config: ConfigUazapi): ChannelAdapter {
     },
 
     /**
-     * O uazapi entrega a midia como URL direta no proprio webhook, nao como id
-     * para buscar depois. Aqui o "mediaId" JA e a URL.
+     * O webhook do uazapi NAO traz URL publica da midia recebida (conferido em
+     * docs.uazapi.com, 22/09/2026): o que ele manda e o id da mensagem. A URL
+     * nasce em `POST /message/download` e vale 2 dias, entao o download e
+     * imediato. Quando `mediaId` ja e URL (mensagem antiga, ou outro fluxo),
+     * baixa direto.
      */
     async downloadMedia(mediaId: string): Promise<DownloadedMedia> {
+      let endereco = mediaId
       if (!/^https?:\/\//.test(mediaId)) {
-        throw new Error(
-          `uazapi entrega midia por URL; recebido "${mediaId.slice(0, 40)}" que nao e URL`
-        )
+        const r = await fetch(`${base()}${UAZAPI_ENDPOINTS.baixarMidia}`, {
+          method: "POST",
+          headers: { [HEADER_TOKEN]: config.token, "Content-Type": "application/json" },
+          body: JSON.stringify({ id: mediaId }),
+        })
+        const dados: { fileURL?: string; error?: string } = await r.json().catch(() => ({}))
+        if (!r.ok || !dados.fileURL) {
+          throw new Error(
+            `uazapi nao devolveu a midia de ${mediaId.slice(0, 20)}: ${dados.error ?? `HTTP ${r.status}`}`
+          )
+        }
+        endereco = dados.fileURL
       }
 
-      const res = await fetch(mediaId)
+      const res = await fetch(endereco)
       if (!res.ok) throw new Error(`Falha ao baixar midia do uazapi: ${res.status}`)
 
       const buffer = Buffer.from(await res.arrayBuffer())
@@ -143,24 +156,44 @@ export function criarUazapiAdapter(config: ConfigUazapi): ChannelAdapter {
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-/** Tipos do uazapi -> ContentType do sistema. */
+/**
+ * Tipos do uazapi -> ContentType do sistema. A CHAVE E MINUSCULA: o uazapi
+ * manda "Conversation", "ImageMessage", "AudioMessage" com maiuscula, e o mapa
+ * anterior, sensivel a caixa, fazia foto e audio virarem texto vazio.
+ */
 const CONTENT_TYPE: Record<string, ContentType> = {
   text: "text",
   conversation: "text",
-  extendedTextMessage: "text",
+  extendedtextmessage: "text",
   image: "image",
-  imageMessage: "image",
+  imagemessage: "image",
   video: "video",
-  videoMessage: "video",
+  videomessage: "video",
   audio: "audio",
-  audioMessage: "audio",
+  audiomessage: "audio",
   ptt: "audio",
   document: "document",
-  documentMessage: "document",
+  documentmessage: "document",
   sticker: "sticker",
-  stickerMessage: "sticker",
+  stickermessage: "sticker",
   location: "location",
-  locationMessage: "location",
+  locationmessage: "location",
+}
+
+/** Texto nao vazio, ou `undefined`. Objeto (o `content` de midia) nao vira texto. */
+function texto(valor: unknown): string | undefined {
+  if (typeof valor === "number") return String(valor)
+  if (typeof valor !== "string") return undefined
+  const limpo = valor.trim()
+  return limpo === "" ? undefined : limpo
+}
+
+const primeiro = (...valores: unknown[]): string | undefined => {
+  for (const v of valores) {
+    const t = texto(v)
+    if (t !== undefined) return t
+  }
+  return undefined
 }
 
 /**
@@ -175,6 +208,7 @@ const CONTENT_TYPE: Record<string, ContentType> = {
  * (`stores_integracoes.referencia_externa`), igual ao `phone_number_id` da Meta.
  */
 export function parseUazapiMessages(body: any): IncomingMessage[] {
+  // `messages[]` e o lote do evento `history`; `message` e a entrega ao vivo.
   const eventos: any[] = Array.isArray(body?.messages)
     ? body.messages
     : body?.message
@@ -183,44 +217,63 @@ export function parseUazapiMessages(body: any): IncomingMessage[] {
         ? [body.data]
         : []
 
-  const contaExterna = body?.instance ?? body?.instanceId ?? body?.owner ?? body?.token
+  // O uazapi manda `instanceName` (o nome da instancia) e `owner` (o numero
+  // conectado). O roteamento tenta os dois contra `referencia_externa`.
+  const contaExterna = primeiro(body?.instanceName, body?.instance, body?.owner)
 
   const mensagens: IncomingMessage[] = []
   for (const e of eventos) {
-    // Mensagem que NOS enviamos, ecoada de volta. Gravar de novo duplicaria a
-    // conversa — o envio ja gravou.
-    if (e?.fromMe === true || e?.key?.fromMe === true) continue
+    // Eco do que o PROPRIO sistema enviou pela API: o envio ja gravou.
+    if (e?.wasSentByApi === true) continue
 
-    const externalId = e?.id ?? e?.messageid ?? e?.key?.id
-    const senderId = String(e?.sender ?? e?.chatid ?? e?.key?.remoteJid ?? "").replace(
-      /@.*$/,
-      ""
-    )
+    const chat = primeiro(e?.chatid, e?.key?.remoteJid, e?.sender)
+    if (e?.isGroup === true || chat?.endsWith("@g.us")) continue
+
+    const fromMe = e?.fromMe === true || e?.key?.fromMe === true
+    // `sender` pode vir como LID (`…@lid`), que nao e telefone: o numero do
+    // contato esta em `sender_pn` ou no `chatid` da conversa. Na mensagem que
+    // a vendedora mandou do celular, o contato e o proprio chat.
+    const contato = fromMe ? chat : primeiro(e?.sender_pn, chat, e?.sender)
+    const senderId = contato?.replace(/@.*$/, "")
+    // O recibo de entrega cita o id CURTO; guardar o longo ("dono:ID") faria
+    // o status nunca encontrar a mensagem.
+    const externalId = primeiro(e?.messageid, e?.key?.id, e?.id)
     if (!externalId || !senderId) continue
 
-    const contentType = CONTENT_TYPE[String(e?.messageType ?? e?.type ?? "text")] ?? "text"
-    const mediaUrl = e?.file ?? e?.mediaUrl ?? e?.url
+    const bruto = typeof e?.content === "object" && e?.content !== null ? e.content : {}
+    const contentType =
+      CONTENT_TYPE[String(primeiro(e?.messageType, e?.mediaType, e?.type) ?? "text").toLowerCase()] ??
+      "text"
+    const mediaUrl = primeiro(e?.fileURL, e?.fileUrl, e?.mediaUrl, e?.file, e?.url)
+    const temMidia = contentType !== "text" && contentType !== "location"
 
     mensagens.push({
       channel: "whatsapp",
-      externalId: String(externalId),
-      contaExterna: contaExterna ? String(contaExterna) : undefined,
+      externalId,
+      contaExterna,
       senderId,
-      senderName: e?.senderName ?? e?.pushName,
+      fromMe,
+      ...(fromMe ? {} : { senderName: primeiro(e?.senderName, e?.pushName) }),
       contentType,
-      text: e?.text ?? e?.content ?? e?.body ?? e?.caption,
-      // O adapter trata a URL como o "mediaId" — ver `downloadMedia`.
-      mediaId: mediaUrl,
-      mediaUrl,
-      mediaMimeType: e?.mimetype ?? e?.mimeType,
-      mediaCaption: e?.caption,
-      latitude: e?.latitude,
-      longitude: e?.longitude,
+      text: primeiro(e?.text, e?.caption, contentType === "text" ? e?.body : undefined),
+      // Sem URL publica no webhook, o id da mensagem e a referencia: quem
+      // resolve e `downloadMedia`, por `/message/download`.
+      ...(temMidia ? { mediaId: mediaUrl ?? externalId } : {}),
+      ...(temMidia && mediaUrl ? { mediaUrl } : {}),
+      mediaMimeType: primeiro(e?.mimetype, e?.mimeType, bruto?.mimetype),
+      mediaCaption: primeiro(e?.caption),
+      latitude: e?.latitude ?? bruto?.degreesLatitude,
+      longitude: e?.longitude ?? bruto?.degreesLongitude,
       timestamp: paraData(e?.messageTimestamp ?? e?.timestamp),
     })
   }
 
   return mensagens
+}
+
+/** O lote de mensagens antigas vem no evento `history` (`event: "messages"`). */
+export function ehLoteDeHistorico(body: any): boolean {
+  return String(body?.EventType ?? "").toLowerCase() === "history" && Array.isArray(body?.messages)
 }
 
 /** O uazapi manda timestamp em segundos, em milissegundos ou em ISO. */

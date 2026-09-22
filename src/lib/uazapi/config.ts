@@ -54,7 +54,38 @@ export function baseDaApi(): string {
   return base.replace(/\/+$/, "")
 }
 
-/** ⚠️ CONFERIR no Swagger da propria instalacao (URL do painel + /docs). */
+/**
+ * Token de ADMINISTRADOR do servidor uazapi (`admintoken`). So com ele da para
+ * CRIAR instancia; o token de instancia nao cria nada. Fica no ambiente, nunca
+ * no banco e nunca na tela: quem o tem controla todas as instancias.
+ */
+export function tokenDeAdmin(): string {
+  const token = process.env.UAZAPI_ADMIN_TOKEN
+  if (!token) {
+    throw new UazapiConfigError(
+      "uazapi sem UAZAPI_ADMIN_TOKEN: sem ele nao da para criar numero pela tela. " +
+        "Conecte informando o token da instancia, ou configure a variavel."
+    )
+  }
+  return token
+}
+
+/** Endereco que o uazapi chama a cada evento. O segredo vai na query porque o painel nao manda cabecalho. */
+export function urlDoWebhook(): string {
+  const base = process.env.NEXTAUTH_URL ?? process.env.APP_URL
+  const segredo = process.env.UAZAPI_WEBHOOK_SECRET
+  if (!base || !segredo) {
+    throw new UazapiConfigError(
+      "Falta NEXTAUTH_URL (ou APP_URL) e UAZAPI_WEBHOOK_SECRET para configurar o webhook do uazapi."
+    )
+  }
+  return `${base.replace(/\/+$/, "")}/api/webhooks/uazapi?segredo=${encodeURIComponent(segredo)}`
+}
+
+/** Eventos que o sistema consome. `history` e o que traz as conversas antigas. */
+export const EVENTOS_WEBHOOK = ["messages", "messages_update", "connection", "history"] as const
+
+/** Caminhos conferidos em docs.uazapi.com em 22/09/2026. */
 export const UAZAPI_ENDPOINTS = {
   /** Envio de texto. Corpo: `{ number, text }`. */
   texto: "/send/text",
@@ -66,6 +97,14 @@ export const UAZAPI_ENDPOINTS = {
   conectar: "/instance/connect",
   /** Derruba a sessao sem apagar a instancia. */
   desconectar: "/instance/disconnect",
+  /** Cria a instancia. Exige `admintoken`; devolve o token dela. */
+  criarInstancia: "/instance/create",
+  /** Configura o webhook da instancia: `{ enabled, url, events, excludeMessages }`. */
+  webhook: "/webhook",
+  /** URL publica da midia recebida, a partir do id da mensagem. Vale 2 dias. */
+  baixarMidia: "/message/download",
+  /** Pede ao celular as mensagens anteriores de um chat. Chegam pelo evento `history`. */
+  historico: "/message/history-sync",
 } as const
 
 /**

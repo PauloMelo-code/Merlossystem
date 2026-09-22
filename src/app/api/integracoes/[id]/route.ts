@@ -10,8 +10,28 @@ import { z } from "zod"
 async function buscar(id: string) {
   return prisma.storeIntegracao.findFirst({
     where: { id, isDeleted: false },
-    include: { store: { select: { id: true, nome: true } } },
+    include: {
+      store: { select: { id: true, nome: true } },
+      vendedor: { select: { id: true, name: true } },
+    },
   })
+}
+
+const COM_LOJA = { store: { select: { id: true, nome: true } }, vendedor: { select: { id: true, name: true } } }
+
+/**
+ * A dona do numero precisa ser pessoa ATIVA e DA MESMA LOJA da conta (admin e
+ * gerente alcancam as duas lojas, entao passam). Numero apontando para alguem
+ * de outra loja penduraria a conversa na carteira errada.
+ */
+async function vendedorInvalido(vendedorId: string, storeId: string | null): Promise<string | null> {
+  const pessoa = await prisma.user.findFirst({
+    where: { id: vendedorId, isActive: true },
+    select: { storeId: true, role: true },
+  })
+  if (!pessoa) return "Pessoa nao encontrada ou inativa."
+  if (pessoa.storeId && pessoa.storeId !== storeId) return "Esta pessoa e de outra loja."
+  return null
 }
 
 export async function GET(
@@ -47,6 +67,11 @@ export async function PUT(
     const data = atualizacaoSchema.parse(await req.json())
     const trocouCredencial = data.credenciais && Object.keys(data.credenciais).length > 0
 
+    if (data.vendedorId) {
+      const motivo = await vendedorInvalido(data.vendedorId, atual.storeId)
+      if (motivo) return NextResponse.json({ error: motivo }, { status: 400 })
+    }
+
     const atualizada = await prisma.storeIntegracao.update({
       where: { id },
       data: {
@@ -55,6 +80,9 @@ export async function PUT(
         ...(data.expiraEm !== undefined && {
           expiraEm: data.expiraEm ? new Date(data.expiraEm) : null,
         }),
+        // A troca vale das PROXIMAS conversas em diante: as que ja existem
+        // continuam com quem as atendeu.
+        ...(data.vendedorId !== undefined && { vendedorId: data.vendedorId }),
         ...(trocouCredencial && {
           credenciaisCifradas: cifrarCredenciais(data.credenciais!),
           status: data.status ?? "conectado",
@@ -63,7 +91,7 @@ export async function PUT(
         }),
         modifiedBy: usuario.id,
       },
-      include: { store: { select: { id: true, nome: true } } },
+      include: COM_LOJA,
     })
 
     return NextResponse.json(paraApi(atualizada))

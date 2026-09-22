@@ -17,6 +17,8 @@ export type ContaResolvida = {
   storeId: string
   rotulo: string
   provedor: string
+  /** Vendedora dona do numero: a conversa que entra por ele ja nasce dela. */
+  vendedorId: string | null
 }
 
 /**
@@ -34,11 +36,34 @@ export async function contaDoEvento(
 
   const conta = await prisma.storeIntegracao.findFirst({
     where: { provedor, referenciaExterna: contaExterna, isDeleted: false },
-    select: { id: true, storeId: true, rotulo: true, provedor: true },
+    select: { id: true, storeId: true, rotulo: true, provedor: true, vendedorId: true },
   })
 
   if (!conta?.storeId) return null
-  return { id: conta.id, storeId: conta.storeId, rotulo: conta.rotulo, provedor: conta.provedor }
+  return {
+    id: conta.id,
+    storeId: conta.storeId,
+    rotulo: conta.rotulo,
+    provedor: conta.provedor,
+    vendedorId: conta.vendedorId,
+  }
+}
+
+/**
+ * O uazapi manda dois identificadores da instancia: `instanceName` (o nome) e
+ * `owner` (o numero conectado). Qual deles foi digitado em
+ * `referencia_externa` depende de quem cadastrou, entao tenta os dois, na
+ * ordem em que o payload os traz.
+ */
+export async function contaPorIdentificadores(
+  provedor: string,
+  candidatos: (string | undefined | null)[]
+): Promise<ContaResolvida | null> {
+  for (const candidato of candidatos) {
+    const conta = await contaDoEvento(provedor, candidato)
+    if (conta) return conta
+  }
+  return null
 }
 
 /**
@@ -88,12 +113,25 @@ export async function contaDaConversa(conversationId: string): Promise<ContaReso
     where: { id: conversationId },
     select: {
       integracao: {
-        select: { id: true, storeId: true, rotulo: true, provedor: true, isDeleted: true },
+        select: {
+          id: true,
+          storeId: true,
+          rotulo: true,
+          provedor: true,
+          isDeleted: true,
+          vendedorId: true,
+        },
       },
     },
   })
 
   const i = conversa?.integracao
   if (!i || i.isDeleted || !i.storeId) return null
-  return { id: i.id, storeId: i.storeId, rotulo: i.rotulo, provedor: i.provedor }
+  return {
+    id: i.id,
+    storeId: i.storeId,
+    rotulo: i.rotulo,
+    provedor: i.provedor,
+    vendedorId: i.vendedorId,
+  }
 }
