@@ -53,6 +53,17 @@ const EXCECOES: { re: RegExp; metodos: Partial<Record<Metodo, Role[]>>; motivo: 
     motivo: "DELETE aqui e cancelamento logico, nao exclusao",
   },
 
+  // === Area de GESTAO — fora do dia a dia da vendedora =====================
+  // Decisao do cliente (22/09/2026): a vendedora atende, vende e registra
+  // troca; disparo em massa, modelo de mensagem, relatorio, base de
+  // conhecimento e alerta sao de quem coordena a loja. Esconder no menu nao
+  // basta: sem esta regra, a URL digitada a mao continuava abrindo.
+  {
+    re: /^\/api\/(broadcasts|templates|analytics|knowledge|alerts)(\/|$)/,
+    metodos: { GET: EXCLUSAO, POST: EXCLUSAO, PUT: EXCLUSAO, PATCH: EXCLUSAO, DELETE: EXCLUSAO },
+    motivo: "coordenacao da loja, nao atendimento",
+  },
+
   // === Area de CONFIGURACAO — so admin, em qualquer metodo =================
   // `gerente` pode tudo menos configuracao e usuario (docs/rbac.md).
   {

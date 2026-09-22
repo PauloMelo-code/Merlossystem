@@ -92,13 +92,17 @@ export async function processIncomingMessage(
   // A conversa e por CONTA, nao por canal: a mesma cliente falando com o
   // numero de vendas e com o de SAC tem duas conversas, cada uma respondendo
   // pelo seu numero.
+  //
+  // No HISTORICO o filtro de status sai: mensagem antiga de uma conversa que
+  // a loja ja resolveu pertence AQUELA conversa. Com o filtro, a importacao
+  // criava uma conversa duplicada e aberta da mesma cliente, no mesmo numero.
   let conversation = await prisma.conversation.findFirst({
     where: {
       storeId,
       contactId: contact.id,
       channel: msg.channel,
       storeIntegracaoId: conta.id,
-      status: { in: ["open", "pending"] },
+      ...(historico ? {} : { status: { in: ["open", "pending"] } }),
     },
     orderBy: { lastMessageAt: "desc" },
   })
@@ -134,6 +138,10 @@ export async function processIncomingMessage(
       data: {
         ...(maisNova ? { lastMessageAt: msg.timestamp, lastMessagePreview: resumo } : {}),
         ...(naoLida ? { unreadCount: { increment: naoLida }, status: "open" } : {}),
+        // A vendedora respondeu pelo celular: a conversa ESTA atendida. Sem
+        // isto o contador de nao lidas ficava preso e a lista cobrava resposta
+        // de uma conversa ja respondida.
+        ...(daLoja && !historico ? { unreadCount: 0 } : {}),
         ...(conversation.assignedTo || !conta.vendedorId ? {} : { assignedTo: conta.vendedorId }),
       },
     })

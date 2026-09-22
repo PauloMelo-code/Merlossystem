@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db/prisma"
 import { usuarioDaSessao, semSessao } from "@/lib/sessao"
-import { escopoDaLoja, lojaAtiva } from "@/lib/loja"
+import { escopoDaLoja, escopoDoAtendimento, lojaAtiva } from "@/lib/loja"
 import { limiteDaPagina, paginaAtual } from "@/lib/paginacao"
 
 /**
@@ -22,7 +22,11 @@ export async function GET(req: Request) {
   const page = paginaAtual(searchParams.get("page"))
   const limit = limiteDaPagina(searchParams.get("limit"), 30)
 
-  const where: Record<string, unknown> = { ...escopoDaLoja(usuario, lojaAtiva(req)) }
+  // Loja + atendimento: a vendedora vê o número dela; gestão vê a loja toda.
+  const where: Record<string, unknown> = {
+    ...escopoDaLoja(usuario, lojaAtiva(req)),
+    ...escopoDoAtendimento(usuario),
+  }
 
   if (channel && channel !== "all") where.channel = channel
   if (status && status !== "all") where.status = status

@@ -55,6 +55,33 @@ export type UsuarioComLoja = {
  *
  *   const where = { ...escopoDaLoja(usuario, req), status: "open" }
  */
+/**
+ * Filtro de ATENDIMENTO, para somar ao de loja nas consultas de conversa.
+ *
+ * Cada numero de WhatsApp tem a sua vendedora, e a conversa que entra por ele
+ * e dela. A loja inteira enxergar tudo expoe conversa de cliente de uma
+ * vendedora para as colegas — inclusive dado pessoal da cliente e negociacao
+ * de preco. Entao:
+ *
+ *   vendedor           -> conversas do numero dela + as que passaram para ela
+ *   admin e gerente    -> tudo da loja (precisam para cobrir e conferir)
+ *   viewer             -> tudo da loja (papel de observacao, ja sem escrita)
+ *
+ * Vale para o `where` de `conversation`; para `message`, use dentro de
+ * `{ conversation: escopoDoAtendimento(usuario) }`.
+ */
+export function escopoDoAtendimento(usuario: UsuarioComLoja): Record<string, unknown> {
+  if (usuario.role !== "vendedor") return {}
+  return {
+    OR: [
+      // O que passaram para ela, mesmo que o numero seja de outra.
+      { assignedTo: usuario.id },
+      // Tudo que entra pelo numero dela, inclusive o que ainda nao tem dono.
+      { integracao: { vendedorId: usuario.id } },
+    ],
+  }
+}
+
 export function escopoDaLoja(
   usuario: UsuarioComLoja,
   lojaPedida?: string | null

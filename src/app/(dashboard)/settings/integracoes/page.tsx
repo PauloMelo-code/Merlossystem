@@ -113,26 +113,82 @@ export default function IntegracoesPage() {
     if (!gerarQr) carregar()
   }
 
-  /** Pede ao celular o histórico das conversas recentes deste número. */
-  async function puxarHistorico(item: Integracao) {
-    const confirmado = window.confirm(
-      `Puxar o histórico de "${item.rotulo}"?\n\n` +
-        `O pedido vai ao celular do número e as mensagens antigas chegam aos poucos. ` +
-        `Mantenha o aparelho ligado e com internet.`
+  /** Renomear a conta AQUI, sem tocar na instância do provedor. */
+  async function renomear(item: Integracao) {
+    const novo = window.prompt(
+      `Novo nome para este número no sistema.\n\n` +
+        `Só muda aqui: no provedor a conta continua como "${item.referenciaExterna}".`,
+      item.rotulo
     )
-    if (!confirmado) return
+    if (novo === null) return
+    const rotulo = novo.trim()
+    if (!rotulo || rotulo === item.rotulo) return
 
-    toast.info("Pedindo o histórico ao WhatsApp…")
-    const res = await fetch(`/api/integracoes/uazapi/${item.id}/historico`, {
-      method: "POST",
+    const res = await fetch(`/api/integracoes/${item.id}`, {
+      method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ conversas: 20, mensagens: 50 }),
+      body: JSON.stringify({ rotulo }),
     })
     const d = await res.json().catch(() => ({}))
     if (!res.ok) {
+      toast.error(d.error || "Não foi possível renomear.")
+      return
+    }
+    toast.success(`Agora aparece como "${rotulo}".`)
+    carregar()
+  }
+
+  /**
+   * Pede ao celular o histórico das conversas recentes deste número.
+   *
+   * Em dois tempos, de propósito: primeiro só quem JÁ é contato da loja.
+   * O aparelho é de trabalho, mas tem conversa pessoal; trazer tudo sem
+   * perguntar colocaria médico, banco e família no sistema, à vista da equipe.
+   */
+  async function puxarHistorico(item: Integracao) {
+    const confirmado = window.confirm(
+      `Puxar o histórico de "${item.rotulo}"?\n\n` +
+        `Traz as conversas de quem já é contato da loja. O pedido vai ao celular ` +
+        `do número e as mensagens antigas chegam aos poucos — mantenha o aparelho ` +
+        `ligado e com internet.`
+    )
+    if (!confirmado) return
+
+    const pedir = async (escopo: "contatos" | "todas") => {
+      const res = await fetch(`/api/integracoes/uazapi/${item.id}/historico`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversas: 20, mensagens: 50, escopo }),
+      })
+      return { ok: res.ok, d: await res.json().catch(() => ({})) }
+    }
+
+    toast.info("Pedindo o histórico ao WhatsApp…")
+    const { ok, d } = await pedir("contatos")
+    if (!ok) {
       toast.error(d.error || "Não foi possível puxar o histórico.")
       return
     }
+
+    if (d.pedidas === 0 && d.ignorados > 0) {
+      const todas = window.confirm(
+        `Nenhuma das conversas deste aparelho é de contato já cadastrado na loja.\n\n` +
+          `Trazer TODAS as conversas do aparelho? Isso inclui as conversas pessoais ` +
+          `deste celular, que passam a ficar visíveis para a loja.`
+      )
+      if (!todas) {
+        toast.info(d.aviso ?? "Nada foi importado.")
+        return
+      }
+      const segunda = await pedir("todas")
+      if (!segunda.ok) {
+        toast.error(segunda.d.error || "Não foi possível puxar o histórico.")
+        return
+      }
+      toast.success(segunda.d.aviso ?? "Pedido enviado.")
+      return
+    }
+
     toast.success(d.aviso ?? "Pedido enviado.")
   }
 
@@ -285,6 +341,9 @@ export default function IntegracoesPage() {
                     </Button>
                   </>
                 )}
+                <Button variant="outline" size="sm" onClick={() => renomear(item)}>
+                  Renomear
+                </Button>
                 <Button variant="outline" size="sm" onClick={() => desconectar(item)}>
                   Desconectar
                 </Button>

@@ -47,6 +47,34 @@ export interface NumeroConectado {
   vendedor: { id: string; nome: string } | null
 }
 
+/**
+ * Texto que o seletor mostra fechado. Sem isto ele exibia o valor cru ("all",
+ * e no filtro de número o identificador da conta): quem lê a tela precisa do
+ * nome, não da chave.
+ */
+const ROTULO_CANAL: Record<string, string> = {
+  all: "Todos os canais",
+  whatsapp: "WhatsApp",
+  instagram: "Instagram",
+  facebook: "Facebook",
+  tiktok: "TikTok",
+}
+
+const ROTULO_STATUS: Record<string, string> = {
+  all: "Abertos",
+  open: "Aberto",
+  pending: "Pendente",
+  resolved: "Resolvido",
+}
+
+/** O nome que a equipe reconhece: a vendedora do número, e só depois o apelido. */
+function nomeDoNumero(numeros: NumeroConectado[], id: string): string {
+  if (id === "all") return "Todos os números"
+  const n = numeros.find((x) => x.id === id)
+  if (!n) return "Todos os números"
+  return n.vendedor ? n.vendedor.nome : n.rotulo
+}
+
 const priorityBadge: Record<string, string> = {
   urgent: "bg-red-50 text-red-600 border border-red-100",
   high: "bg-amber-50 text-amber-600 border border-amber-100",
@@ -114,14 +142,15 @@ export function ConversationList({
         {numeros.length > 1 && (
           <Select value={numeroFilter} onValueChange={(v) => onNumeroFilterChange(v || "all")}>
             <SelectTrigger className="h-8 text-xs rounded-lg border-neutral-200/60">
-              <SelectValue placeholder="Número" />
+              {/* O texto vai explícito: sem isto o seletor mostrava o
+                  identificador da conta em vez do nome. */}
+              <SelectValue placeholder="Número">{nomeDoNumero(numeros, numeroFilter)}</SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos os números</SelectItem>
               {numeros.map((n) => (
                 <SelectItem key={n.id} value={n.id}>
-                  {n.rotulo}
-                  {n.vendedor ? ` — ${n.vendedor.nome}` : ""}
+                  {nomeDoNumero(numeros, n.id)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -131,7 +160,7 @@ export function ConversationList({
         <div className="flex gap-1.5">
           <Select value={channelFilter} onValueChange={(v) => onChannelFilterChange(v || "all")}>
             <SelectTrigger className="h-7 text-xs flex-1 rounded-lg border-neutral-200/60">
-              <SelectValue placeholder="Canal" />
+              <SelectValue placeholder="Canal">{ROTULO_CANAL[channelFilter] ?? "Todos os canais"}</SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos</SelectItem>
@@ -143,7 +172,7 @@ export function ConversationList({
           </Select>
           <Select value={statusFilter} onValueChange={(v) => onStatusFilterChange(v || "all")}>
             <SelectTrigger className="h-7 text-xs flex-1 rounded-lg border-neutral-200/60">
-              <SelectValue placeholder="Status" />
+              <SelectValue placeholder="Status">{ROTULO_STATUS[statusFilter] ?? "Abertos"}</SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Abertos</SelectItem>

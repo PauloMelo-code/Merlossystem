@@ -4,7 +4,7 @@ import { saveOutgoingMessage } from "@/lib/channels/gateway"
 import { entregarNoCanal } from "@/lib/chat/enviar"
 import type { ContentType } from "@/lib/channels/types"
 import { usuarioDaSessao, semSessao } from "@/lib/sessao"
-import { escopoDaLoja, lojaAtiva } from "@/lib/loja"
+import { escopoDaLoja, escopoDoAtendimento, lojaAtiva } from "@/lib/loja"
 import { z } from "zod"
 import { limiteDaPagina } from "@/lib/paginacao"
 
@@ -43,6 +43,8 @@ export async function GET(req: Request) {
     where: {
       conversationId,
       ...escopoDaLoja(usuario, lojaAtiva(req)),
+      // E a conversa precisa ser do atendimento dela, não só da loja.
+      conversation: escopoDoAtendimento(usuario),
       ...(before && { createdAt: { lt: new Date(before) } }),
     },
     include: {
@@ -76,7 +78,11 @@ export async function POST(req: Request) {
     // `findFirst` + escopo em vez de `findUnique`: a conversa tem que estar na
     // loja de quem esta enviando. A mensagem herda a loja dela.
     const conversation = await prisma.conversation.findFirst({
-      where: { id: data.conversationId, ...escopoDaLoja(usuario, lojaAtiva(req)) },
+      where: {
+        id: data.conversationId,
+        ...escopoDaLoja(usuario, lojaAtiva(req)),
+        ...escopoDoAtendimento(usuario),
+      },
       include: { contact: true },
     })
 

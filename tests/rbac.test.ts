@@ -72,6 +72,10 @@ describe("invariantes", () => {
   const EH_CONFIG = (rota: string) =>
     /^\/api\/(integracoes|usuarios|lojas)(\/|$)/.test(rota)
 
+  /** Coordenacao da loja: fora do atendimento (decisao de 22/09/2026). */
+  const EH_COORDENACAO = (rota: string) =>
+    /^\/api\/(broadcasts|templates|analytics|knowledge|alerts)(\/|$)/.test(rota)
+
   it("gerente exclui como admin em tudo que nao e configuracao", () => {
     const negados = pares
       .filter((p) => p.metodo === "DELETE" && !podeAcessar("gerente", p.caminho, "DELETE"))
@@ -80,13 +84,23 @@ describe("invariantes", () => {
     expect(negados).toContain("/api/integracoes/[id]")
   })
 
-  it("as unicas leituras escondidas do viewer sao as de configuracao", () => {
+  it("as leituras escondidas do viewer sao as de configuracao e as de coordenacao", () => {
     // LGPD e trilha de auditoria nao entram: sao operacao e gestao (decisao 7).
+    // Desde 22/09/2026, disparo, modelo, relatorio, base de conhecimento e
+    // alerta tambem ficam fora: viraram area de coordenacao da loja, junto com
+    // a decisao de tirar isso do dia a dia da vendedora.
     const leiturasFechadas = pares
       .filter((p) => p.metodo === "GET" && !podeAcessar("viewer", p.caminho, "GET"))
       .map((p) => p.rota)
-    expect(leiturasFechadas.every(EH_CONFIG), `fechadas: ${leiturasFechadas}`).toBe(true)
-    expect(leiturasFechadas.sort()).toEqual([
+    expect(
+      leiturasFechadas.every((r) => EH_CONFIG(r) || EH_COORDENACAO(r)),
+      `fechadas: ${leiturasFechadas}`
+    ).toBe(true)
+    expect([...new Set(leiturasFechadas)].sort()).toEqual([
+      "/api/alerts",
+      "/api/analytics",
+      "/api/broadcasts",
+      "/api/broadcasts/[id]",
       "/api/integracoes",
       "/api/integracoes/[id]",
       "/api/integracoes/bling/autorizar",
@@ -94,7 +108,13 @@ describe("invariantes", () => {
       "/api/integracoes/bling/depositos",
       "/api/integracoes/tiktok/autorizar",
       "/api/integracoes/uazapi/[id]/sessao",
+      "/api/knowledge",
+      "/api/knowledge/[id]",
+      "/api/templates",
+      "/api/templates/[id]",
     ])
+    // O atendimento continua aberto para ele.
+    expect(podeAcessar("viewer", "/api/conversations", "GET")).toBe(true)
   })
 
   it("sem role (token antigo ou adulterado) nao passa em nada", () => {
@@ -129,13 +149,16 @@ describe("casos que motivaram o RBAC", () => {
     expect(podeAcessar("vendedor", "/api/conversations/abc123", "PUT")).toBe(true)
     expect(podeAcessar("vendedor", "/api/orders", "POST")).toBe(true)
     expect(podeAcessar("vendedor", "/api/deals/abc123", "PUT")).toBe(true)
-    expect(podeAcessar("vendedor", "/api/alerts/abc123", "PUT")).toBe(true)
+    // Alerta saiu do dia a dia dela em 22/09/2026, junto com disparo, modelo,
+    // relatorio e base de conhecimento: e coordenacao da loja.
+    expect(podeAcessar("vendedor", "/api/alerts/abc123", "PUT")).toBe(false)
   })
 
-  it("viewer le o painel mas nao mexe", () => {
-    expect(podeAcessar("viewer", "/api/analytics", "GET")).toBe(true)
+  it("viewer le o painel de atendimento, mas nao o de coordenacao nem escreve", () => {
     expect(podeAcessar("viewer", "/api/conversations", "GET")).toBe(true)
     expect(podeAcessar("viewer", "/api/messages", "POST")).toBe(false)
+    // Relatorio virou area de coordenacao (gerente e admin).
+    expect(podeAcessar("viewer", "/api/analytics", "GET")).toBe(false)
   })
 
   it("cancelar agendamento e do vendedor; apagar template nao", () => {
@@ -195,6 +218,24 @@ describe("casos que motivaram o RBAC", () => {
     }
     // Escrever num caminho que so tem GET liberado cai no padrao fechado.
     expect(podeAcessar("vendedor", "/api/integracoes/numeros", "POST")).toBe(false)
+  })
+
+  it("vendedora nao alcanca a area de coordenacao; gestao alcanca", () => {
+    // Decisao do cliente (22/09/2026): disparo, modelo, relatorio, base de
+    // conhecimento e alerta sao de quem coordena. Esconder no menu nao basta —
+    // sem a regra, a URL digitada a mao continuava abrindo.
+    for (const area of ["/api/broadcasts", "/api/templates", "/api/analytics", "/api/knowledge", "/api/alerts"]) {
+      expect(podeAcessar("vendedor", area, "GET"), area).toBe(false)
+      expect(podeAcessar("viewer", area, "GET"), area).toBe(false)
+      expect(podeAcessar("gerente", area, "GET"), area).toBe(true)
+      expect(podeAcessar("admin", area, "GET"), area).toBe(true)
+      // E tambem no caminho com id, nao so na raiz.
+      expect(podeAcessar("vendedor", `${area}/abc-123`, "PUT"), area).toBe(false)
+    }
+    // O que e do atendimento continua dela.
+    for (const area of ["/api/conversations", "/api/messages", "/api/orders", "/api/products", "/api/returns", "/api/media", "/api/quick-replies", "/api/deals"]) {
+      expect(podeAcessar("vendedor", area, "GET"), area).toBe(true)
+    }
   })
 
   it("metodo fora da tabela fecha", () => {

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db/prisma"
 import { usuarioDaSessao, semSessao } from "@/lib/sessao"
-import { escopoDaLoja, lojaAtiva } from "@/lib/loja"
+import { escopoDaLoja, escopoDoAtendimento, lojaAtiva } from "@/lib/loja"
 import { contaDaConversa, credenciaisDaConta } from "@/lib/roteamento"
 import { ehUazapiConfigError } from "@/lib/uazapi/config"
 import { pedirHistorico } from "@/lib/uazapi/instancia"
@@ -26,7 +26,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   // inexistente.
   const loja = escopoDaLoja(usuario, lojaAtiva(req))
   const conversa = await prisma.conversation.findFirst({
-    where: { id, ...(loja.storeId ? { storeId: loja.storeId } : {}) },
+    where: { id, ...(loja.storeId ? { storeId: loja.storeId } : {}), ...escopoDoAtendimento(usuario) },
     select: { storeId: true, contact: { select: { whatsappId: true, phone: true } } },
   })
   if (!conversa) {

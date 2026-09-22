@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db/prisma"
 import { entregarNoCanal } from "@/lib/chat/enviar"
 import type { ContentType } from "@/lib/channels/types"
 import { usuarioDaSessao, semSessao } from "@/lib/sessao"
-import { escopoDaLoja, lojaAtiva } from "@/lib/loja"
+import { escopoDaLoja, escopoDoAtendimento, lojaAtiva } from "@/lib/loja"
 
 /**
  * Reenvia uma mensagem que o canal recusou.
@@ -28,7 +28,7 @@ export async function POST(
   // `findFirst` + escopo, nunca `findUnique`: o id vem da URL. Sem o escopo
   // bastava adivinhar um id para disparar um envio pela conta da outra loja.
   const mensagem = await prisma.message.findFirst({
-    where: { id, ...escopoDaLoja(usuario, lojaAtiva(req)) },
+    where: { id, ...escopoDaLoja(usuario, lojaAtiva(req)), conversation: escopoDoAtendimento(usuario) },
     include: {
       media: { select: { mediaFileId: true, caption: true } },
       conversation: { include: { contact: true } },

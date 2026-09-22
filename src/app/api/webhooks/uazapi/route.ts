@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server"
 import { ehLoteDeHistorico, parseUazapiMessages } from "@/lib/channels/uazapi"
 import { processIncomingMessage } from "@/lib/channels/gateway"
-import { contaPorIdentificadores } from "@/lib/roteamento"
+import { contaPorIdentificadores, credenciaisDaConta } from "@/lib/roteamento"
+import { getAdapterDaConta } from "@/lib/channels"
 import { verificarWebhookUazapi } from "@/lib/webhook-auth"
 
 /**
@@ -48,7 +49,29 @@ export async function POST(req: Request) {
 
     // Lote de historico: mensagem antiga, que nao pode aparecer como nova.
     const historico = ehLoteDeHistorico(body)
+
+    // O webhook do uazapi NAO traz URL da midia: traz o id da mensagem. Sem
+    // resolver aqui, foto e audio da cliente entravam como bolha vazia — o
+    // gateway so baixa quando ha `mediaUrl`. Mesmo passo que a rota da Meta
+    // ja fazia, com o adapter DA CONTA (cada instancia tem o seu token).
+    const precisaBaixar = mensagens.some((m) => m.mediaId && !m.mediaUrl)
+    const adapter = precisaBaixar
+      ? getAdapterDaConta("whatsapp", (await credenciaisDaConta(conta.id)) ?? {}, "uazapi")
+      : null
+
     for (const msg of mensagens) {
+      if (adapter?.downloadMedia && msg.mediaId && !msg.mediaUrl) {
+        try {
+          const arquivo = await adapter.downloadMedia(msg.mediaId)
+          // Data URL: o gateway baixa dela e guarda no MinIO (ADR 0006).
+          msg.mediaUrl = `data:${arquivo.mimeType};base64,${arquivo.buffer.toString("base64")}`
+          msg.mediaMimeType = arquivo.mimeType
+        } catch (erro) {
+          // Midia perdida nao pode derrubar a mensagem: o texto entra igual.
+          console.error("[uazapi] Falha ao baixar midia:", (erro as Error).message)
+        }
+      }
+
       await processIncomingMessage(msg, conta, { historico })
     }
 

@@ -23,8 +23,15 @@ import { listarChats, pedirHistorico } from "@/lib/uazapi/instancia"
 const entrada = z.object({
   /** Quantas conversas, das mais recentes para as mais antigas. */
   conversas: z.number().int().min(1).max(50).default(20),
-  /** Mensagens por conversa. */
-  mensagens: z.number().int().min(10).max(200).default(50),
+  /** Mensagens por conversa. O uazapi documenta 100 como teto do pedido. */
+  mensagens: z.number().int().min(10).max(100).default(50),
+  /**
+   * `contatos` (padrao): so conversas de quem JA e contato da loja.
+   * `todas`: todas as conversas individuais do aparelho — inclusive as
+   * pessoais da vendedora, que passam a ficar visiveis para a loja inteira.
+   * Por isso e escolha explicita, nunca o padrao.
+   */
+  escopo: z.enum(["contatos", "todas"]).default("contatos"),
 })
 
 const PAUSA_MS = 400
@@ -44,7 +51,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       isDeleted: false,
       ...(loja.storeId ? { storeId: loja.storeId } : {}),
     },
-    select: { id: true, status: true },
+    select: { id: true, status: true, storeId: true },
   })
   if (!conta) {
     return NextResponse.json({ error: "Conta uazapi nao encontrada" }, { status: 404 })
@@ -72,8 +79,36 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       })
     }
 
+    // O numero e o celular de trabalho da vendedora: a lista do aparelho traz
+    // medico, banco e familia junto. Importar tudo colocaria dado pessoal de
+    // quem nunca falou com a loja no CRM, visivel para a equipe inteira. Por
+    // padrao, so quem ja e contato da loja.
+    let alvos = chats
+    let ignorados = 0
+    if (corpo.escopo === "contatos") {
+      const numeros = chats.map((c) => c.replace(/@.*$/, ""))
+      const conhecidos = await prisma.contact.findMany({
+        where: { storeId: conta.storeId ?? undefined, whatsappId: { in: numeros } },
+        select: { whatsappId: true },
+      })
+      const doCadastro = new Set(conhecidos.map((c) => c.whatsappId))
+      alvos = chats.filter((c) => doCadastro.has(c.replace(/@.*$/, "")))
+      ignorados = chats.length - alvos.length
+    }
+
+    if (alvos.length === 0) {
+      return NextResponse.json({
+        pedidas: 0,
+        ignorados,
+        aviso:
+          `Nenhuma das ${chats.length} conversas do aparelho é de contato já cadastrado ` +
+          `na loja. Para trazer as conversas que ainda não são contatos, escolha trazer ` +
+          `todas — lembrando que isso inclui as conversas pessoais deste celular.`,
+      })
+    }
+
     let pedidas = 0
-    for (const chat of chats) {
+    for (const chat of alvos) {
       try {
         await pedirHistorico(credenciais.token, chat, corpo.mensagens)
         pedidas += 1
@@ -86,9 +121,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
     return NextResponse.json({
       pedidas,
+      ignorados,
       aviso:
-        `Pedido enviado para ${pedidas} conversa(s). As mensagens antigas aparecem aos ` +
-        `poucos; mantenha o celular do número ligado e com internet.`,
+        `Pedido enviado para ${pedidas} conversa(s)` +
+        (ignorados > 0 ? `; ${ignorados} conversa(s) do aparelho que não são contatos da loja ficaram de fora` : "") +
+        `. As mensagens antigas aparecem aos poucos; mantenha o celular do número ligado e com internet.`,
     })
   } catch (error) {
     if (ehUazapiConfigError(error)) {

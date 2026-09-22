@@ -3,6 +3,7 @@
 import { createContext, useContext, useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { useSession } from "next-auth/react"
 import { cn } from "@/lib/utils"
 import { InstalarApp } from "@/components/pwa/InstalarApp"
 import { motion } from "framer-motion"
@@ -62,6 +63,29 @@ const settingsNav = [
   { name: "Configurações", href: "/settings", icon: Settings },
 ]
 
+/**
+ * O que a VENDEDORA usa no dia a dia. O resto (Broadcast, Templates,
+ * Analytics, Base de Conhecimento, Alertas e Configurações) sai do menu dela:
+ * é trabalho de gestão, e item que abre em "você não tem acesso" só ensina a
+ * equipe a ignorar aviso de erro. O servidor recusa de qualquer forma — a tela
+ * esconder é conforto, não é a tranca (src/lib/rbac.ts).
+ */
+const DA_VENDEDORA = [
+  "/inbox",
+  "/contacts",
+  "/pipeline",
+  "/orders",
+  "/products",
+  "/quick-replies",
+  "/gallery",
+  "/returns",
+]
+
+function paraOPapel(itens: typeof mainNav, papel: string | undefined) {
+  if (papel !== "vendedor") return itens
+  return itens.filter((i) => DA_VENDEDORA.includes(i.href))
+}
+
 function NavSection({
   label, items, pathname, onNavigate,
 }: {
@@ -111,6 +135,11 @@ function NavSection({
 // Shared sidebar content (used in both desktop and mobile)
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname()
+  const { data: sessao } = useSession()
+  const papel = sessao?.user?.role
+  const comunicacao = paraOPapel(channelNav, papel)
+  const ferramentas = paraOPapel(toolsNav, papel)
+  const configuracao = paraOPapel(settingsNav, papel)
 
   return (
     <div className="flex h-full flex-col bg-[#141414]">
@@ -124,15 +153,21 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       {/* Navigation */}
       <ScrollArea className="flex-1 px-3 py-4">
         <nav className="space-y-6">
-          <NavSection items={mainNav} pathname={pathname} onNavigate={onNavigate} />
-          <NavSection label="Comunicação" items={channelNav} pathname={pathname} onNavigate={onNavigate} />
-          <NavSection label="Ferramentas" items={toolsNav} pathname={pathname} onNavigate={onNavigate} />
+          <NavSection items={paraOPapel(mainNav, papel)} pathname={pathname} onNavigate={onNavigate} />
+          {comunicacao.length > 0 && (
+            <NavSection label="Comunicação" items={comunicacao} pathname={pathname} onNavigate={onNavigate} />
+          )}
+          {ferramentas.length > 0 && (
+            <NavSection label="Ferramentas" items={ferramentas} pathname={pathname} onNavigate={onNavigate} />
+          )}
         </nav>
       </ScrollArea>
 
       {/* Bottom settings */}
       <div className="border-t border-white/[0.06] px-3 py-3 space-y-2">
-        <NavSection items={settingsNav} pathname={pathname} onNavigate={onNavigate} />
+        {configuracao.length > 0 && (
+          <NavSection items={configuracao} pathname={pathname} onNavigate={onNavigate} />
+        )}
         {/* Instalar como aplicativo: some sozinho quando já está instalado. */}
         <InstalarApp />
       </div>

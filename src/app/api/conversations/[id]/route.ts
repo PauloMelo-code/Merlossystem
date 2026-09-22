@@ -3,7 +3,7 @@ import { registrar } from "@/lib/auditoria"
 import { z } from "zod"
 import { prisma } from "@/lib/db/prisma"
 import { usuarioDaSessao, semSessao } from "@/lib/sessao"
-import { escopoDaLoja, lojaAtiva, foraDaLoja } from "@/lib/loja"
+import { escopoDaLoja, escopoDoAtendimento, lojaAtiva, foraDaLoja, type UsuarioComLoja } from "@/lib/loja"
 
 /**
  * Os valores vem do `schema.prisma` (Conversation.status e .priority). Sem
@@ -31,6 +31,21 @@ const atualizacaoSchema = z.object({
  * a conversa para si gravando `assignedTo`.
  */
 
+/**
+ * Quem atende esta conversa: a responsável por ela, ou a vendedora dona do
+ * número por onde ela entrou. Gestão (admin e gerente) enxerga tudo, mas não
+ * "atende" — por isso abrir não marca como lida.
+ */
+async function ehDeQuemAtende(usuario: UsuarioComLoja, conversaId: string): Promise<boolean> {
+  if (usuario.role !== "vendedor") return false
+  const conversa = await prisma.conversation.findFirst({
+    where: { id: conversaId },
+    select: { assignedTo: true, integracao: { select: { vendedorId: true } } },
+  })
+  if (!conversa) return false
+  return conversa.assignedTo === usuario.id || conversa.integracao?.vendedorId === usuario.id
+}
+
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -41,7 +56,9 @@ export async function GET(
   const { id } = await params
 
   const conversation = await prisma.conversation.findFirst({
-    where: { id, ...escopoDaLoja(usuario, lojaAtiva(req)) },
+    // Conversa de outra vendedora responde como inexistente: adivinhar o id
+    // não pode abrir o atendimento da colega.
+    where: { id, ...escopoDaLoja(usuario, lojaAtiva(req)), ...escopoDoAtendimento(usuario) },
     include: {
       contact: true,
       agent: { select: { id: true, name: true, avatarUrl: true } },
@@ -67,7 +84,7 @@ export async function PUT(
   const { id } = await params
 
   const alvo = await prisma.conversation.findFirst({
-    where: { id, ...escopoDaLoja(usuario, lojaAtiva(req)) },
+    where: { id, ...escopoDaLoja(usuario, lojaAtiva(req)), ...escopoDoAtendimento(usuario) },
     select: { id: true, storeId: true },
   })
   if (!alvo) return foraDaLoja("Conversa")
@@ -84,7 +101,10 @@ export async function PUT(
   const data: Record<string, unknown> = {}
   if (body.status !== undefined) data.status = body.status
   if (body.priority !== undefined) data.priority = body.priority
-  if (body.markRead) data.unreadCount = 0
+  // "Marcar como lida" é de quem ATENDE. Gestão abrindo para conferir não pode
+  // apagar o aviso de não lida da vendedora: ela perderia a única pista de que
+  // a cliente está esperando resposta.
+  if (body.markRead && (await ehDeQuemAtende(usuario, id))) data.unreadCount = 0
 
   // Transferir exige checar a LOJA do destinatario, nao so que o id existe.
   // O id vem do corpo do request: sem esta checagem dava para atribuir a
@@ -116,6 +136,15 @@ export async function PUT(
   }
 
   if (Object.keys(data).length === 0) {
+    // Gestão abriu a conversa: o pedido de "marcar como lida" foi ignorado de
+    // propósito, e isso não é erro — a tela não tem nada a corrigir.
+    if (body.markRead) {
+      const atual = await prisma.conversation.findUnique({
+        where: { id },
+        include: { contact: true, agent: { select: { id: true, name: true, avatarUrl: true } } },
+      })
+      return NextResponse.json(atual)
+    }
     return NextResponse.json({ error: "Nada a atualizar." }, { status: 400 })
   }
 
