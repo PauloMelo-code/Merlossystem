@@ -13,6 +13,7 @@
     "test:watch": "vitest --config config/vitest.config.ts",
     "compliance": "node scripts/check-compliance.mjs",
     "map": "node scripts/project-map.mjs --out docs/PROJECT_MAP.md",
+    "icones": "node scripts/gerar-icones.mjs",
     "docs:check": "node scripts/docs-check.mjs",
     "ai-marks": "node scripts/remove-ai-marks.mjs --dir docs",
     "db:up": "docker compose up -d",
