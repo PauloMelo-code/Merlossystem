@@ -1,6 +1,7 @@
 "use client"
 
 import { Sidebar, SidebarProvider } from "@/components/layout/Sidebar"
+import { BarraCelular } from "@/components/layout/BarraCelular"
 import { Header } from "@/components/layout/Header"
 import { motion, AnimatePresence } from "framer-motion"
 import { usePathname } from "next/navigation"
@@ -25,7 +26,9 @@ export default function DashboardLayout({
         <Sidebar />
         <div className="flex flex-1 flex-col overflow-hidden min-w-0">
           <Header />
-          <main id="main-content" className="flex-1 overflow-auto">
+          {/* `pb-[72px]` no celular: a barra de baixo é fixa e cobriria o fim
+              da página (o campo de mensagem, o botão de salvar). */}
+          <main id="main-content" className="flex-1 overflow-auto pb-[72px] lg:pb-0">
             <AnimatePresence mode="wait">
               <motion.div
                 key={pathname}
@@ -40,6 +43,7 @@ export default function DashboardLayout({
             </AnimatePresence>
           </main>
         </div>
+        <BarraCelular />
       </div>
     </SidebarProvider>
   )

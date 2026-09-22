@@ -4,6 +4,7 @@ import { createContext, useContext, useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
+import { InstalarApp } from "@/components/pwa/InstalarApp"
 import { motion } from "framer-motion"
 import {
   Inbox, Users, Kanban, ShoppingBag, Image, Package,
@@ -130,8 +131,10 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       </ScrollArea>
 
       {/* Bottom settings */}
-      <div className="border-t border-white/[0.06] px-3 py-3">
+      <div className="border-t border-white/[0.06] px-3 py-3 space-y-2">
         <NavSection items={settingsNav} pathname={pathname} onNavigate={onNavigate} />
+        {/* Instalar como aplicativo: some sozinho quando já está instalado. */}
+        <InstalarApp />
       </div>
     </div>
   )
