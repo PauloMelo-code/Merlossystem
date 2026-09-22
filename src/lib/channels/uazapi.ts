@@ -180,6 +180,70 @@ const CONTENT_TYPE: Record<string, ContentType> = {
   locationmessage: "location",
 }
 
+/**
+ * Conversa que nasceu de ANUNCIO (Click to WhatsApp).
+ *
+ * O uazapi repassa o conteudo bruto da mensagem, e e dentro dele que o
+ * WhatsApp manda a referencia do anuncio — em `contextInfo.externalAdReply`
+ * ou, nas versoes mais novas, em `ctwaContext`. O contrato publico do uazapi
+ * nao documenta esses campos, entao a leitura e TOLERANTE: procura pelas duas
+ * chaves em qualquer nivel e devolve so o que encontrar. Nao achou, nao e
+ * anuncio — nunca lanca.
+ *
+ * Vale muito para a loja: cliente que veio de anuncio precisa de resposta
+ * diferente da de quem ja compra ha anos, e sem isto ninguem sabe qual e qual.
+ */
+export type OrigemDeAnuncio = {
+  titulo?: string
+  corpo?: string
+  url?: string
+  anuncioId?: string
+}
+
+function comoObjeto(valor: unknown): Record<string, any> | null {
+  if (typeof valor === "string") {
+    try {
+      const lido = JSON.parse(valor)
+      return typeof lido === "object" && lido !== null ? lido : null
+    } catch {
+      return null
+    }
+  }
+  return typeof valor === "object" && valor !== null ? (valor as Record<string, any>) : null
+}
+
+/** Procura a referencia do anuncio em qualquer nivel do conteudo bruto. */
+function acharAnuncio(bruto: unknown, profundidade = 0): Record<string, any> | null {
+  const obj = comoObjeto(bruto)
+  if (!obj || profundidade > 4) return null
+  for (const chave of ["externalAdReply", "ctwaContext", "external_ad_reply"]) {
+    const achado = comoObjeto(obj[chave])
+    if (achado) return achado
+  }
+  for (const valor of Object.values(obj)) {
+    if (typeof valor === "object" || typeof valor === "string") {
+      const achado = acharAnuncio(valor, profundidade + 1)
+      if (achado) return achado
+    }
+  }
+  return null
+}
+
+export function origemDeAnuncio(mensagemBruta: unknown): OrigemDeAnuncio | null {
+  const ad = acharAnuncio(mensagemBruta)
+  if (!ad) return null
+  const origem: OrigemDeAnuncio = {}
+  const titulo = texto(ad.title ?? ad.headline)
+  const corpo = texto(ad.body ?? ad.description)
+  const url = texto(ad.sourceUrl ?? ad.source_url ?? ad.url)
+  const id = texto(ad.sourceId ?? ad.source_id ?? ad.ctwaClid ?? ad.ctwa_clid)
+  if (titulo) origem.titulo = titulo
+  if (corpo) origem.corpo = corpo
+  if (url) origem.url = url
+  if (id) origem.anuncioId = id
+  return origem
+}
+
 /** Texto nao vazio, ou `undefined`. Objeto (o `content` de midia) nao vira texto. */
 function texto(valor: unknown): string | undefined {
   if (typeof valor === "number") return String(valor)
@@ -241,6 +305,8 @@ export function parseUazapiMessages(body: any): IncomingMessage[] {
     if (!externalId || !senderId) continue
 
     const bruto = typeof e?.content === "object" && e?.content !== null ? e.content : {}
+    // Só na mensagem da cliente: o anúncio é a porta por onde ELA entrou.
+    const anuncio = fromMe ? null : origemDeAnuncio(e)
     const contentType =
       CONTENT_TYPE[String(primeiro(e?.messageType, e?.mediaType, e?.type) ?? "text").toLowerCase()] ??
       "text"
@@ -265,6 +331,7 @@ export function parseUazapiMessages(body: any): IncomingMessage[] {
       latitude: e?.latitude ?? bruto?.degreesLatitude,
       longitude: e?.longitude ?? bruto?.degreesLongitude,
       timestamp: paraData(e?.messageTimestamp ?? e?.timestamp),
+      ...(anuncio ? { metadata: { anuncio } } : {}),
     })
   }
 

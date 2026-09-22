@@ -4,6 +4,9 @@ import { processIncomingMessage } from "@/lib/channels/gateway"
 import { contaPorIdentificadores, credenciaisDaConta } from "@/lib/roteamento"
 import { getAdapterDaConta } from "@/lib/channels"
 import { verificarWebhookUazapi } from "@/lib/webhook-auth"
+import { prisma } from "@/lib/db/prisma"
+import { subirDeUrl, urlInterna, urlInternaThumb } from "@/lib/media/upload"
+import { fotoDoContato } from "@/lib/uazapi/instancia"
 
 /**
  * Webhook do WhatsApp via uazapi.
@@ -14,6 +17,52 @@ import { verificarWebhookUazapi } from "@/lib/webhook-auth"
  *
  * Nao ha GET de verificacao: o uazapi nao faz challenge como a Meta.
  */
+
+/**
+ * Busca a foto do perfil da cliente e GUARDA como midia da loja.
+ *
+ * A URL que o WhatsApp devolve e temporaria: gravada direto no contato, daria
+ * foto quebrada semanas depois, e o avatar da tela nao tem alternativa para
+ * imagem que falha. Roda uma vez por contato (so quando `avatar_url` esta
+ * vazio) e nunca derruba a mensagem: sem foto, a tela mostra as iniciais.
+ */
+async function guardarFotoDoContato(
+  token: string | undefined,
+  storeId: string,
+  contatoId: string,
+  numero: string
+): Promise<void> {
+  if (!token) return
+  try {
+    const url = await fotoDoContato(token, numero)
+    if (!url) return
+
+    const subida = await subirDeUrl(url, { storeId, pasta: "avatars", mimeType: "image/jpeg" })
+    const id = crypto.randomUUID()
+    await prisma.mediaFile.create({
+      data: {
+        id,
+        storeId,
+        originalName: null,
+        fileKey: subida.chave,
+        fileUrl: urlInterna(id),
+        thumbnailKey: subida.chaveThumb || null,
+        thumbnailUrl: subida.chaveThumb ? urlInternaThumb(id) : null,
+        fileType: "image",
+        mimeType: "image/jpeg",
+        fileSize: subida.bytes,
+        width: subida.width || null,
+        height: subida.height || null,
+        folder: "avatars",
+      },
+    })
+    await prisma.contact.update({ where: { id: contatoId }, data: { avatarUrl: urlInterna(id) } })
+  } catch (erro) {
+    // Contato sem foto, foto restrita pela privacidade, uazapi fora do ar: a
+    // conversa vale mais que o avatar.
+    console.warn("[uazapi] Sem foto do contato:", (erro as Error).message)
+  }
+}
 export async function POST(req: Request) {
   const auth = verificarWebhookUazapi(req.headers, req.url)
   if (!auth.ok) {
@@ -54,10 +103,9 @@ export async function POST(req: Request) {
     // resolver aqui, foto e audio da cliente entravam como bolha vazia — o
     // gateway so baixa quando ha `mediaUrl`. Mesmo passo que a rota da Meta
     // ja fazia, com o adapter DA CONTA (cada instancia tem o seu token).
+    const credenciais = await credenciaisDaConta(conta.id)
     const precisaBaixar = mensagens.some((m) => m.mediaId && !m.mediaUrl)
-    const adapter = precisaBaixar
-      ? getAdapterDaConta("whatsapp", (await credenciaisDaConta(conta.id)) ?? {}, "uazapi")
-      : null
+    const adapter = precisaBaixar ? getAdapterDaConta("whatsapp", credenciais ?? {}, "uazapi") : null
 
     for (const msg of mensagens) {
       if (adapter?.downloadMedia && msg.mediaId && !msg.mediaUrl) {
@@ -72,7 +120,19 @@ export async function POST(req: Request) {
         }
       }
 
-      await processIncomingMessage(msg, conta, { historico })
+      const resultado = await processIncomingMessage(msg, conta, { historico })
+
+      // Foto da cliente: só quando ela ainda não tem. A URL do WhatsApp é
+      // temporária, então a imagem é baixada e guardada como mídia da loja —
+      // gravar o link direto daria foto quebrada semanas depois.
+      if (resultado?.contact && !resultado.contact.avatarUrl && !msg.fromMe && conta.storeId) {
+        await guardarFotoDoContato(
+          credenciais?.token,
+          conta.storeId,
+          resultado.contact.id,
+          msg.senderId
+        )
+      }
     }
 
     return NextResponse.json({ success: true })

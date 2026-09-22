@@ -159,6 +159,23 @@ export async function listarChats(token: string, limite = 20): Promise<string[]>
 }
 
 /**
+ * Foto do perfil do contato no WhatsApp.
+ *
+ * A URL que volta e TEMPORARIA — por isso quem chama baixa a imagem e guarda
+ * no MinIO; gravar o link direto daria foto quebrada semanas depois.
+ * Contato sem foto (ou com foto restrita pela privacidade) devolve vazio, e
+ * isso nao e erro: a tela cai nas iniciais do nome.
+ */
+export async function fotoDoContato(token: string, numero: string): Promise<string | null> {
+  const d = await chamar(UAZAPI_ENDPOINTS.avatar, token, "POST", {
+    number: numero.replace(/@.*$/, ""),
+    preview: true,
+  })
+  const url = (d.url ?? (d as { image?: string }).image) as string | undefined
+  return typeof url === "string" && /^https?:\/\//.test(url) ? url : null
+}
+
+/**
  * Pede ao celular as mensagens anteriores de uma conversa. O WhatsApp responde
  * quando quer e em lotes, pelo evento `history` — por isso nao devolve as
  * mensagens aqui, so registra o pedido.

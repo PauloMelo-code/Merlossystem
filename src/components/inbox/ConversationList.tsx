@@ -230,6 +230,13 @@ export function ConversationList({
                     <ChannelBadge channel={conv.channel} />
                     {/* Por qual número entrou. Na visão geral é o que diz de
                         quem é o atendimento sem abrir a conversa. */}
+                    {/* Veio de anúncio: quem chega por aí não conhece a loja,
+                        e a resposta é outra. */}
+                    {conv.contact.tags?.includes("Anúncio") && (
+                      <span className="rounded-md bg-violet-50 px-1.5 py-0.5 text-[10px] font-bold text-violet-700">
+                        ANÚNCIO
+                      </span>
+                    )}
                     {numeroFilter === "all" && conv.integracao && (
                       <span className="max-w-[9rem] truncate rounded-md bg-neutral-100 px-1.5 py-0.5 text-[10px] font-medium text-neutral-600">
                         {conv.integracao.rotulo}

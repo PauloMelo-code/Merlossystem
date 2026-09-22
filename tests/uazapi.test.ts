@@ -278,6 +278,69 @@ describe("parseUazapiMessages", () => {
     ).toEqual([])
   })
 
+  it("conversa vinda de anúncio é marcada, e a comum não", () => {
+    // O WhatsApp manda a referência do anúncio dentro do conteúdo bruto, em
+    // `contextInfo.externalAdReply` — o uazapi só repassa. Sem isto, a loja
+    // não sabe quem chegou por anúncio.
+    const [daPropaganda] = parseUazapiMessages({
+      instanceName: "i",
+      message: {
+        messageid: "A1",
+        chatid: "5541999990000@s.whatsapp.net",
+        text: "vi o anúncio do vestido",
+        content: {
+          contextInfo: {
+            externalAdReply: {
+              title: "Vestido Lia 30% off",
+              body: "Só esta semana",
+              sourceUrl: "https://fb.me/anuncio",
+              sourceId: "1234567890",
+            },
+          },
+        },
+      },
+    })
+    expect(daPropaganda?.metadata).toEqual({
+      anuncio: {
+        titulo: "Vestido Lia 30% off",
+        corpo: "Só esta semana",
+        url: "https://fb.me/anuncio",
+        anuncioId: "1234567890",
+      },
+    })
+
+    // `content` também chega como JSON em texto, conforme a versão.
+    const [emTexto] = parseUazapiMessages({
+      instanceName: "i",
+      message: {
+        messageid: "A2",
+        chatid: "5541999990000@s.whatsapp.net",
+        text: "oi",
+        content: JSON.stringify({ ctwaContext: { title: "Promo", sourceUrl: "https://x/y" } }),
+      },
+    })
+    expect(emTexto?.metadata).toEqual({ anuncio: { titulo: "Promo", url: "https://x/y" } })
+
+    const [comum] = parseUazapiMessages({
+      instanceName: "i",
+      message: { messageid: "C1", chatid: "5541999990000@s.whatsapp.net", text: "bom dia" },
+    })
+    expect(comum?.metadata).toBeUndefined()
+
+    // O que a loja manda não é "vinda de anúncio", mesmo citando um.
+    const [nossa] = parseUazapiMessages({
+      instanceName: "i",
+      message: {
+        messageid: "N1",
+        chatid: "5541999990000@s.whatsapp.net",
+        fromMe: true,
+        text: "olá",
+        content: { contextInfo: { externalAdReply: { title: "Promo" } } },
+      },
+    })
+    expect(nossa?.metadata).toBeUndefined()
+  })
+
   it("reconhece o lote de historico", () => {
     expect(ehLoteDeHistorico({ EventType: "history", event: "messages", messages: [] })).toBe(true)
     expect(ehLoteDeHistorico({ EventType: "messages", message: {} })).toBe(false)

@@ -96,7 +96,7 @@ describe("invariantes", () => {
       leiturasFechadas.every((r) => EH_CONFIG(r) || EH_COORDENACAO(r)),
       `fechadas: ${leiturasFechadas}`
     ).toBe(true)
-    expect([...new Set(leiturasFechadas)].sort()).toEqual([
+    expect(Array.from(new Set(leiturasFechadas)).sort()).toEqual([
       "/api/alerts",
       "/api/analytics",
       "/api/broadcasts",

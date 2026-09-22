@@ -8,6 +8,9 @@ import type {
   ContentType,
 } from "./types"
 
+/** Etiqueta de quem chegou por anúncio. Uma só, escrita num lugar só. */
+export const TAG_ANUNCIO = "Anúncio"
+
 // Maps channel sender IDs to the correct contact field
 const CHANNEL_ID_FIELD: Record<ChannelType, string> = {
   whatsapp: "whatsappId",
@@ -80,11 +83,25 @@ export async function processIncomingMessage(
         ...(msg.channel === "whatsapp" && { phone: msg.senderId }),
       },
     })
-  } else if (msg.senderName && !contact.name) {
-    // Update name if we didn't have it
-    await prisma.contact.update({
+  } else if ((msg.senderName && !contact.name) || (msg.senderAvatarUrl && !contact.avatarUrl)) {
+    // Completa o que faltava: nome e foto chegam em mensagens diferentes.
+    contact = await prisma.contact.update({
       where: { id: contact.id },
-      data: { name: msg.senderName },
+      data: {
+        ...(msg.senderName && !contact.name ? { name: msg.senderName } : {}),
+        ...(msg.senderAvatarUrl && !contact.avatarUrl ? { avatarUrl: msg.senderAvatarUrl } : {}),
+      },
+    })
+  }
+
+  // Veio de anúncio (Click to WhatsApp): a etiqueta fica no contato, que é
+  // onde a equipe já procura o contexto da cliente. Quem chega por anúncio não
+  // conhece a loja — merece outra conversa, e sem isto ninguém sabe qual é.
+  const anuncio = (msg.metadata as { anuncio?: Record<string, unknown> } | undefined)?.anuncio
+  if (anuncio && !contact.tags.includes(TAG_ANUNCIO)) {
+    contact = await prisma.contact.update({
+      where: { id: contact.id },
+      data: { tags: { push: TAG_ANUNCIO } },
     })
   }
 

@@ -107,6 +107,8 @@ export const UAZAPI_ENDPOINTS = {
   historico: "/message/history-sync",
   /** Lista as conversas da instancia. Corpo: `{ sort, limit, offset, wa_isGroup }`. */
   chats: "/chat/find",
+  /** Foto do contato. Corpo: `{ number, preview }`; devolve `url` TEMPORARIA. */
+  avatar: "/chat/avatar",
 } as const
 
 /**
