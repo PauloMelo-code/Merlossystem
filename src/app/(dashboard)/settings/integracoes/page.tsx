@@ -113,6 +113,17 @@ export default function IntegracoesPage() {
     if (!gerarQr) carregar()
   }
 
+  /** Aponta o webhook da conta para este sistema (uazapi). */
+  async function apontarWebhook(item: Integracao) {
+    const res = await fetch(`/api/integracoes/uazapi/${item.id}/webhook`, { method: "POST" })
+    const d = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      toast.error(d.error || "Não foi possível configurar o webhook.")
+      return
+    }
+    toast.success(d.aviso ?? "Webhook configurado.")
+  }
+
   async function desconectar(item: Integracao) {
     // Acao critica: a credencial e apagada de verdade, e reconectar exige
     // passar de novo pelo provedor.
@@ -237,9 +248,16 @@ export default function IntegracoesPage() {
 
               <div className="flex gap-2">
                 {item.provedor === "uazapi" && (
-                  <Button variant="outline" size="sm" onClick={() => sessao(item, false)}>
-                    Sessão
-                  </Button>
+                  <>
+                    <Button variant="outline" size="sm" onClick={() => sessao(item, false)}>
+                      Sessão
+                    </Button>
+                    {/* Número criado à mão no painel costuma ficar sem webhook: a
+                        mensagem chega no WhatsApp e nunca aparece aqui. */}
+                    <Button variant="outline" size="sm" onClick={() => apontarWebhook(item)}>
+                      Apontar webhook
+                    </Button>
+                  </>
                 )}
                 <Button variant="outline" size="sm" onClick={() => desconectar(item)}>
                   Desconectar
