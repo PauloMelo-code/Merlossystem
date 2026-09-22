@@ -25,6 +25,8 @@ export const ACOES = [
   "usuario_alterado",
   "usuario_desativado",
   "usuario_reativado",
+  /** Troca feita pela PROPRIA pessoa, em /api/perfil. O valor nunca entra. */
+  "senha_alterada",
   "integracao_conectada",
   "integracao_desconectada",
   "conversa_resolvida",

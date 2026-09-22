@@ -54,12 +54,25 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger }) {
       if (user) {
         const u = user as unknown as { role: string; storeId: string | null }
         token.id = user.id
         token.role = u.role
         token.storeId = u.storeId
+      }
+      // Trocou nome ou foto em "Minha conta": sem reler aqui, o canto da tela
+      // so mudaria no proximo login. Papel e loja NAO sao relidos de proposito
+      // — trocar papel e ato de administracao, e a sessao acompanha no login.
+      if (trigger === "update" && token.id) {
+        const atual = await prisma.user.findUnique({
+          where: { id: token.id as string },
+          select: { name: true, avatarUrl: true },
+        })
+        if (atual) {
+          token.name = atual.name
+          token.picture = atual.avatarUrl
+        }
       }
       return token
     },

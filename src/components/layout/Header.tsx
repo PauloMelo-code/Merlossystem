@@ -11,7 +11,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Input } from "@/components/ui/input"
 import { MobileSidebarTrigger } from "./Sidebar"
@@ -173,6 +173,8 @@ export function Header() {
           <DropdownMenuTrigger>
             <Button variant="ghost" className="flex items-center gap-2 h-9 px-2 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800">
               <Avatar className="h-7 w-7 ring-1 ring-neutral-200 dark:ring-neutral-700">
+                {/* A foto de "Minha conta"; sem ela, as iniciais. */}
+                {session?.user?.image && <AvatarImage src={session.user.image} alt="" />}
                 <AvatarFallback className="bg-neutral-900 text-white text-[11px] font-medium">
                   {initials}
                 </AvatarFallback>
@@ -189,7 +191,11 @@ export function Header() {
               <p className="text-xs text-neutral-500">{session?.user?.email}</p>
             </div>
             <DropdownMenuSeparator className="bg-neutral-100" />
-            <DropdownMenuItem className="gap-2 text-neutral-600 cursor-pointer rounded-lg mx-1">
+            {/* Levava a lugar nenhum: trocar a senha dependia do administrador. */}
+            <DropdownMenuItem
+              onClick={() => router.push("/perfil")}
+              className="gap-2 text-neutral-600 cursor-pointer rounded-lg mx-1"
+            >
               <User className="h-4 w-4" strokeWidth={1.8} />
               <span className="text-[13px]">Meu Perfil</span>
             </DropdownMenuItem>

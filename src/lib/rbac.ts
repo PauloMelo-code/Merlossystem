@@ -53,6 +53,16 @@ const EXCECOES: { re: RegExp; metodos: Partial<Record<Metodo, Role[]>>; motivo: 
     motivo: "DELETE aqui e cancelamento logico, nao exclusao",
   },
 
+  {
+    // A PROPRIA conta: nome, foto e senha. Vale para todo papel, inclusive
+    // viewer — cuidar da propria senha nao e privilegio de gestao, e sem isto
+    // toda troca passava pelo administrador (na pratica, senha combinada no
+    // grupo). A rota so toca no usuario da sessao, nunca em papel ou loja.
+    re: /^\/api\/perfil$/,
+    metodos: { GET: TODOS, PUT: TODOS },
+    motivo: "cuidar da propria conta nao e administracao",
+  },
+
   // === Area de GESTAO — fora do dia a dia da vendedora =====================
   // Decisao do cliente (22/09/2026): a vendedora atende, vende e registra
   // troca; disparo em massa, modelo de mensagem, relatorio, base de

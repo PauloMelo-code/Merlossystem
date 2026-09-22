@@ -16,8 +16,8 @@ const pares = rotas.flatMap((r) =>
 )
 
 describe("cobertura", () => {
-  it("as 62 rotas protegidas entram na avaliacao", () => {
-    expect(rotas.length).toBe(62)
+  it("as 63 rotas protegidas entram na avaliacao", () => {
+    expect(rotas.length).toBe(63)
     expect(pares.length).toBeGreaterThan(60)
   })
 
@@ -43,10 +43,15 @@ describe("invariantes", () => {
     }
   })
 
-  it("viewer nunca escreve", () => {
-    for (const p of pares.filter((x) => x.metodo !== "GET")) {
-      expect(podeAcessar("viewer", p.caminho, p.metodo), `${p.metodo} ${p.rota}`).toBe(false)
-    }
+  it("viewer nunca escreve — excecao unica: a propria conta", () => {
+    // Trocar a propria senha e a propria foto nao e escrever no dado da loja:
+    // e cuidar do proprio acesso. Fechar isso obrigaria o observador a pedir
+    // troca de senha ao administrador, que e como senha acaba combinada no
+    // grupo. `/api/perfil` so toca no usuario da sessao, nunca em papel ou loja.
+    const escritasDoViewer = pares
+      .filter((p) => p.metodo !== "GET" && podeAcessar("viewer", p.caminho, p.metodo))
+      .map((p) => `${p.metodo} ${p.rota}`)
+    expect(escritasDoViewer).toEqual(["PUT /api/perfil"])
   })
 
   it("vendedor nunca exclui — excecao unica: cancelar mensagem agendada", () => {
