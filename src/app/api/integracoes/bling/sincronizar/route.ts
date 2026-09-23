@@ -57,9 +57,13 @@ export async function POST(req: Request) {
       ...r,
       aviso:
         `${r.criados} produto(s) criado(s), ${r.atualizados} atualizado(s), ` +
-        `${r.semMudanca} sem mudança` +
-        (r.ignorados > 0 ? `, ${r.ignorados} ignorado(s) por não ter código no Bling` : "") +
-        `, em ${r.lojas} loja(s).`,
+        `${r.semMudanca} sem mudança, em ${r.lojas} loja(s). ` +
+        `${r.paginas} página(s) lidas, ${r.variacoes} variação(ões) de tamanho ` +
+        `usadas só para o preço, ${r.categorias} categoria(s) do Bling.` +
+        // Os dois numeros abaixo so aparecem quando ha o que olhar: sao a
+        // diferenca entre "sincronizou" e "sincronizou certo".
+        (r.semPreco > 0 ? ` ${r.semPreco} peça(s) ficaram sem preço no Bling.` : "") +
+        (r.ignorados > 0 ? ` ${r.ignorados} ignorada(s) por código ausente ou repetido.` : ""),
     })
   } catch (e) {
     if (ehBlingConfigError(e)) {

@@ -9,9 +9,13 @@ import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { criarState, validarState } from "@/lib/bling/estado"
 import { cabecalhoBasic, configDoApp, ehBlingConfigError } from "@/lib/bling/config"
+import { precoDeCatalogo, numeroDoBling } from "@/lib/bling/preco"
 
 const raiz = resolve(__dirname, "..")
 const ler = (...p: string[]) => readFileSync(resolve(raiz, ...p), "utf8")
+/** Codigo sem comentario — para a asercao nao cair no texto que explica a regra. */
+const semComentarios = (src: string) =>
+  src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1")
 
 const ENV = { ...process.env }
 beforeEach(() => {
@@ -136,22 +140,96 @@ describe("somente leitura", () => {
     const lib = ler("src", "lib", "bling", "sincronizar.ts")
     expect(lib).not.toMatch(/method: "(POST|PUT|PATCH|DELETE)"/)
     expect(lib.match(/from "\.\/cliente"/g)?.length).toBe(1)
-    expect(lib).toMatch(/listarProdutos/)
+    expect(lib).toMatch(/listarPaginaProdutos/)
   })
 
   it("a sincronizacao nao pisa no que o Bling nao sabe", () => {
-    // O Bling devolve id, nome, codigo, preco e situacao — mais nada. Categoria,
-    // tamanhos, fotos, destaque e o estoque POR TAMANHO sao preenchidos aqui
-    // pela equipe, e `active:false` e como a loja exclui um produto. Escrever
-    // qualquer um desses na sincronizacao apagaria o trabalho delas a cada
-    // rodada (ou ressuscitaria o que foi excluido).
-    const lib = ler("src", "lib", "bling", "sincronizar.ts")
-    const atualizacao = lib.slice(lib.indexOf("prisma.product.update"))
-    for (const campo of ["stock", "active", "category", "sizes", "imageUrls", "featured", "sizeType"]) {
-      expect(atualizacao, campo).not.toMatch(new RegExp(`\\b${campo}:`))
+    // Tamanhos, fotos, destaque, descricao e o estoque POR TAMANHO sao
+    // preenchidos AQUI pela equipe, e `active:false` e como a loja exclui um
+    // produto. Escrever qualquer um desses na sincronizacao apagaria o trabalho
+    // delas a cada rodada (ou ressuscitaria o que foi excluido).
+    // Sem os comentarios: a regra fala do que se GRAVA, e o proprio comentario
+    // do arquivo cita os campos proibidos para explicar por que nao os grava.
+    const lib = semComentarios(ler("src", "lib", "bling", "sincronizar.ts"))
+    for (const campo of [
+      "stock",
+      "active",
+      "sizes",
+      "imageUrls",
+      "featured",
+      "sizeType",
+      "description",
+    ]) {
+      expect(lib, campo).not.toMatch(new RegExp(`\\b${campo}\\s*:`))
     }
     // E a linha nunca e recriada: pedido, midia e reserva apontam para o id local.
     expect(lib).not.toMatch(/prisma\.product\.deleteMany|prisma\.product\.delete\b/)
+  })
+
+  it("categoria e a excecao, e so e escrita quando o Bling TEM uma", () => {
+    // O Bling passou a ser a fonte da categoria (o usuario pediu). Mas gravar
+    // o que ele devolve SEM condicao apagaria, com `null`, a categoria digitada
+    // aqui para todo produto que o Bling nao classificou — e o Bling nao tem
+    // como repor o que nunca soube.
+    const lib = ler("src", "lib", "bling", "sincronizar.ts")
+    expect(lib).toMatch(/if \(categoria && atual\.category !== categoria\)/)
+    expect(lib).not.toMatch(/category:\s*(null|undefined|categoria \?\?)/)
+  })
+
+  it("a paginacao decide pela pagina CRUA — o bug que parava na primeira", () => {
+    // Numa loja de roupa a maioria das linhas da listagem e variacao de tamanho.
+    // Decidir "acabou" pelo tamanho da lista JA FILTRADA fazia 100 itens virarem
+    // 10 pecas, e `10 < 100` encerrava o laco: a sincronizacao inteira terminava
+    // na pagina 1, com 10 produtos e nenhum preco.
+    const lib = ler("src", "lib", "bling", "sincronizar.ts")
+    expect(lib).toMatch(/if \(bruta\.length < POR_PAGINA\) break/)
+    expect(lib).not.toMatch(/pecas\.length < POR_PAGINA/)
+    // E quem varre pede a pagina crua: `listarProdutos` ja vem filtrada.
+    expect(lib).not.toMatch(/[^a]\blistarProdutos\(/)
+  })
+
+  it("a varredura nao confia no default de filtroSaldoEstoque", () => {
+    // O parametro tem `default: 1` (so saldo positivo) e o enum — 0 zerado,
+    // 1 positivo, 2 negativo — NAO tem valor para "todos". Se o Bling aplicar
+    // esse default ao parametro omitido, o catalogo perde toda peca esgotada
+    // sem erro nenhum, que e o tipo de falha que so aparece na reclamacao da
+    // cliente. Por isso a varredura pergunta tambem as outras fatias.
+    const lib = semComentarios(ler("src", "lib", "bling", "sincronizar.ts"))
+    expect(lib).toMatch(/VARIANTES_DE_SALDO = \[undefined, 0, 2\]/)
+    expect(lib).toMatch(/for \(const filtroSaldoEstoque of VARIANTES_DE_SALDO\)/)
+  })
+})
+
+describe("preco do catalogo", () => {
+  it("usa o preco do proprio produto quando ele tem", () => {
+    expect(precoDeCatalogo(89.9, [10, 10])).toBe("89.90")
+  })
+
+  it("peca com variacoes: o pai vem zerado e o preco vive nos tamanhos", () => {
+    // E o caso NORMAL de roupa na v3 — foi o que trouxe o catalogo a R$ 0,00.
+    expect(precoDeCatalogo(0, [129.9, 129.9, 129.9])).toBe("129.90")
+  })
+
+  it("tamanhos com precos diferentes: fica com o mais repetido", () => {
+    expect(precoDeCatalogo(0, [99.9, 129.9, 129.9, 129.9])).toBe("129.90")
+  })
+
+  it("empate entre tamanhos fica com o MAIOR, para nao subcotar a peca", () => {
+    // Subcotar tira margem da loja sem ninguem perceber; desconto a vendedora
+    // ainda pode dar na conversa.
+    expect(precoDeCatalogo(0, [99.9, 129.9])).toBe("129.90")
+  })
+
+  it("aceita preco em texto — a spec promete number, o JSON nao garante", () => {
+    expect(precoDeCatalogo("89.90")).toBe("89.90")
+    expect(precoDeCatalogo("1.234,56")).toBe("1234.56")
+  })
+
+  it("sem preco em lugar nenhum devolve 0,00 em vez de inventar um", () => {
+    expect(precoDeCatalogo(0, [])).toBe("0.00")
+    expect(precoDeCatalogo(null, undefined)).toBe("0.00")
+    expect(precoDeCatalogo(-5, [0, 0])).toBe("0.00")
+    expect(numeroDoBling("abc")).toBe(0)
   })
 })
 

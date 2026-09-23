@@ -60,6 +60,29 @@ const categories = [
   { value: "acessorios", label: "Acessórios" },
 ]
 
+/**
+ * Rotulo da categoria de um produto.
+ *
+ * A lista acima e a taxonomia que a equipe digitava antes de o catalogo vir do
+ * Bling. A categoria sincronizada e a do Bling — texto livre, que quase nunca
+ * cai nesses nove valores. O `|| "—"` que existia aqui fazia TODO produto
+ * importado aparecer sem categoria, como se a sincronizacao nao a tivesse
+ * trazido.
+ */
+function rotuloDaCategoria(valor: string | null | undefined): string {
+  if (!valor) return "—"
+  return categories.find((c) => c.value === valor)?.label ?? valor
+}
+
+/** As nove de sempre mais a que o produto ja tem, quando vier do Bling. */
+function opcoesDeCategoria(...presentes: (string | null | undefined)[]) {
+  const opcoes = new Map(categories.map((c) => [c.value, c.label] as const))
+  for (const valor of presentes) {
+    if (valor && !opcoes.has(valor)) opcoes.set(valor, valor)
+  }
+  return Array.from(opcoes).map(([value, label]) => ({ value, label }))
+}
+
 const sizeTypes = [
   { value: "slim", label: "Slim" },
   { value: "plussize", label: "Plus Size" },
@@ -157,7 +180,9 @@ function ProductForm({
               <SelectValue placeholder="Selecione" />
             </SelectTrigger>
             <SelectContent>
-              {categories.map((c) => (
+              {/* A categoria vinda do Bling entra na lista: sem ela o campo
+                  abria vazio e salvar apagava a categoria do produto. */}
+              {opcoesDeCategoria(product?.category, category).map((c) => (
                 <SelectItem key={c.value} value={c.value}>
                   {c.label}
                 </SelectItem>
@@ -326,7 +351,11 @@ export default function ProductsPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todas</SelectItem>
-            {categories.map((c) => (
+            {/* Mais as categorias dos produtos JA carregados: sem isto o filtro
+                nao alcanca nenhuma categoria vinda do Bling. So enxerga o que
+                esta na tela — filtrar por uma categoria ausente desta pagina
+                continua exigindo a busca por nome. */}
+            {opcoesDeCategoria(...products.map((p) => p.category)).map((c) => (
               <SelectItem key={c.value} value={c.value}>
                 {c.label}
               </SelectItem>
@@ -379,7 +408,7 @@ export default function ProductsPage() {
                     {product.sku || "—"}
                   </TableCell>
                   <TableCell>
-                    {categories.find((c) => c.value === product.category)?.label || "—"}
+                    {rotuloDaCategoria(product.category)}
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline">

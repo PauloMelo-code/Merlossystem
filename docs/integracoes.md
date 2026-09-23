@@ -390,13 +390,17 @@ Nao negociavel — sao chaves que movimentam dinheiro e dados de cliente.
   cifra e grava.
 - **`state` obrigatorio e assinado.** Sem isso, um callback forjado troca a
   conta conectada da rede inteira.
-- **Deposito e o de-para de loja.** Toda leitura de estoque vem por deposito e
-  cai na loja do `bling_deposito_id`; toda escrita carrega o deposito da loja de
-  origem. Pedido sem deposito baixa estoque da loja errada — e o erro so aparece
-  no inventario.
+- **Deposito**: a leitura de estoque vem por deposito, pelo `bling_deposito_id`
+  da loja. **Corrigido em 22/09/2026**: a Merlo Store usa um deposito SO, e as
+  duas lojas apontam para o mesmo. Quem separa a operacao entre as lojas e o
+  **Masc** — vendeu no Masc, ele baixa no Bling. Deposito repetido nas duas
+  lojas **nao** e erro de configuracao, e o esperado.
 - **Refresh**: token expira; renovar antes do vencimento por job.
-- **Confirmado na collection OpenAPI oficial** (17/08/2026, HTTP 200 em
-  `developer.bling.com.br/build/assets/openapi-BvBfsn8J.json`): API v3, prefixo
+- **Confirmado na collection OpenAPI oficial** (rebaixada em 22/09/2026 de
+  `developer.bling.com.br/build/assets/openapi-BVqLYFZn.json` — o hash do
+  arquivo muda quando o portal e publicado de novo, e a URL antiga
+  `openapi-BvBfsn8J.json` responde 404; para achar a atual, leia o portal e
+  procure `openapi-*.json`): API v3, prefixo
   `/Api/v3`, e o **deposito nao existe no corpo do pedido** — ele so entra em
   `POST /pedidos/vendas/{id}/lancar-estoque/{idDeposito}`, uma segunda chamada.
   A API **nao tem idempotencia** (nenhum header, nenhum 409 declarado).
@@ -404,6 +408,46 @@ Nao negociavel — sao chaves que movimentam dinheiro e dados de cliente.
   estoque no Bling. O Masc e o dono da venda e o Bling e a autoridade de
   estoque, alimentado pelo vinculo Masc -> Bling (decisao 8,
   [ADR 0004](adr/0004-fontes-da-verdade.md)).
+
+#### Espelho do catalogo (`POST /api/integracoes/bling/sincronizar`)
+
+A tela de Produtos, o seletor de produto do chat e a reserva de estoque leem a
+tabela `products` local. O botao **Sincronizar catalogo**, na tela de
+integracoes, traz o catalogo do Bling para ela. Continua sendo leitura do lado
+do Bling: o `POST` e da nossa rota, e daqui so sai `GET`.
+
+Como a v3 devolve uma loja de roupa, e o que cada detalhe custou:
+
+- **Cada tamanho e uma variacao e vem como LINHA PROPRIA na listagem**, marcada
+  por `idProdutoPai`. O produto de topo e a peca. Quem pagina tem de decidir
+  pelo tamanho da pagina **crua**: decidir pela lista ja filtrada fez a primeira
+  sincronizacao (22/09/2026) parar na pagina 1 com 10 produtos, porque 90 das
+  100 linhas eram tamanho.
+- **O preco vive na variacao.** O pai de uma peca com variacoes vem com
+  `preco: 0` — foi o que trouxe o catalogo inteiro a R$ 0,00. O preco da peca e
+  o do proprio produto e, quando ele vem zerado, o preco **mais repetido** entre
+  os tamanhos. **Empate fica com o maior**: subcotar tira margem da loja sem
+  ninguem perceber, e desconto a vendedora ainda pode dar na conversa.
+- **A categoria nao esta na listagem, e no detalhe so vem o `categoria.id`** —
+  `ProdutosCategoriaDTO` tem um campo so. O nome legivel esta em
+  `GET /categorias/produtos`. Perguntar o detalhe de cada produto custaria uma
+  requisicao por peca, a 3 por segundo; filtrar a listagem por `idCategoria`
+  custa uma passada a mais no catalogo e da a mesma informacao.
+- **`filtroSaldoEstoque` tem `default: 1` (so saldo positivo) e o enum nao tem
+  valor para "todos"** — omitir e a unica forma de pedir sem filtro. Se o Bling
+  aplicar esse default ao parametro omitido, o catalogo perde toda peca
+  esgotada, sem erro nenhum. A varredura pergunta uma pagina das fatias `0` e
+  `2` e desiste da fatia assim que a resposta prova que ja tinha vindo tudo.
+- **`criterio: 2` (Ativos).** `5` ("Todos") traz tambem os excluidos, e `1`
+  — o default — e "Ultimos incluidos", que **nao** e "todos".
+
+O que a sincronizacao **nao** escreve, e por que: `stock` (o Bling da saldo por
+SKU, a coluna e por TAMANHO), `active` (e assim que a loja exclui um produto),
+`sizes`, `imageUrls`, `featured`, `sizeType` e `description` (preenchidos pela
+equipe). Categoria e a unica excecao, e so e gravada quando o Bling tem uma:
+gravar `null` apagaria a categoria digitada aqui. E a linha **nunca** e
+recriada — `orders.items[].productId` e `media_files.product_id` apontam para o
+id local, e recriar orfanaria pedido e zeraria reserva.
 
 ### Masc (sistema de vendas das lojas)
 

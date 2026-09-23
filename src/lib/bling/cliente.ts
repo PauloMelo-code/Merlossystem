@@ -217,14 +217,31 @@ export type ProdutoBling = {
   id: number | string
   nome?: string
   codigo?: string
-  preco?: number
+  /**
+   * `number <float>` na especificacao. Tipado tambem como string porque JSON
+   * nao garante o que a spec promete, e um `"89.90"` lido como nao-numero vira
+   * preco zero no catalogo inteiro — falha cara e silenciosa.
+   */
+  preco?: number | string
   situacao?: string
+  /** `S` simples, `V` variacao, `E` composicao. */
+  formato?: string
   /**
    * Preenchido (≠ 0) quando o item e a VARIACAO de outro produto. A listagem
    * da v3 devolve cada variacao tambem como linha propria: sem descartar, cada
    * tamanho viraria um produto separado no catalogo.
    */
   idProdutoPai?: number | string
+}
+
+export type CategoriaBling = {
+  id: number | string
+  descricao?: string
+}
+
+/** O item e um produto de topo (simples ou pai), nao uma variacao de tamanho. */
+export function ehProdutoDeTopo(p: ProdutoBling): boolean {
+  return !p.idProdutoPai || String(p.idProdutoPai) === "0"
 }
 
 export type DepositoBling = {
@@ -248,19 +265,63 @@ export type SaldoBling = {
 }
 
 /**
- * Catalogo. `pagina` comeca em 1.
+ * Uma pagina do catalogo, CRUA — do jeito que o Bling devolve, variacoes
+ * incluidas. `pagina` comeca em 1 (CONFIRMADO: `default: 1` na spec).
  *
- * `criterio: 2` = so produtos ATIVOS no Bling. Sem ele vinha tambem o que a
- * loja ja tirou de linha, e o catalogo do atendimento enchia de peca morta.
+ * Quem pagina TEM de decidir pelo tamanho desta lista, nao pela lista filtrada
+ * depois: numa loja de roupa a maioria das linhas e variacao de tamanho, entao
+ * uma pagina de 100 itens pode render 10 produtos. Parar por causa desses 10 e
+ * o que fazia a sincronizacao terminar na primeira pagina.
+ *
+ * `criterio: 2` = so produtos ATIVOS (CONFIRMADO no enum da spec: 1 ultimos
+ * incluidos, 2 ativos, 3 inativos, 4 excluidos, 5 todos). Sem ele vinha tambem
+ * o que a loja ja tirou de linha, e o catalogo do atendimento enchia de peca
+ * morta.
  */
-export async function listarProdutos(integracaoId: string, pagina = 1, limite = 100) {
+export async function listarPaginaProdutos(
+  integracaoId: string,
+  pagina = 1,
+  limite = 100,
+  filtros?: {
+    /** `idCategoria` e o unico jeito barato de saber a categoria de cada produto. */
+    idCategoria?: string | number
+    /**
+     * `0` zerado, `1` positivo, `2` negativo — e NAO existe valor para "todos".
+     * A spec declara `default: 1`, entao pode ser que omitir signifique "so o
+     * que tem saldo", o que esconderia toda peca esgotada do catalogo. Omitir e
+     * a unica forma de pedir sem filtro; quem varre confere na pratica se
+     * precisa pedir as outras fatias.
+     */
+    filtroSaldoEstoque?: 0 | 1 | 2
+  }
+) {
   const r = await buscar<{ data?: ProdutoBling[] }>(integracaoId, BLING_ENDPOINTS.produtos, {
     pagina,
     limite,
     criterio: 2,
+    idCategoria: filtros?.idCategoria === undefined ? undefined : String(filtros.idCategoria),
+    filtroSaldoEstoque: filtros?.filtroSaldoEstoque,
   })
-  // A variacao ja entra pelo produto pai; como linha propria, duplicaria.
-  return (r.data ?? []).filter((p) => !p.idProdutoPai || String(p.idProdutoPai) === "0")
+  return r.data ?? []
+}
+
+/**
+ * Catalogo sem as variacoes — e o que a tela de saldo ao vivo lista.
+ *
+ * A variacao ja entra pelo produto pai; como linha propria, duplicaria a peca
+ * uma vez por tamanho.
+ */
+export async function listarProdutos(integracaoId: string, pagina = 1, limite = 100) {
+  return (await listarPaginaProdutos(integracaoId, pagina, limite)).filter(ehProdutoDeTopo)
+}
+
+/** Categorias cadastradas — o de-para que transforma `categoria.id` em nome. */
+export async function listarCategorias(integracaoId: string, pagina = 1, limite = 100) {
+  const r = await buscar<{ data?: CategoriaBling[] }>(integracaoId, BLING_ENDPOINTS.categorias, {
+    pagina,
+    limite,
+  })
+  return r.data ?? []
 }
 
 /**

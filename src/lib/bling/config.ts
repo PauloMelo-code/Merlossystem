@@ -44,6 +44,15 @@ export const BLING_ENDPOINTS = {
   produtos: `${V3}/produtos`,
   /** Depositos cadastrados — de-para com as lojas daqui. */
   depositos: `${V3}/depositos`,
+  /**
+   * Categorias de produto.
+   *
+   * O produto NAO carrega o nome da categoria em lugar nenhum: a listagem nao
+   * traz categoria, e o detalhe traz so `categoria.id` (CONFIRMADO em
+   * `components.schemas.ProdutosDadosDTO.properties.categoria`, que tem apenas
+   * `id`). O nome legivel so existe aqui.
+   */
+  categorias: `${V3}/categorias/produtos`,
 } as const
 
 /**
