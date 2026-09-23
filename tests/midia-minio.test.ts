@@ -193,3 +193,41 @@ describe("configuracao do armazenamento", () => {
     expect(compose).toMatch(/"9002:9000"/)
   })
 })
+
+describe("a Galeria separa o que e de cada um", () => {
+  const raizDoProjeto = resolve(__dirname, "..")
+  const lerArquivo = (...p: string[]) => readFileSync(resolve(raizDoProjeto, ...p), "utf8")
+
+  it("foto de perfil de contato NUNCA aparece na Galeria", () => {
+    // `contacts.avatar_url` aponta para a linha de midia. Excluir pela Galeria
+    // apaga o objeto do bucket: a ficha do contato amanheceria com a imagem
+    // quebrada e ninguem ligaria uma coisa na outra. Por isso a exclusao vale
+    // mesmo quando alguem pede a pasta pelo nome na URL.
+    const rota = lerArquivo("src", "app", "api", "media", "gallery", "route.ts")
+    expect(rota).toMatch(/folder !== PASTA_DE_AVATAR/)
+    expect(rota).toMatch(/\{ not: PASTA_DE_AVATAR \}/)
+  })
+
+  it("quem grava avatar usa a mesma constante, nao a string solta", () => {
+    const pastas = lerArquivo("src", "lib", "media", "pastas.ts")
+    expect(pastas).toMatch(/PASTA_DE_AVATAR = "avatars"/)
+  })
+
+  it("os filtros saem do acervo, nao de uma lista fixa", () => {
+    // A lista fixa oferecia "Lookbooks" e "Stories", que nunca receberam
+    // arquivo: a pessoa clicava, via a tela vazia e concluia que o acervo
+    // estava vazio.
+    const tela = lerArquivo("src", "app", "(dashboard)", "gallery", "page.tsx")
+    expect(tela).not.toMatch(/value: "lookbooks"/)
+    expect(tela).not.toMatch(/value: "stories"/)
+    expect(tela).toMatch(/opcoes\(pastas, rotuloDaPasta/)
+  })
+
+  it("o seletor mostra rotulo, nao o valor cru", () => {
+    // Sem filho explicito este Select renderiza o VALOR: o filtro aparecia
+    // escrito "all" na tela.
+    const tela = lerArquivo("src", "app", "(dashboard)", "gallery", "page.tsx")
+    expect(tela).toMatch(/<SelectValue placeholder="Pasta">/)
+    expect(tela).toMatch(/<SelectValue placeholder="Tipo">/)
+  })
+})
