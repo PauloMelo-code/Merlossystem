@@ -51,7 +51,10 @@ export async function GET(req: Request) {
   const vendedor = searchParams.get("vendedor") || ""
   const daConversa: Record<string, unknown>[] = []
 
-  if (numero) daConversa.push({ integracaoId: numero })
+  // `storeIntegracaoId` e o nome da coluna; `integracao` e o da relacao. Como
+  // este `where` e `Record<string, unknown>`, o TypeScript nao confere nenhum
+  // dos dois — errar aqui so aparece como erro do Prisma em producao.
+  if (numero) daConversa.push({ storeIntegracaoId: numero })
   if (vendedor) {
     // Mesma definicao de `escopoDoAtendimento`: e dela o que esta atribuido a
     // ela OU o que entra pelo numero dela. Só `assignedTo` deixaria de fora a

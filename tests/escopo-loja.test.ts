@@ -207,3 +207,31 @@ describe("gateway de mensagem", () => {
     expect(src).toMatch(/findFirst\(\{\s*where: \{ storeId,/)
   })
 })
+
+describe("nome de coluna que o TypeScript nao confere", () => {
+  it("filtro de conversa usa storeIntegracaoId, nunca integracaoId", async () => {
+    // O `where` das rotas e `Record<string, unknown>`, entao o Prisma Client
+    // nao tipa nada dentro dele: `{ integracaoId: x }` compila, passa no
+    // typecheck, passa no build — e explode como erro de validacao do Prisma
+    // na primeira vez que alguem usa o filtro em producao. A coluna chama
+    // `storeIntegracaoId`; `integracao` e o nome da RELACAO.
+    const { readFileSync } = await import("node:fs")
+    const { resolve } = await import("node:path")
+    const { globSync } = await import("node:fs")
+
+    const raiz = resolve(__dirname, "..", "src")
+    const arquivos = globSync("**/*.{ts,tsx}", { cwd: raiz }).map((f) => resolve(raiz, f))
+
+    for (const arquivo of arquivos) {
+      const src = readFileSync(arquivo, "utf8")
+      for (const linha of src.split("\n")) {
+        const achou = linha.match(/\bintegracaoId:\s*(\S+)/)
+        // `integracaoId: string` e anotacao de tipo, nao chave de consulta —
+        // e vem seguida de `)`, `,` ou `;` conforme o lugar.
+        if (achou && !/^string\b/.test(achou[1])) {
+          throw new Error(`${arquivo}: "${linha.trim()}" — a coluna e storeIntegracaoId`)
+        }
+      }
+    }
+  })
+})
