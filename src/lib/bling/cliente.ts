@@ -7,6 +7,7 @@ import {
   cabecalhoBasic,
   configDoApp,
   BlingConfigError,
+  CABECALHO_JWT,
 } from "./config"
 
 /**
@@ -58,6 +59,7 @@ export async function trocarCodePorTokens(code: string): Promise<TokensBling> {
       Authorization: cabecalhoBasic(cfg),
       "Content-Type": "application/x-www-form-urlencoded",
       Accept: "application/json",
+      ...CABECALHO_JWT,
     },
     body: new URLSearchParams({
       grant_type: "authorization_code",
@@ -86,6 +88,7 @@ export async function renovarTokens(refreshToken: string): Promise<TokensBling> 
       Authorization: cabecalhoBasic(cfg),
       "Content-Type": "application/x-www-form-urlencoded",
       Accept: "application/json",
+      ...CABECALHO_JWT,
     },
     body: new URLSearchParams({
       grant_type: "refresh_token",
@@ -181,7 +184,13 @@ async function buscar<T>(
   for (const [k, v] of repetidos ?? []) endereco.searchParams.append(k, v)
 
   const res = await fetch(endereco, {
-    headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/json",
+      // Tambem aqui: a documentacao do Bling e explicita em manter o header em
+      // toda requisicao autenticada, nao so na emissao do token.
+      ...CABECALHO_JWT,
+    },
   })
 
   if (!res.ok) {

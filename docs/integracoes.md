@@ -396,6 +396,14 @@ Nao negociavel — sao chaves que movimentam dinheiro e dados de cliente.
   **Masc** — vendeu no Masc, ele baixa no Bling. Deposito repetido nas duas
   lojas **nao** e erro de configuracao, e o esperado.
 - **Refresh**: token expira; renovar antes do vencimento por job.
+- **JWT, nao token opaco.** O Bling DESCONTINUOU o token opaco e anunciou
+  bloqueio com data "em definicao" — pode cair sem aviso util. O header
+  `enable-jwt: 1` (`CABECALHO_JWT`, em `src/lib/bling/config.ts`) vai nas TRES
+  situacoes: ao trocar o code, ao **renovar** e em **toda** requisicao
+  autenticada. O da renovacao e o que se esquece: sem ele, a proxima renovacao
+  devolve token opaco de novo e a migracao se desfaz sozinha, em silencio,
+  horas depois. O JWT tem de 1.500 a 3.000 caracteres (o opaco tem dezenas) e
+  cabe em `stores_integracoes.credenciais_cifradas`, que e `text`.
 - **Confirmado na collection OpenAPI oficial** (rebaixada em 22/09/2026 de
   `developer.bling.com.br/build/assets/openapi-BVqLYFZn.json` — o hash do
   arquivo muda quando o portal e publicado de novo, e a URL antiga

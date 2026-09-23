@@ -451,3 +451,36 @@ describe("foto e grade vindas do detalhe", () => {
     expect(lib.match(/blingDetalheEm: new Date\(\)/g)?.length).toBeGreaterThanOrEqual(3)
   })
 })
+
+describe("token JWT, nao opaco", () => {
+  const cliente = ler("src", "lib", "bling", "cliente.ts")
+
+  it("o header vai nas TRES situacoes, nao so na primeira", () => {
+    // O Bling descontinuou o token opaco e anunciou bloqueio com data "em
+    // definicao" — pode cair sem aviso util. E o header nao basta na emissao:
+    // sem ele na RENOVACAO, a proxima renovacao devolve token opaco de novo e
+    // a migracao se desfaz sozinha, em silencio, algumas horas depois.
+    const comHeader = cliente.match(/\.\.\.CABECALHO_JWT/g) ?? []
+    expect(comHeader.length).toBe(3)
+
+    // 1 e 2: as duas chamadas ao endpoint de token.
+    for (const concessao of ["authorization_code", "refresh_token"]) {
+      const trecho = cliente.slice(0, cliente.indexOf(`grant_type: "${concessao}"`))
+      const ultimoHeader = trecho.lastIndexOf("...CABECALHO_JWT")
+      const ultimoFetch = trecho.lastIndexOf("await fetch(")
+      expect(ultimoHeader, concessao).toBeGreaterThan(ultimoFetch)
+    }
+
+    // 3: a requisicao autenticada a API.
+    const autenticada = cliente.slice(cliente.indexOf("Authorization: `Bearer ${token}`"))
+    expect(autenticada.slice(0, 300)).toMatch(/\.\.\.CABECALHO_JWT/)
+  })
+
+  it("o header mora num lugar so", () => {
+    // Espalhar a string `enable-jwt` pelo codigo faria a proxima chamada nova
+    // nascer sem ela — que e exatamente como a migracao se perde pela metade.
+    const config = ler("src", "lib", "bling", "config.ts")
+    expect(config).toMatch(/CABECALHO_JWT = \{ "enable-jwt": "1" \}/)
+    expect(cliente).not.toMatch(/"enable-jwt"/)
+  })
+})

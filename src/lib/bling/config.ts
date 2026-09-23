@@ -32,6 +32,26 @@
 
 export const BLING_API_BASE = "https://api.bling.com.br"
 
+/**
+ * Header que pede token JWT em vez do token opaco.
+ *
+ * O Bling DESCONTINUOU o token opaco e ja anunciou bloqueio, com data "em
+ * definicao" — ou seja, pode cair sem aviso util. Sem este header a API
+ * continua devolvendo token opaco, que funciona ate o bloqueio e para de
+ * funcionar de uma vez.
+ *
+ * Tem de ir em TODAS as tres situacoes, e nao so na primeira:
+ *   1. ao trocar o code por token;
+ *   2. ao RENOVAR pelo refresh token — sem ele, a renovacao seguinte devolve
+ *      token opaco de novo e a migracao se desfaz sozinha na primeira renovacao;
+ *   3. em toda requisicao autenticada a API.
+ *
+ * O JWT tem de 1.500 a 3.000 caracteres, contra poucas dezenas do opaco. Cabe
+ * em `stores_integracoes.credenciais_cifradas`, que e `text` — mas e a razao
+ * de isto estar escrito aqui e nao ser "so mais um header".
+ */
+export const CABECALHO_JWT = { "enable-jwt": "1" } as const
+
 /** Prefixo confirmado em `servers[0].url` da collection oficial. */
 const V3 = `${BLING_API_BASE}/Api/v3`
 
