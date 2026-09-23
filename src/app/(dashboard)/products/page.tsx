@@ -29,6 +29,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Plus, Search, Pencil, Trash2 } from "lucide-react"
 import { toast } from "sonner"
+import { Paginacao } from "@/components/comum/Paginacao"
 import { SkeletonTable } from "@/components/ui/skeleton"
 
 interface Product {
@@ -47,6 +48,8 @@ interface Product {
   active: boolean
   featured: boolean
 }
+
+const POR_PAGINA = 20
 
 const categories = [
   { value: "vestidos", label: "Vestidos" },
@@ -265,9 +268,15 @@ export default function ProductsPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingProduct, setEditingProduct] = useState<Product | undefined>()
 
+  const [pagina, setPagina] = useState(1)
+  const [total, setTotal] = useState(0)
+  const [limite, setLimite] = useState(POR_PAGINA)
+
   const loadProducts = useCallback(async () => {
     setLoading(true)
     const params = new URLSearchParams()
+    params.set("page", String(pagina))
+    params.set("limit", String(POR_PAGINA))
     if (search) params.set("search", search)
     // "all" e o valor do item "Todas" do seletor — um Select do Radix nao
     // aceita item de valor vazio. Mandar esse "all" para a API filtrava pela
@@ -278,12 +287,20 @@ export default function ProductsPage() {
     const res = await fetch(`/api/products?${params}`)
     const data = await res.json()
     setProducts(data.products)
+    setTotal(data.total ?? 0)
+    setLimite(data.limit ?? POR_PAGINA)
     setLoading(false)
-  }, [search, filterCategory, filterSizeType])
+  }, [search, filterCategory, filterSizeType, pagina])
 
   useEffect(() => {
     loadProducts()
   }, [loadProducts])
+
+  // Trocar de filtro volta para a pagina 1: na pagina 8, um filtro mais estreito
+  // devolve lista vazia e parece que o filtro nao encontrou nada.
+  useEffect(() => {
+    setPagina(1)
+  }, [search, filterCategory, filterSizeType])
 
   async function handleDelete(id: string) {
     if (!confirm("Tem certeza que deseja excluir este produto?")) return
@@ -451,6 +468,13 @@ export default function ProductsPage() {
             )}
           </TableBody>
         </Table>
+        <Paginacao
+          pagina={pagina}
+          limite={limite}
+          total={total}
+          carregando={loading}
+          onMudar={setPagina}
+        />
       </div>
       )}
     </div>

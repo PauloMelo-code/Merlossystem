@@ -43,6 +43,25 @@ export async function GET(req: Request) {
   if (tag) where.tags = { has: tag }
   if (preferredSize) where.preferredSize = preferredSize
 
+  // Filtrar por numero e por vendedora passa pelas CONVERSAS: o contato nao
+  // guarda por onde falou nem com quem. Sao dois filtros independentes que se
+  // somam no mesmo `some` — pedir os dois quer dizer "atendida por ela, por
+  // este numero", e nao "por ela em qualquer numero mais qualquer uma neste".
+  const numero = searchParams.get("numero") || ""
+  const vendedor = searchParams.get("vendedor") || ""
+  const daConversa: Record<string, unknown>[] = []
+
+  if (numero) daConversa.push({ integracaoId: numero })
+  if (vendedor) {
+    // Mesma definicao de `escopoDoAtendimento`: e dela o que esta atribuido a
+    // ela OU o que entra pelo numero dela. Só `assignedTo` deixaria de fora a
+    // conversa que ninguem assumiu ainda no numero que e dela.
+    daConversa.push({
+      OR: [{ assignedTo: vendedor }, { integracao: { vendedorId: vendedor } }],
+    })
+  }
+  if (daConversa.length > 0) where.conversations = { some: { AND: daConversa } }
+
   const [contacts, total] = await Promise.all([
     prisma.contact.findMany({
       where,

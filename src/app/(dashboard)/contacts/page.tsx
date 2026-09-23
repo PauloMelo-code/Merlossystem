@@ -18,6 +18,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Plus, Search, Pencil, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import { SkeletonTable } from "@/components/ui/skeleton"
+import { Paginacao } from "@/components/comum/Paginacao"
 
 interface Contact {
   id: string
@@ -160,29 +161,84 @@ function ContactForm({
   )
 }
 
+/** Numero conectado, como `/api/integracoes/numeros` devolve. */
+type Numero = {
+  id: string
+  rotulo: string
+  vendedor: { id: string; nome: string } | null
+}
+
+/** A vendedora primeiro: e como a equipe chama o numero ("o da Dani"). */
+function nomeDoNumero(n: Numero): string {
+  return n.vendedor ? n.vendedor.nome : n.rotulo
+}
+
+/** As vendedoras que tem numero, sem repetir quem tem mais de um. */
+function vendedorasDosNumeros(numeros: Numero[]): { id: string; nome: string }[] {
+  const porId = new Map<string, string>()
+  for (const n of numeros) {
+    if (n.vendedor) porId.set(n.vendedor.id, n.vendedor.nome)
+  }
+  return Array.from(porId)
+    .map(([id, nome]) => ({ id, nome }))
+    .sort((a, b) => a.nome.localeCompare(b.nome))
+}
+
+const POR_PAGINA = 20
+
 export default function ContactsPage() {
   const [contacts, setContacts] = useState<Contact[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
   const [filterSize, setFilterSize] = useState("")
+  const [filterNumero, setFilterNumero] = useState("")
+  const [filterVendedor, setFilterVendedor] = useState("")
+  const [numeros, setNumeros] = useState<Numero[]>([])
+  const [pagina, setPagina] = useState(1)
+  const [total, setTotal] = useState(0)
+  const [limite, setLimite] = useState(POR_PAGINA)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingContact, setEditingContact] = useState<Contact | undefined>()
+
+  // Os numeros conectados alimentam os dois filtros: o de numero e o de
+  // vendedora, que sai do `vendedor` de cada numero.
+  useEffect(() => {
+    fetch("/api/integracoes/numeros")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((d) => setNumeros(Array.isArray(d) ? d : []))
+      .catch(() => setNumeros([]))
+  }, [])
 
   const loadContacts = useCallback(async () => {
     setLoading(true)
     const params = new URLSearchParams()
     if (search) params.set("search", search)
-    if (filterSize) params.set("preferredSize", filterSize)
+    // "all" e o valor do item "Todos" — um Select do Radix nao aceita item de
+    // valor vazio. Mandado para a API, ele virava um filtro literal por "all" e
+    // a lista voltava vazia.
+    if (filterSize && filterSize !== "all") params.set("preferredSize", filterSize)
+    if (filterNumero && filterNumero !== "all") params.set("numero", filterNumero)
+    if (filterVendedor && filterVendedor !== "all") params.set("vendedor", filterVendedor)
+    params.set("page", String(pagina))
+    params.set("limit", String(POR_PAGINA))
 
     const res = await fetch(`/api/contacts?${params}`)
     const data = await res.json()
     setContacts(data.contacts)
+    setTotal(data.total ?? 0)
+    setLimite(data.limit ?? POR_PAGINA)
     setLoading(false)
-  }, [search, filterSize])
+  }, [search, filterSize, filterNumero, filterVendedor, pagina])
 
   useEffect(() => {
     loadContacts()
   }, [loadContacts])
+
+  // Trocar de filtro tem de voltar para a pagina 1: na pagina 4, um filtro mais
+  // estreito devolve lista vazia e parece que nao ha contato nenhum.
+  useEffect(() => {
+    setPagina(1)
+  }, [search, filterSize, filterNumero, filterVendedor])
 
   async function handleDelete(id: string) {
     if (!confirm("Tem certeza que deseja excluir este contato?")) return
@@ -246,6 +302,32 @@ export default function ContactsPage() {
             className="pl-9"
           />
         </div>
+        <Select value={filterNumero} onValueChange={(v) => setFilterNumero(v || "")}>
+          <SelectTrigger className="w-44">
+            <SelectValue placeholder="Número" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos os números</SelectItem>
+            {numeros.map((n) => (
+              <SelectItem key={n.id} value={n.id}>
+                {nomeDoNumero(n)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={filterVendedor} onValueChange={(v) => setFilterVendedor(v || "")}>
+          <SelectTrigger className="w-44">
+            <SelectValue placeholder="Vendedora" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todas as vendedoras</SelectItem>
+            {vendedorasDosNumeros(numeros).map((v) => (
+              <SelectItem key={v.id} value={v.id}>
+                {v.nome}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Select value={filterSize} onValueChange={(v) => setFilterSize(v || "")}>
           <SelectTrigger className="w-40">
             <SelectValue placeholder="Tamanho" />
@@ -329,6 +411,13 @@ export default function ContactsPage() {
             )}
           </TableBody>
         </Table>
+        <Paginacao
+          pagina={pagina}
+          limite={limite}
+          total={total}
+          carregando={loading}
+          onMudar={setPagina}
+        />
       </div>
       )}
     </div>
