@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { prisma } from "@/lib/db/prisma"
+import { gravarConexao } from "@/lib/integracoes-conexao"
 import { cifrarCredenciais, ehCofreError } from "@/lib/cofre"
 import { validarState } from "@/lib/bling/estado"
 import { trocarCodePorTokens, ehTikTokError } from "@/lib/tiktok/cliente"
@@ -42,35 +42,24 @@ export async function GET(req: Request) {
       return paraTela("token-sem-loja")
     }
 
-    const existente = await prisma.storeIntegracao.findFirst({
-      where: { provedor: "tiktok_shop", referenciaExterna: referencia, isDeleted: false },
-      select: { id: true },
-    })
-
-    const dados = {
-      status: "conectado",
-      credenciaisCifradas: cifrarCredenciais({ ...tokens }),
-      expiraEm: new Date(tokens.expira_em),
-      ultimoErro: null,
-      modifiedBy: state.usuarioId,
-    }
-
-    if (existente) {
-      await prisma.storeIntegracao.update({ where: { id: existente.id }, data: dados })
-    } else {
+    // Sem filtrar `isDeleted`: o indice unico (provedor, referenciaExterna)
+    // NAO e parcial, entao a linha desconectada continua ocupando a chave —
+    // procurar so pelas vivas e cair no `create` deixava a conta impossivel de
+    // reconectar. Foi o que aconteceu com o Bling em 23/09/2026.
+    await gravarConexao({
+      provedor: "tiktok_shop",
+      referenciaExterna: referencia,
+      dados: {
+        status: "conectado",
+        credenciaisCifradas: cifrarCredenciais({ ...tokens }),
+        expiraEm: new Date(tokens.expira_em),
+        ultimoErro: null,
+        modifiedBy: state.usuarioId,
+      },
       // Sem loja definida aqui: quem conecta escolhe depois, na tela. Criar
       // ligado a uma loja chutada seria pior — o TikTok Shop e por loja.
-      await prisma.storeIntegracao.create({
-        data: {
-          ...dados,
-          storeId: null,
-          provedor: "tiktok_shop",
-          rotulo: `TikTok Shop ${referencia}`,
-          referenciaExterna: referencia,
-          status: "conectado",
-        },
-      })
-    }
+      aoCriar: { storeId: null, rotulo: `TikTok Shop ${referencia}` },
+    })
 
     return paraTela("tiktok-conectado", false)
   } catch (e) {

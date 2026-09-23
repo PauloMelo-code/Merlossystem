@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { registrar } from "@/lib/auditoria"
 import { prisma } from "@/lib/db/prisma"
+import { gravarConexao } from "@/lib/integracoes-conexao"
 import { usuarioDaSessao, semSessao } from "@/lib/sessao"
 import { escopoDaLoja, lojaAtiva, lojaParaGravar, faltaLoja } from "@/lib/loja"
 import { cifrarCredenciais, ehCofreError } from "@/lib/cofre"
@@ -80,19 +81,27 @@ export async function POST(req: Request) {
       }
     }
 
-    const criada = await prisma.storeIntegracao.create({
-      data: {
+    // Sem filtrar `isDeleted`: o indice unico (provedor, referenciaExterna)
+    // nao e parcial, entao cadastrar de novo a MESMA conta depois de
+    // desconectar batia na linha apagada e estourava violacao de unicidade.
+    const { id: idDaConta } = await gravarConexao({
+      provedor: data.provedor,
+      referenciaExterna: data.referenciaExterna,
+      dados: {
         storeId,
-        provedor: data.provedor,
         rotulo: data.rotulo,
-        referenciaExterna: data.referenciaExterna,
         // Sem chave configurada, `cifrarCredenciais` lanca — e a rota falha
         // antes de gravar. Nunca cai para texto plano.
         credenciaisCifradas: temCredenciais ? cifrarCredenciais(data.credenciais) : null,
         status: temCredenciais ? "conectado" : "desconectado",
         expiraEm: data.expiraEm ? new Date(data.expiraEm) : null,
+        ultimoErro: null,
         modifiedBy: usuario.id,
       },
+    })
+
+    const criada = await prisma.storeIntegracao.findUniqueOrThrow({
+      where: { id: idDaConta },
       include: { store: { select: { id: true, nome: true } }, vendedor: { select: { id: true, name: true } } },
     })
 

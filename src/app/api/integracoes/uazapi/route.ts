@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { z } from "zod"
 import { registrar } from "@/lib/auditoria"
 import { prisma } from "@/lib/db/prisma"
+import { gravarConexao } from "@/lib/integracoes-conexao"
 import { usuarioDaSessao, semSessao } from "@/lib/sessao"
 import { lojaAtiva, lojaParaGravar, faltaLoja } from "@/lib/loja"
 import { cifrarCredenciais, ehCofreError } from "@/lib/cofre"
@@ -72,19 +73,28 @@ export async function POST(req: Request) {
     // banco apontando para uma instancia que nunca vai entregar mensagem.
     await configurarWebhook(instancia.token)
 
-    const criada = await prisma.storeIntegracao.create({
-      data: {
+    // O nome da instancia sai do rotulo, entao recriar um numero com o mesmo
+    // nome depois de desconectar bate na linha APAGADA — o indice unico
+    // (provedor, referenciaExterna) nao e parcial. `gravarConexao` revive em
+    // vez de estourar, e as conversas daquele numero voltam a rotear.
+    const { id: idDaConta } = await gravarConexao({
+      provedor: "uazapi",
+      // E por este nome que o webhook encontra a conta (src/lib/roteamento.ts).
+      referenciaExterna: instancia.nome,
+      dados: {
         storeId,
-        provedor: "uazapi",
         rotulo: data.rotulo,
-        // E por este nome que o webhook encontra a conta (src/lib/roteamento.ts).
-        referenciaExterna: instancia.nome,
         credenciaisCifradas: cifrarCredenciais({ token: instancia.token }),
         // So vira "conectado" depois do QR.
         status: "desconectado",
         vendedorId: data.vendedorId ?? null,
+        ultimoErro: null,
         modifiedBy: usuario.id,
       },
+    })
+
+    const criada = await prisma.storeIntegracao.findUniqueOrThrow({
+      where: { id: idDaConta },
       include: {
         store: { select: { id: true, nome: true } },
         vendedor: { select: { id: true, name: true } },

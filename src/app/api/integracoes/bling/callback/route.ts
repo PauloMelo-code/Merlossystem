@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server"
-import { prisma } from "@/lib/db/prisma"
 import { cifrarCredenciais, ehCofreError } from "@/lib/cofre"
 import { validarState } from "@/lib/bling/estado"
 import { trocarCodePorTokens, ehBlingError } from "@/lib/bling/cliente"
 import { ehBlingConfigError } from "@/lib/bling/config"
+import { gravarConexao } from "@/lib/integracoes-conexao"
 
 /**
  * Callback do OAuth do Bling.
@@ -42,36 +42,29 @@ export async function GET(req: Request) {
   try {
     const tokens = await trocarCodePorTokens(code)
 
-    // Bling e conta unica da rede: storeId nulo, e uma linha so. Reconectar
-    // atualiza a que existe em vez de criar outra.
-    const existente = await prisma.storeIntegracao.findFirst({
-      where: { provedor: "bling", isDeleted: false },
-      select: { id: true },
+    // Bling e conta unica da rede: storeId nulo, e uma linha so.
+    //
+    // `gravarConexao` procura a linha SEM filtrar `isDeleted` de proposito.
+    // Filtrar aqui era o bug que deixou a conta impossivel de reconectar:
+    // desconectar grava `is_deleted = true`, mas o indice unico
+    // (provedor, referenciaExterna) NAO e parcial e a linha apagada continua
+    // ocupando a chave — o `create` seguinte estourava e virava
+    // `?erro=erro-inesperado` na tela.
+    await gravarConexao({
+      provedor: "bling",
+      // Sem multiplas contas de Bling, a referencia externa e fixa. Quando
+      // houver mais de uma empresa, aqui entra o id dela.
+      referenciaExterna: "rede",
+      dados: {
+        rotulo: "Bling da rede",
+        status: "conectado",
+        credenciaisCifradas: cifrarCredenciais({ ...tokens }),
+        expiraEm: new Date(tokens.expira_em),
+        ultimoErro: null,
+        modifiedBy: state.usuarioId,
+      },
+      aoCriar: { storeId: null },
     })
-
-    const dados = {
-      rotulo: "Bling da rede",
-      status: "conectado",
-      credenciaisCifradas: cifrarCredenciais({ ...tokens }),
-      expiraEm: new Date(tokens.expira_em),
-      ultimoErro: null,
-      modifiedBy: state.usuarioId,
-    }
-
-    if (existente) {
-      await prisma.storeIntegracao.update({ where: { id: existente.id }, data: dados })
-    } else {
-      await prisma.storeIntegracao.create({
-        data: {
-          ...dados,
-          storeId: null,
-          provedor: "bling",
-          // Sem multiplas contas de Bling, a referencia externa e fixa. Quando
-          // houver mais de uma empresa, aqui entra o id dela.
-          referenciaExterna: "rede",
-        },
-      })
-    }
 
     return paraTela("bling-conectado", false)
   } catch (e) {
