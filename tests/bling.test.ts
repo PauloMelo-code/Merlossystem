@@ -126,6 +126,33 @@ describe("somente leitura", () => {
       expect(src, rota).not.toMatch(/export async function (POST|PUT|PATCH|DELETE)/)
     }
   })
+
+  it("sincronizar e a excecao: POST aqui grava no NOSSO banco, nunca no Bling", () => {
+    // A rota tem POST porque a sincronizacao e uma acao, nao uma leitura de
+    // tela. O que ela nao pode e mandar escrita para o Bling: do lado de la,
+    // so `listarProdutos` (GET).
+    const rota = ler("src", "app", "api", "integracoes", "bling", "sincronizar", "route.ts")
+    expect(rota).toMatch(/export async function POST/)
+    const lib = ler("src", "lib", "bling", "sincronizar.ts")
+    expect(lib).not.toMatch(/method: "(POST|PUT|PATCH|DELETE)"/)
+    expect(lib.match(/from "\.\/cliente"/g)?.length).toBe(1)
+    expect(lib).toMatch(/listarProdutos/)
+  })
+
+  it("a sincronizacao nao pisa no que o Bling nao sabe", () => {
+    // O Bling devolve id, nome, codigo, preco e situacao — mais nada. Categoria,
+    // tamanhos, fotos, destaque e o estoque POR TAMANHO sao preenchidos aqui
+    // pela equipe, e `active:false` e como a loja exclui um produto. Escrever
+    // qualquer um desses na sincronizacao apagaria o trabalho delas a cada
+    // rodada (ou ressuscitaria o que foi excluido).
+    const lib = ler("src", "lib", "bling", "sincronizar.ts")
+    const atualizacao = lib.slice(lib.indexOf("prisma.product.update"))
+    for (const campo of ["stock", "active", "category", "sizes", "imageUrls", "featured", "sizeType"]) {
+      expect(atualizacao, campo).not.toMatch(new RegExp(`\\b${campo}:`))
+    }
+    // E a linha nunca e recriada: pedido, midia e reserva apontam para o id local.
+    expect(lib).not.toMatch(/prisma\.product\.deleteMany|prisma\.product\.delete\b/)
+  })
 })
 
 describe("somente leitura no TikTok tambem", () => {

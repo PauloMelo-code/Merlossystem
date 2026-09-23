@@ -29,6 +29,8 @@ export const ACOES = [
   "senha_alterada",
   "integracao_conectada",
   "integracao_desconectada",
+  /** Catalogo do Bling espelhado no banco (quantos criados/atualizados). */
+  "catalogo_sincronizado",
   "conversa_resolvida",
   "conversa_transferida",
   "pedido_lancado_masc",

@@ -219,6 +219,12 @@ export type ProdutoBling = {
   codigo?: string
   preco?: number
   situacao?: string
+  /**
+   * Preenchido (≠ 0) quando o item e a VARIACAO de outro produto. A listagem
+   * da v3 devolve cada variacao tambem como linha propria: sem descartar, cada
+   * tamanho viraria um produto separado no catalogo.
+   */
+  idProdutoPai?: number | string
 }
 
 export type DepositoBling = {
@@ -241,13 +247,20 @@ export type SaldoBling = {
   depositos?: { id: number | string; saldoFisico?: number; saldoVirtual?: number }[]
 }
 
-/** Catalogo. `pagina` comeca em 1. */
+/**
+ * Catalogo. `pagina` comeca em 1.
+ *
+ * `criterio: 2` = so produtos ATIVOS no Bling. Sem ele vinha tambem o que a
+ * loja ja tirou de linha, e o catalogo do atendimento enchia de peca morta.
+ */
 export async function listarProdutos(integracaoId: string, pagina = 1, limite = 100) {
   const r = await buscar<{ data?: ProdutoBling[] }>(integracaoId, BLING_ENDPOINTS.produtos, {
     pagina,
     limite,
+    criterio: 2,
   })
-  return r.data ?? []
+  // A variacao ja entra pelo produto pai; como linha propria, duplicaria.
+  return (r.data ?? []).filter((p) => !p.idProdutoPai || String(p.idProdutoPai) === "0")
 }
 
 /**

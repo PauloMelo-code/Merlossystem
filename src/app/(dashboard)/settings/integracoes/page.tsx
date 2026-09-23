@@ -192,6 +192,19 @@ export default function IntegracoesPage() {
     toast.success(d.aviso ?? "Pedido enviado.")
   }
 
+  /** Traz o catálogo do Bling para o banco (é o que enche a tela de Produtos). */
+  async function sincronizarCatalogo() {
+    toast.info("Trazendo o catálogo do Bling… isso leva um tempo.")
+    const res = await fetch("/api/integracoes/bling/sincronizar", { method: "POST" })
+    const d = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      toast.error(d.error || "Não foi possível sincronizar o catálogo.")
+      return
+    }
+    toast.success(d.aviso ?? "Catálogo sincronizado.")
+    carregar()
+  }
+
   /** Aponta o webhook da conta para este sistema (uazapi). */
   async function apontarWebhook(item: Integracao) {
     const res = await fetch(`/api/integracoes/uazapi/${item.id}/webhook`, { method: "POST" })
@@ -340,6 +353,11 @@ export default function IntegracoesPage() {
                       Puxar histórico
                     </Button>
                   </>
+                )}
+                {item.provedor === "bling" && (
+                  <Button variant="outline" size="sm" onClick={sincronizarCatalogo}>
+                    Sincronizar catálogo
+                  </Button>
                 )}
                 <Button variant="outline" size="sm" onClick={() => renomear(item)}>
                   Renomear

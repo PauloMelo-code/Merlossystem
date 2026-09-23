@@ -36,6 +36,8 @@ export async function POST(req: Request) {
 
     const suggestion = await suggestResponse({
       conversationId,
+      // O catálogo é por loja: a sugestão nunca pode citar peça da outra.
+      storeId: conversation.storeId,
       contactName: conversation.contact.name || undefined,
       preferredSize: conversation.contact.preferredSize || undefined,
     })

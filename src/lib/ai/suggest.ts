@@ -4,6 +4,13 @@ import { prisma } from "@/lib/db/prisma"
 
 interface SuggestOptions {
   conversationId: string
+  /**
+   * Loja da conversa. O catalogo e POR LOJA: sem isto a sugestao oferecia
+   * peca da outra loja, com preco da outra loja, dentro do texto pronto para
+   * mandar a cliente. Passava despercebido enquanto `products` estava vazia;
+   * com o catalogo do Bling espelhado, vira vazamento diario.
+   */
+  storeId: string
   contactName?: string
   preferredSize?: string
 }
@@ -38,7 +45,7 @@ export async function suggestResponse(opts: SuggestOptions): Promise<string> {
   let catalogContext = ""
   const recentText = messages.map((m) => m.content || "").join(" ").toLowerCase()
   const products = await prisma.product.findMany({
-    where: { active: true },
+    where: { active: true, storeId: opts.storeId },
     take: 10,
     orderBy: { featured: "desc" },
   })
