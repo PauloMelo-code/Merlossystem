@@ -1,28 +1,27 @@
 import { prisma } from "@/lib/db/prisma"
-import {
-  listarPaginaProdutos,
-  listarCategorias,
-  ehProdutoDeTopo,
-  type ProdutoBling,
-} from "./cliente"
+import { Prisma } from "@prisma/client"
+import { listarPaginaProdutos, ehProdutoDeTopo, type ProdutoBling } from "./cliente"
 import { numeroDoBling, precoDeCatalogo } from "./preco"
+import { mapearCategorias, categoriaPeloNome } from "./categorias"
+import { tamanhoDaVariacao, ordenarTamanhos, tipoDeTamanho } from "./tamanhos"
 
 /**
  * Espelho do catalogo do Bling no banco local — SOMENTE LEITURA do lado do
  * Bling (ADR 0004: o Bling e a autoridade de produto e estoque).
  *
- * Por que espelhar, se a rota de saldo ja le ao vivo: a tela de Produtos, o
- * seletor de produto do chat e a reserva de estoque leem a tabela `products`.
- * Sem o espelho, o catalogo aparece vazio para quem atende.
+ * Por que espelhar, se a rota de saldo ja le ao vivo: a tela de Produtos e o
+ * seletor de produto do chat leem a tabela `products`. E o seletor monta o
+ * texto que vai PARA A CLIENTE a partir de `sizes` e `stock` — com os dois
+ * vazios, ele dizia "No momento sem estoque" para o catalogo inteiro.
  *
  * COMO A V3 DEVOLVE UMA LOJA DE ROUPA (confirmado na spec oficial, v3.0):
  * cada tamanho e uma VARIACAO e vem como linha propria na listagem, marcada
  * por `idProdutoPai`. O produto de topo e a peca; a variacao e o tamanho. E o
  * preco costuma viver NA VARIACAO — o pai de uma peca com variacoes vem com
- * `preco: 0`. Por isso este arquivo varre a pagina inteira, guarda os precos
- * das variacoes e so entao decide o preco da peca.
+ * `preco: 0`. Por isso a varredura junta as variacoes de cada peca antes de
+ * decidir preco, grade e estoque.
  *
- * As cinco regras que este arquivo cumpre, e o que cada uma evita:
+ * O QUE ESTE ARQUIVO GRAVA, e o que cada limite evita:
  *
  * 1. CASA por `(storeId, sku)` e NUNCA recria linha. `orders.items[].productId`
  *    e `media_files.product_id` apontam para o id local; recriar orfanaria o
@@ -30,17 +29,18 @@ import { numeroDoBling, precoDeCatalogo } from "./preco"
  * 2. UMA LINHA POR LOJA para cada codigo. A conta do Bling e da rede, mas o
  *    produto e por loja (`escopoDaLoja`): uma linha so esconderia o catalogo
  *    de uma das lojas.
- * 3. NAO escreve `stock`. O Bling da saldo por SKU; `products.stock` e por
- *    TAMANHO e e o que o seletor do chat usa para oferecer tamanho. Escrever
- *    ali faria a tela dizer "sem estoque" no catalogo inteiro.
- * 4. NAO APAGA o que o Bling nao tem. Tamanhos, fotos, destaque e descricao
- *    sao preenchidos AQUI pela equipe; um upsert cego zeraria o trabalho delas
- *    a cada rodada. Categoria e o unico campo que o Bling manda — e mesmo ela
- *    so e gravada quando o Bling TEM uma: sem categoria la, a daqui fica.
- * 5. NAO mexe em `active`. Excluir um produto na tela grava `active:false`;
- *    sincronizar esse campo ressuscitaria o que a loja tirou de proposito.
- *    Produto que some do Bling tambem nao e desativado: sumir da listagem nao
- *    prova que deixou de existir, e o pedido antigo ainda aponta para ele.
+ * 3. `stock` e um RETRATO do momento da sincronizacao, nao a autoridade. Quem
+ *    PROMETE peca e a rota de disponibilidade, que le o Bling ao vivo e
+ *    desconta o reservado (ADR 0004). O retrato existe para o seletor do chat
+ *    conseguir dizer quais tamanhos tem — dizer "sem estoque" em tudo, que era
+ *    o comportamento anterior, perdia venda de peca que existia.
+ * 4. NAO APAGA o que o Bling nao mandou. Foto e descricao so entram quando o
+ *    campo daqui esta vazio (a equipe sobe foto propria pela Galeria); grade e
+ *    estoque so entram quando a peca tem variacoes; categoria so quando ha uma.
+ * 5. NAO mexe em `active` nem em `featured`. Excluir um produto na tela grava
+ *    `active:false`; sincronizar esse campo ressuscitaria o que a loja tirou de
+ *    proposito. Produto que some do Bling tambem nao e desativado: sumir da
+ *    listagem nao prova que deixou de existir, e o pedido antigo aponta para ele.
  */
 
 /** Teto para o laco nunca virar infinito se a API repetir pagina. */
@@ -48,8 +48,8 @@ const PAGINAS_MAXIMAS = 200
 const POR_PAGINA = 100
 /** Respiro entre paginas: o Bling limita a 3 requisicoes por segundo. */
 const PAUSA_MS = 350
-/** Teto de paginas da listagem de categorias. */
-const PAGINAS_DE_CATEGORIAS = 20
+/** Lote do INSERT em massa — a primeira rodada cria milhares de linhas. */
+const LOTE_DE_INSERCAO = 500
 /**
  * Fatias de saldo a varrer, em ordem.
  *
@@ -65,8 +65,6 @@ const PAGINAS_DE_CATEGORIAS = 20
  * omitido ja o contem. Nos dois casos, pedi-lo seria repetir.
  */
 const VARIANTES_DE_SALDO = [undefined, 0, 2] as const
-/** Lote do INSERT em massa — a primeira rodada cria milhares de linhas. */
-const LOTE_DE_INSERCAO = 500
 
 export type ResultadoSincronizacao = {
   criados: number
@@ -77,18 +75,26 @@ export type ResultadoSincronizacao = {
   /** Total de paginas pedidas ao Bling na varredura do catalogo. */
   paginas: number
   lojas: number
-  /** Linhas de variacao lidas — entram no preco da peca, nao viram produto. */
+  /** Linhas de variacao lidas — viram preco, grade e estoque da peca. */
   variacoes: number
   /** Pecas que ficaram em R$ 0,00: nem o pai nem as variacoes tinham preco. */
   semPreco: number
-  /** Categorias do Bling que viraram de-para. */
+  /** Categorias cadastradas no Bling. */
   categorias: number
+  /** Pecas que o Bling nao classificou e cuja categoria saiu do nome. */
+  categoriaPeloNome: number
+  /** Pecas que ganharam grade de tamanhos. */
+  comTamanho: number
+  /** Pecas que ganharam foto. */
+  comFoto: number
+  /** Variacoes cujo nome nao permitiu dizer o tamanho — o retrato fica incompleto. */
+  tamanhoIndecifravel: number
 }
 
 const dormir = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 /**
- * Varre o catalogo inteiro UMA vez, separando peca de tamanho.
+ * Varre o catalogo inteiro, separando peca de tamanho.
  *
  * A decisao de continuar paginando e pelo tamanho da pagina CRUA. Decidir pela
  * lista ja filtrada foi o bug que parava tudo na primeira pagina: 100 linhas
@@ -96,12 +102,12 @@ const dormir = (ms: number) => new Promise((r) => setTimeout(r, ms))
  */
 async function varrerCatalogo(integracaoId: string) {
   const pecas: ProdutoBling[] = []
-  const precosDosTamanhos = new Map<string, number[]>()
+  const variacoesPorPai = new Map<string, ProdutoBling[]>()
   const vistos = new Set<string>()
   let paginas = 0
   let variacoes = 0
 
-  /** Guarda o item e diz se ele era novo. Peca vira produto; tamanho vira preco. */
+  /** Guarda o item e diz se ele era novo. */
   const guardar = (item: ProdutoBling): boolean => {
     const id = String(item.id)
     if (vistos.has(id)) return false
@@ -112,13 +118,10 @@ async function varrerCatalogo(integracaoId: string) {
       return true
     }
     variacoes += 1
-    const preco = numeroDoBling(item.preco)
-    if (preco > 0) {
-      const pai = String(item.idProdutoPai)
-      const lista = precosDosTamanhos.get(pai)
-      if (lista) lista.push(preco)
-      else precosDosTamanhos.set(pai, [preco])
-    }
+    const pai = String(item.idProdutoPai)
+    const lista = variacoesPorPai.get(pai)
+    if (lista) lista.push(item)
+    else variacoesPorPai.set(pai, [item])
     return true
   }
 
@@ -143,52 +146,51 @@ async function varrerCatalogo(integracaoId: string) {
     }
   }
 
-  return { pecas, precosDosTamanhos, paginas, variacoes }
+  return { pecas, variacoesPorPai, paginas, variacoes }
 }
 
-/**
- * De-para produto -> nome da categoria.
- *
- * O caminho e indireto porque a API nao da atalho: a listagem de produtos nao
- * traz categoria nenhuma e o detalhe traz so `categoria.id`. Perguntar o
- * detalhe de cada produto custaria uma requisicao por peca — milhares, a 3 por
- * segundo. Filtrar a listagem por `idCategoria` custa uma passada a mais no
- * catalogo inteiro, e e a mesma informacao.
- */
-async function mapearCategorias(integracaoId: string) {
-  const categorias: { id: string; nome: string }[] = []
+type Grade = {
+  tamanhos: string[]
+  /** Tamanho -> saldo somado das variacoes daquele tamanho. */
+  retratoDoEstoque: Record<string, number>
+  precos: number[]
+  indecifraveis: number
+}
 
-  for (let pagina = 1; pagina <= PAGINAS_DE_CATEGORIAS; pagina++) {
-    const lote = await listarCategorias(integracaoId, pagina, POR_PAGINA)
-    if (lote.length === 0) break
-    for (const c of lote) {
-      const nome = c.descricao?.trim()
-      if (nome) categorias.push({ id: String(c.id), nome })
+/** Grade de tamanhos e retrato do estoque, a partir das variacoes da peca. */
+function gradeDaPeca(peca: ProdutoBling, variacoes: ProdutoBling[]): Grade {
+  const retratoDoEstoque: Record<string, number> = {}
+  const precos: number[] = []
+  const tamanhos: string[] = []
+  let indecifraveis = 0
+
+  for (const v of variacoes) {
+    const preco = numeroDoBling(v.preco)
+    if (preco > 0) precos.push(preco)
+
+    const tamanho = tamanhoDaVariacao(peca.nome, v.nome)
+    if (!tamanho) {
+      indecifraveis += 1
+      continue
     }
-    if (lote.length < POR_PAGINA) break
-    await dormir(PAUSA_MS)
+    tamanhos.push(tamanho)
+    const saldo = Math.max(0, Math.trunc(v.estoque?.saldoVirtualTotal ?? 0))
+    retratoDoEstoque[tamanho] = (retratoDoEstoque[tamanho] ?? 0) + saldo
   }
 
-  const nomePorProduto = new Map<string, string>()
-  // Orcamento comum: catalogo grande demais fica SEM categoria em vez de
-  // segurar a requisicao ate o proxy derrubar a sincronizacao inteira.
-  let orcamento = PAGINAS_MAXIMAS
+  return { tamanhos: ordenarTamanhos(tamanhos), retratoDoEstoque, precos, indecifraveis }
+}
 
-  for (const categoria of categorias) {
-    if (orcamento <= 0) break
-    for (let pagina = 1; pagina <= PAGINAS_MAXIMAS && orcamento > 0; pagina++) {
-      orcamento -= 1
-      const lote = await listarPaginaProdutos(integracaoId, pagina, POR_PAGINA, {
-        idCategoria: categoria.id,
-      })
-      if (lote.length === 0) break
-      for (const p of lote) nomePorProduto.set(String(p.id), categoria.nome)
-      if (lote.length < POR_PAGINA) break
-      await dormir(PAUSA_MS)
-    }
-  }
-
-  return { nomePorProduto, categorias: categorias.length }
+/** O que a sincronizacao quer que a linha do produto contenha. */
+type Desejado = {
+  name: string
+  price: string
+  category?: string
+  description?: string
+  sizes?: string[]
+  stock?: Record<string, number>
+  sizeType?: string
+  imageUrls?: string[]
 }
 
 /**
@@ -212,59 +214,105 @@ export async function sincronizarCatalogo(
     variacoes: 0,
     semPreco: 0,
     categorias: 0,
+    categoriaPeloNome: 0,
+    comTamanho: 0,
+    comFoto: 0,
+    tamanhoIndecifravel: 0,
   }
   if (lojaIds.length === 0) return total
 
-  const { pecas, precosDosTamanhos, paginas, variacoes } = await varrerCatalogo(integracaoId)
+  const { pecas, variacoesPorPai, paginas, variacoes } = await varrerCatalogo(integracaoId)
   total.paginas = paginas
   total.variacoes = variacoes
 
-  const { nomePorProduto, categorias } = await mapearCategorias(integracaoId)
-  total.categorias = categorias
+  const deParaDeCategorias = await mapearCategorias(integracaoId)
+  total.categorias = deParaDeCategorias.nomes.length
 
   // Uma consulta em vez de uma por peca por loja: a primeira rodada olharia
   // milhares de vezes o mesmo indice.
-  const existentes = new Map<string, { id: string; name: string; price: unknown; category: string | null }>()
+  const existentes = new Map<string, ProdutoLocal>()
   const jaNoBanco = await prisma.product.findMany({
     where: { storeId: { in: lojaIds } },
-    select: { id: true, storeId: true, sku: true, name: true, price: true, category: true },
+    select: {
+      id: true,
+      storeId: true,
+      sku: true,
+      name: true,
+      price: true,
+      category: true,
+      description: true,
+      sizes: true,
+      sizeType: true,
+      imageUrls: true,
+      stock: true,
+    },
   })
   for (const p of jaNoBanco) {
     if (p.sku) existentes.set(`${p.storeId}|${p.sku}`, p)
   }
 
-  const paraCriar: { storeId: string; sku: string; name: string; price: string; category?: string }[] = []
+  const paraCriar: (Desejado & { storeId: string; sku: string })[] = []
   const skusVistos = new Set<string>()
 
-  for (const item of pecas) {
-    const sku = item.codigo?.trim()
-    const nome = item.nome?.trim()
+  for (const peca of pecas) {
+    const sku = peca.codigo?.trim()
+    const nome = peca.nome?.trim()
     if (!sku || !nome || skusVistos.has(sku)) {
       total.ignorados += 1
       continue
     }
     skusVistos.add(sku)
 
-    const preco = precoDeCatalogo(item.preco, precosDosTamanhos.get(String(item.id)))
+    const grade = gradeDaPeca(peca, variacoesPorPai.get(String(peca.id)) ?? [])
+    total.tamanhoIndecifravel += grade.indecifraveis
+
+    const preco = precoDeCatalogo(peca.preco, grade.precos)
     if (preco === "0.00") total.semPreco += 1
-    const categoria = nomePorProduto.get(String(item.id))
+    if (grade.tamanhos.length > 0) total.comTamanho += 1
+
+    let categoria = deParaDeCategorias.nomePorProduto.get(String(peca.id)) ?? null
+    if (!categoria) {
+      categoria = categoriaPeloNome(nome, deParaDeCategorias.nomes)
+      if (categoria) total.categoriaPeloNome += 1
+    }
+
+    const foto = peca.imagemURL?.trim()
+    if (foto) total.comFoto += 1
+    const descricao = peca.descricaoCurta?.trim()
+    const plusSize = tipoDeTamanho(nome)
 
     for (const storeId of lojaIds) {
       const atual = existentes.get(`${storeId}|${sku}`)
 
       if (!atual) {
-        paraCriar.push({ storeId, sku, name: nome, price: preco, ...(categoria ? { category: categoria } : {}) })
+        paraCriar.push({
+          storeId,
+          sku,
+          name: nome,
+          price: preco,
+          ...(categoria ? { category: categoria } : {}),
+          ...(descricao ? { description: descricao } : {}),
+          ...(foto ? { imageUrls: [foto] } : {}),
+          ...(grade.tamanhos.length > 0
+            ? { sizes: grade.tamanhos, stock: grade.retratoDoEstoque }
+            : {}),
+          ...(plusSize ? { sizeType: plusSize } : {}),
+        })
         total.criados += 1
         continue
       }
 
-      // So escreve o que mudou: gravar igual enche a trilha de ruido e mexe em
-      // `updated_at` sem motivo.
-      const dados: { name?: string; price?: string; category?: string } = {}
-      if (atual.name !== nome) dados.name = nome
-      if (String(atual.price) !== preco) dados.price = preco
-      // Categoria so quando o Bling tem uma — ver a regra 4 no topo.
-      if (categoria && atual.category !== categoria) dados.category = categoria
+      const dados = oQueMudou(atual, {
+        name: nome,
+        price: preco,
+        ...(categoria ? { category: categoria } : {}),
+        ...(descricao ? { description: descricao } : {}),
+        ...(foto ? { imageUrls: [foto] } : {}),
+        ...(grade.tamanhos.length > 0
+          ? { sizes: grade.tamanhos, stock: grade.retratoDoEstoque }
+          : {}),
+        ...(plusSize ? { sizeType: plusSize } : {}),
+      })
 
       if (Object.keys(dados).length === 0) {
         total.semMudanca += 1
@@ -279,10 +327,72 @@ export async function sincronizarCatalogo(
     // `skipDuplicates` porque `(storeId, sku)` e unico e duas rodadas
     // simultaneas nao podem derrubar a sincronizacao inteira.
     await prisma.product.createMany({
-      data: paraCriar.slice(i, i + LOTE_DE_INSERCAO),
+      data: paraCriar.slice(i, i + LOTE_DE_INSERCAO).map((p) => ({
+        ...p,
+        ...(p.stock ? { stock: p.stock as Prisma.InputJsonValue } : {}),
+      })),
       skipDuplicates: true,
     })
   }
 
   return total
+}
+
+type ProdutoLocal = {
+  id: string
+  storeId: string
+  sku: string | null
+  name: string
+  price: unknown
+  category: string | null
+  description: string | null
+  sizes: string[]
+  sizeType: string
+  imageUrls: string[]
+  stock: unknown
+}
+
+/**
+ * So o que mudou — gravar igual enche a trilha de ruido e mexe em `updated_at`
+ * sem motivo.
+ *
+ * Os campos que a EQUIPE preenche (foto, descricao) so entram quando o campo
+ * daqui esta vazio: a Galeria existe para a loja subir foto propria, melhor do
+ * que a miniatura do ERP, e a sincronizacao nao pode desfazer isso toda rodada.
+ */
+/** Comparavel a ordem das chaves: o jsonb volta do Postgres na ordem dele. */
+function estavel(valor: unknown): string {
+  const obj = (valor ?? {}) as Record<string, unknown>
+  return JSON.stringify(
+    Object.keys(obj)
+      .sort()
+      .map((k) => [k, obj[k]])
+  )
+}
+
+function oQueMudou(atual: ProdutoLocal, desejado: Desejado): Record<string, unknown> {
+  const dados: Record<string, unknown> = {}
+
+  if (atual.name !== desejado.name) dados.name = desejado.name
+  if (String(atual.price) !== desejado.price) dados.price = desejado.price
+  if (desejado.category && atual.category !== desejado.category) {
+    dados.category = desejado.category
+  }
+  if (desejado.description && !atual.description) dados.description = desejado.description
+  if (desejado.imageUrls && atual.imageUrls.length === 0) dados.imageUrls = desejado.imageUrls
+  if (desejado.sizeType && atual.sizeType === "both") dados.sizeType = desejado.sizeType
+
+  if (desejado.sizes && desejado.sizes.join("|") !== atual.sizes.join("|")) {
+    dados.sizes = desejado.sizes
+  }
+  // O retrato do estoque so e regravado quando mudou de verdade: sem a
+  // comparacao, toda peca com grade viraria um UPDATE em cada rodada, nas duas
+  // lojas, e a trilha de alteracao perderia o sentido.
+  if (desejado.stock && desejado.sizes && desejado.sizes.length > 0) {
+    if (estavel(atual.stock) !== estavel(desejado.stock)) {
+      dados.stock = desejado.stock as Prisma.InputJsonValue
+    }
+  }
+
+  return dados
 }

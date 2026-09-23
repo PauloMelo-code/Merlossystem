@@ -45,17 +45,30 @@ export async function GET(req: Request) {
   if (category) where.category = category
   if (sizeType) where.sizeType = sizeType
 
-  const [products, total] = await Promise.all([
+  // O catalogo e o MESMO nas duas lojas — o Bling e uma conta so da rede e a
+  // sincronizacao grava uma linha por loja porque `products.store_id` e
+  // obrigatorio e o pedido aponta para o id local. Sem escopo de loja (gestao
+  // em "Todas as lojas"), listar as duas linhas mostrava cada peca duas vezes.
+  // Limite conhecido: produto criado a mao SEM sku colapsa com os outros sem
+  // sku; com sku, cada codigo aparece uma vez.
+  const semEscopoDeLoja = !where.storeId
+  const distinto: { distinct?: Prisma.ProductScalarFieldEnum[] } = semEscopoDeLoja
+    ? { distinct: ["sku"] }
+    : {}
+
+  const [products, chaves] = await Promise.all([
     prisma.product.findMany({
+      ...distinto,
       where,
       orderBy: { createdAt: "desc" },
       skip: (page - 1) * limit,
       take: limit,
     }),
-    prisma.product.count({ where }),
+    // `count` nao aceita `distinct`, entao o total sai da contagem das chaves.
+    prisma.product.findMany({ ...distinto, where, select: { id: true } }),
   ])
 
-  return NextResponse.json({ products, total, page, limit })
+  return NextResponse.json({ products, total: chaves.length, page, limit })
 }
 
 export async function POST(req: Request) {

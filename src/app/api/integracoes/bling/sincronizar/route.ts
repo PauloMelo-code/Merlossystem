@@ -58,11 +58,16 @@ export async function POST(req: Request) {
       aviso:
         `${r.criados} produto(s) criado(s), ${r.atualizados} atualizado(s), ` +
         `${r.semMudanca} sem mudança, em ${r.lojas} loja(s). ` +
-        `${r.paginas} página(s) lidas, ${r.variacoes} variação(ões) de tamanho ` +
-        `usadas só para o preço, ${r.categorias} categoria(s) do Bling.` +
-        // Os dois numeros abaixo so aparecem quando ha o que olhar: sao a
-        // diferenca entre "sincronizou" e "sincronizou certo".
+        `${r.comTamanho} com grade de tamanhos, ${r.comFoto} com foto, ` +
+        `${r.categorias} categoria(s) do Bling` +
+        (r.categoriaPeloNome > 0 ? ` (+${r.categoriaPeloNome} deduzidas do nome)` : "") +
+        `. ${r.paginas} página(s) lidas, ${r.variacoes} variação(ões).` +
+        // Os numeros abaixo so aparecem quando ha o que olhar: sao a diferenca
+        // entre "sincronizou" e "sincronizou certo".
         (r.semPreco > 0 ? ` ${r.semPreco} peça(s) ficaram sem preço no Bling.` : "") +
+        (r.tamanhoIndecifravel > 0
+          ? ` ${r.tamanhoIndecifravel} variação(ões) com nome fora do padrão — o tamanho delas não entrou.`
+          : "") +
         (r.ignorados > 0 ? ` ${r.ignorados} ignorada(s) por código ausente ou repetido.` : ""),
     })
   } catch (e) {

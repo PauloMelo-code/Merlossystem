@@ -269,8 +269,11 @@ export default function ProductsPage() {
     setLoading(true)
     const params = new URLSearchParams()
     if (search) params.set("search", search)
-    if (filterCategory) params.set("category", filterCategory)
-    if (filterSizeType) params.set("sizeType", filterSizeType)
+    // "all" e o valor do item "Todas" do seletor — um Select do Radix nao
+    // aceita item de valor vazio. Mandar esse "all" para a API filtrava pela
+    // categoria literal "all" e a tela ficava sem produto nenhum.
+    if (filterCategory && filterCategory !== "all") params.set("category", filterCategory)
+    if (filterSizeType && filterSizeType !== "all") params.set("sizeType", filterSizeType)
 
     const res = await fetch(`/api/products?${params}`)
     const data = await res.json()

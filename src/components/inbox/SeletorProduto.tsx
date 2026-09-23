@@ -48,13 +48,19 @@ function tamanhosDisponiveis(p: Produto): string[] {
 /** O texto que vai para a cliente. */
 export function textoDoProduto(p: Produto): string {
   const disponiveis = tamanhosDisponiveis(p)
-  const linhas = [
-    `*${p.name}*`,
-    dinheiro(p.price),
-    disponiveis.length > 0
-      ? `Tamanhos disponíveis: ${disponiveis.join(", ")}`
-      : "No momento sem estoque — posso avisar quando chegar.",
-  ]
+  const linhas = [`*${p.name}*`, dinheiro(p.price)]
+
+  // Peca SEM grade cadastrada nao e peca sem estoque. Enquanto o catalogo
+  // esteve vazio de tamanhos, este texto dizia "sem estoque" para o catalogo
+  // inteiro — a vendedora recusava venda de peca que existia. Sem grade, o
+  // texto simplesmente nao fala de tamanho.
+  if ((p.sizes ?? []).length > 0) {
+    linhas.push(
+      disponiveis.length > 0
+        ? `Tamanhos disponíveis: ${disponiveis.join(", ")}`
+        : "No momento sem estoque — posso avisar quando chegar."
+    )
+  }
   if (p.imageUrls?.[0]) linhas.push(p.imageUrls[0])
   return linhas.join("\n")
 }

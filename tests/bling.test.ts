@@ -10,6 +10,8 @@ import { resolve } from "node:path"
 import { criarState, validarState } from "@/lib/bling/estado"
 import { cabecalhoBasic, configDoApp, ehBlingConfigError } from "@/lib/bling/config"
 import { precoDeCatalogo, numeroDoBling } from "@/lib/bling/preco"
+import { tamanhoDaVariacao, ordenarTamanhos, tipoDeTamanho } from "@/lib/bling/tamanhos"
+import { categoriaPeloNome } from "@/lib/bling/categorias"
 
 const raiz = resolve(__dirname, "..")
 const ler = (...p: string[]) => readFileSync(resolve(raiz, ...p), "utf8")
@@ -143,37 +145,44 @@ describe("somente leitura", () => {
     expect(lib).toMatch(/listarPaginaProdutos/)
   })
 
-  it("a sincronizacao nao pisa no que o Bling nao sabe", () => {
-    // Tamanhos, fotos, destaque, descricao e o estoque POR TAMANHO sao
-    // preenchidos AQUI pela equipe, e `active:false` e como a loja exclui um
-    // produto. Escrever qualquer um desses na sincronizacao apagaria o trabalho
-    // delas a cada rodada (ou ressuscitaria o que foi excluido).
+  it("a sincronizacao nunca mexe em active nem em featured", () => {
+    // `active:false` e como a loja EXCLUI um produto na tela, e `featured` e
+    // curadoria da equipe. Sincronizar esses dois ressuscitaria o que a loja
+    // tirou de proposito e desfaria a vitrine a cada rodada. Produto que some
+    // do Bling tambem nao e desativado: sumir da listagem nao prova que deixou
+    // de existir, e o pedido antigo ainda aponta para ele.
     // Sem os comentarios: a regra fala do que se GRAVA, e o proprio comentario
     // do arquivo cita os campos proibidos para explicar por que nao os grava.
     const lib = semComentarios(ler("src", "lib", "bling", "sincronizar.ts"))
-    for (const campo of [
-      "stock",
-      "active",
-      "sizes",
-      "imageUrls",
-      "featured",
-      "sizeType",
-      "description",
-    ]) {
+    for (const campo of ["active", "featured"]) {
       expect(lib, campo).not.toMatch(new RegExp(`\\b${campo}\\s*:`))
     }
     // E a linha nunca e recriada: pedido, midia e reserva apontam para o id local.
     expect(lib).not.toMatch(/prisma\.product\.deleteMany|prisma\.product\.delete\b/)
   })
 
-  it("categoria e a excecao, e so e escrita quando o Bling TEM uma", () => {
-    // O Bling passou a ser a fonte da categoria (o usuario pediu). Mas gravar
-    // o que ele devolve SEM condicao apagaria, com `null`, a categoria digitada
-    // aqui para todo produto que o Bling nao classificou — e o Bling nao tem
-    // como repor o que nunca soube.
-    const lib = ler("src", "lib", "bling", "sincronizar.ts")
-    expect(lib).toMatch(/if \(categoria && atual\.category !== categoria\)/)
-    expect(lib).not.toMatch(/category:\s*(null|undefined|categoria \?\?)/)
+  it("o que a equipe preenche nao e apagado pela sincronizacao", () => {
+    // Foto e descricao so entram quando o campo DAQUI esta vazio: a Galeria
+    // existe para a loja subir foto propria, melhor que a miniatura do ERP, e a
+    // sincronizacao nao pode desfazer isso toda rodada. Categoria so e escrita
+    // quando existe uma — gravar `null` apagaria a que foi digitada aqui.
+    const lib = semComentarios(ler("src", "lib", "bling", "sincronizar.ts"))
+    expect(lib).toMatch(/desejado\.description && !atual\.description/)
+    expect(lib).toMatch(/desejado\.imageUrls && atual\.imageUrls\.length === 0/)
+    expect(lib).toMatch(/desejado\.category && atual\.category !== desejado\.category/)
+    expect(lib).not.toMatch(/category:\s*(null|undefined)/)
+  })
+
+  it("grade e retrato de estoque so entram quando a peca tem variacoes", () => {
+    // `stock` aqui e um RETRATO do momento da sincronizacao, nao a autoridade:
+    // quem PROMETE peca e a rota de disponibilidade, que le o Bling ao vivo e
+    // desconta o reservado. Mas sem retrato nenhum o seletor do chat dizia
+    // "No momento sem estoque" para o catalogo inteiro, e a vendedora recusava
+    // venda de peca que existia. Gravar grade VAZIA por cima de uma existente
+    // faria o mesmo estrago, entao os dois campos so entram com grade.
+    const lib = semComentarios(ler("src", "lib", "bling", "sincronizar.ts"))
+    expect(lib).toMatch(/desejado\.sizes && desejado\.sizes\.length > 0/)
+    expect(lib).toMatch(/grade\.tamanhos\.length > 0/)
   })
 
   it("a paginacao decide pela pagina CRUA — o bug que parava na primeira", () => {
@@ -230,6 +239,66 @@ describe("preco do catalogo", () => {
     expect(precoDeCatalogo(null, undefined)).toBe("0.00")
     expect(precoDeCatalogo(-5, [0, 0])).toBe("0.00")
     expect(numeroDoBling("abc")).toBe(0)
+  })
+})
+
+describe("tamanho vindo do nome da variacao", () => {
+  const PAI = "VESTIDO DUDA LISO PLUS SIZE"
+
+  it("tira o nome do pai e fica com o tamanho", () => {
+    expect(tamanhoDaVariacao(PAI, `${PAI} M`)).toBe("M")
+    expect(tamanhoDaVariacao(PAI, `${PAI} - GG`)).toBe("GG")
+    expect(tamanhoDaVariacao(PAI, `${PAI} - Tamanho: P`)).toBe("P")
+  })
+
+  it("sem o pai como prefixo, usa o ultimo segmento", () => {
+    expect(tamanhoDaVariacao("OUTRA COISA", "BLUSA X - 42")).toBe("42")
+  })
+
+  it("ignora acento e caixa na comparacao com o pai", () => {
+    expect(tamanhoDaVariacao("CALÇA JEANS", "CALCA JEANS 38")).toBe("38")
+  })
+
+  it("devolve null quando o nome nao permite dizer — nao chuta", () => {
+    // Chutar aqui faria o seletor do chat oferecer a cliente um tamanho que a
+    // peca nao tem.
+    expect(tamanhoDaVariacao(PAI, `${PAI} DOURADO`)).toBeNull()
+    expect(tamanhoDaVariacao(PAI, PAI)).toBeNull()
+    expect(tamanhoDaVariacao(PAI, "")).toBeNull()
+    expect(tamanhoDaVariacao(undefined, "SO O NOME")).toBeNull()
+  })
+
+  it("ordena como arara, nao como dicionario", () => {
+    expect(ordenarTamanhos(["G", "PP", "GG", "M", "P"])).toEqual(["PP", "P", "M", "G", "GG"])
+    expect(ordenarTamanhos(["44", "38", "40"])).toEqual(["38", "40", "44"])
+    expect(ordenarTamanhos(["M", "M", "P"])).toEqual(["P", "M"])
+  })
+
+  it("plus size sai do nome da peca, que e onde a loja escreve", () => {
+    expect(tipoDeTamanho("VESTIDO DUDA LISO PLUS SIZE")).toBe("plussize")
+    expect(tipoDeTamanho("BLUSA ALCA BABADOS")).toBeNull()
+  })
+})
+
+describe("categoria deduzida do nome", () => {
+  const DO_BLING = ["BLUSA", "VESTIDO", "CONJUNTO", "CALÇA", "BODY", "SAIA", "CAMISA", "T-SHIRT"]
+
+  it("casa a peca com uma categoria que a loja cadastrou", () => {
+    // Na primeira sincronizacao so 68 das 569 pecas tinham categoria no Bling.
+    expect(categoriaPeloNome("VESTIDO DUDA LISO PLUS SIZE", DO_BLING)).toBe("VESTIDO")
+    expect(categoriaPeloNome("CALCA PANTALONA", DO_BLING)).toBe("CALÇA")
+    expect(categoriaPeloNome("T-SHIRT BORDADA", DO_BLING)).toBe("T-SHIRT")
+  })
+
+  it("nao inventa categoria que a loja nao tem", () => {
+    // BLAZER nao e categoria dela — fica sem, e isso e a resposta certa.
+    expect(categoriaPeloNome("BLAZER HOT PINK E534", DO_BLING)).toBeNull()
+  })
+
+  it("respeita fronteira de palavra", () => {
+    // "BLUSAO" nao e "BLUSA".
+    expect(categoriaPeloNome("BLUSAO DE LA", DO_BLING)).toBeNull()
+    expect(categoriaPeloNome("BLUSA ASSIMETRICA", DO_BLING)).toBe("BLUSA")
   })
 })
 

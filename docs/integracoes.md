@@ -441,13 +441,34 @@ Como a v3 devolve uma loja de roupa, e o que cada detalhe custou:
 - **`criterio: 2` (Ativos).** `5` ("Todos") traz tambem os excluidos, e `1`
   — o default — e "Ultimos incluidos", que **nao** e "todos".
 
-O que a sincronizacao **nao** escreve, e por que: `stock` (o Bling da saldo por
-SKU, a coluna e por TAMANHO), `active` (e assim que a loja exclui um produto),
-`sizes`, `imageUrls`, `featured`, `sizeType` e `description` (preenchidos pela
-equipe). Categoria e a unica excecao, e so e gravada quando o Bling tem uma:
-gravar `null` apagaria a categoria digitada aqui. E a linha **nunca** e
-recriada — `orders.items[].productId` e `media_files.product_id` apontam para o
-id local, e recriar orfanaria pedido e zeraria reserva.
+- **A categoria do Bling cobre pouco.** Na rodada de 22/09/2026 o Bling tinha 8
+  categorias (BLUSA, VESTIDO, CONJUNTO, CALCA, BODY, SAIA, CAMISA, T-SHIRT) e so
+  **68 das 569 pecas** estavam classificadas la. Para as outras, a categoria e
+  deduzida do NOME da peca — casando **so** contra as categorias que a propria
+  loja cadastrou no Bling. "VESTIDO DUDA LISO PLUS SIZE" vira `VESTIDO`;
+  "BLAZER HOT PINK" fica sem categoria, porque BLAZER nao e categoria dela.
+  Nao e adivinhacao de taxonomia: e o vocabulario da loja aplicado ao nome dela.
+- **Grade de tamanhos e retrato do estoque.** Como cada variacao e um tamanho, a
+  grade sai do nome das variacoes (a v3 nao tipa os atributos da variacao em
+  resposta nenhuma) e `stock` recebe o `saldoVirtualTotal` de cada uma. Esse
+  numero e a soma de TODOS os depositos — serve aqui porque a Merlo Store usa um
+  deposito so.
+
+**`products.stock` e um retrato, nao a autoridade.** Quem PROMETE peca continua
+sendo a rota de disponibilidade, que le o Bling ao vivo e desconta o reservado
+(ADR 0004). O retrato existe porque o seletor de produto do chat monta o texto
+que vai para a cliente a partir de `sizes` e `stock`: com os dois vazios, ele
+dizia "No momento sem estoque" para o catalogo inteiro e a vendedora recusava
+venda de peca que existia.
+
+O que a sincronizacao **nao** escreve, e por que: `active` (e assim que a loja
+exclui um produto) e `featured` (curadoria da equipe). Foto e descricao so
+entram quando o campo **daqui** esta vazio — a Galeria existe para a loja subir
+foto propria, melhor que a miniatura do ERP. Grade e estoque so entram quando a
+peca tem variacoes: gravar grade vazia por cima de uma existente faria o mesmo
+estrago. E a linha **nunca** e recriada — `orders.items[].productId` e
+`media_files.product_id` apontam para o id local, e recriar orfanaria pedido e
+zeraria reserva.
 
 ### Masc (sistema de vendas das lojas)
 

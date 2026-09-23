@@ -226,6 +226,16 @@ export type ProdutoBling = {
   situacao?: string
   /** `S` simples, `V` variacao, `E` composicao. */
   formato?: string
+  /** Descricao curta — o unico texto de produto que a LISTAGEM devolve. */
+  descricaoCurta?: string
+  /** Foto principal. A galeria completa so existe no detalhe, uma chamada por peca. */
+  imagemURL?: string
+  /**
+   * `saldoVirtualTotal` e a soma de TODOS os depositos, nao a de um. Serve aqui
+   * porque a Merlo Store usa um deposito so — em conta com mais de um, este
+   * numero somaria lojas diferentes.
+   */
+  estoque?: { saldoVirtualTotal?: number }
   /**
    * Preenchido (≠ 0) quando o item e a VARIACAO de outro produto. A listagem
    * da v3 devolve cada variacao tambem como linha propria: sem descartar, cada
