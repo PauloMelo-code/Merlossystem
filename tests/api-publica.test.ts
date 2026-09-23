@@ -17,6 +17,9 @@ const PUBLICAS_ESPERADAS = [
   "/api/register",
   "/api/alerts/check",
   "/api/transcription",
+  // Rodada da classificacao do funil: quem chama e o cron do EasyPanel, e o
+  // handler confere o CRON_SECRET em tempo constante, como as duas acima.
+  "/api/ai/funil",
   "/api/webhooks/whatsapp",
   "/api/webhooks/instagram",
   "/api/webhooks/facebook",
@@ -30,11 +33,11 @@ const PUBLICAS_ESPERADAS = [
 describe("superficie publica da API", () => {
   const rotas = rotasNoDisco()
 
-  it("encontra as 76 rotas", () => {
-    expect(rotas.length).toBe(76)
+  it("encontra as 77 rotas", () => {
+    expect(rotas.length).toBe(77)
   })
 
-  it("as publicas sao exatamente as 12 esperadas", () => {
+  it("as publicas sao exatamente as 13 esperadas", () => {
     const publicas = rotas.filter(ehApiPublica).sort()
     expect(publicas).toEqual([...PUBLICAS_ESPERADAS].sort())
   })

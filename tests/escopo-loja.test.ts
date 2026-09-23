@@ -215,14 +215,17 @@ describe("nome de coluna que o TypeScript nao confere", () => {
     // typecheck, passa no build — e explode como erro de validacao do Prisma
     // na primeira vez que alguem usa o filtro em producao. A coluna chama
     // `storeIntegracaoId`; `integracao` e o nome da RELACAO.
-    const { readFileSync } = await import("node:fs")
-    const { resolve } = await import("node:path")
-    const { globSync } = await import("node:fs")
+    const { readFileSync, readdirSync } = await import("node:fs")
+    const { resolve, join } = await import("node:path")
 
-    const raiz = resolve(__dirname, "..", "src")
-    const arquivos = globSync("**/*.{ts,tsx}", { cwd: raiz }).map((f) => resolve(raiz, f))
+    const varrer = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+        const caminho = join(dir, e.name)
+        if (e.isDirectory()) return varrer(caminho)
+        return /\.tsx?$/.test(e.name) ? [caminho] : []
+      })
 
-    for (const arquivo of arquivos) {
+    for (const arquivo of varrer(resolve(__dirname, "..", "src"))) {
       const src = readFileSync(arquivo, "utf8")
       for (const linha of src.split("\n")) {
         const achou = linha.match(/\bintegracaoId:\s*(\S+)/)

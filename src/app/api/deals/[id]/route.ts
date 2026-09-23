@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db/prisma"
 import { usuarioDaSessao, semSessao } from "@/lib/sessao"
 import { escopoDaLoja, lojaAtiva, foraDaLoja, type UsuarioComLoja } from "@/lib/loja"
 import { z } from "zod"
+import { VALORES_DE_ETAPA } from "@/lib/funil/etapas"
 
 /**
  * Deal individual.
@@ -22,7 +23,9 @@ const updateSchema = z.object({
   // vindo do body. `changedBy` (quem mudou) saiu: vem da sessao.
   assignedTo: z.string().optional().nullable(),
   expectedCloseDate: z.string().optional().nullable(),
-  stage: z.string().optional(),
+  // Lista fechada: a coluna e `text` sem CHECK, e etapa desconhecida some da
+  // tela do pipeline sem erro nenhum.
+  stage: z.enum(VALORES_DE_ETAPA as [string, ...string[]]).optional(),
   lossReason: z.string().optional(),
   lossNotes: z.string().optional(),
 })

@@ -18,6 +18,9 @@ const API_PUBLICA = [
   /^\/api\/register$/,
   /^\/api\/alerts\/check$/,
   /^\/api\/transcription$/,
+  // Rodada da classificacao do funil. Sem sessao porque quem chama e o cron
+  // do EasyPanel; o handler confere o `CRON_SECRET` em tempo constante.
+  /^\/api\/ai\/funil$/,
   // Volta do OAuth. Quem autoriza aqui e o `state` assinado
   // (src/lib/bling/estado.ts), que vale 1 minuto — nao o cookie, que nem
   // sempre acompanha o retorno de outro dominio.

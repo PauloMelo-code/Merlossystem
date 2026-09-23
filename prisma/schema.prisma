@@ -421,6 +421,12 @@ model Deal {
   lossNotes         String?   @map("loss_notes")
   expectedCloseDate DateTime? @map("expected_close_date") @db.Date
   lastActivityAt    DateTime  @default(now()) @map("last_activity_at")
+  /// Quando a classificacao automatica olhou este cartao pela ultima vez.
+  /// E o marcador da fila: conversa com mensagem mais nova que isto volta a
+  /// ser classificada. Coluna propria, e nao `last_activity_at`, porque aquele
+  /// alimenta o alerta de "deal parado" — carimbar la esconderia justamente o
+  /// cartao esquecido, que e o que o alerta existe para achar.
+  aiEtapaEm         DateTime? @map("ai_etapa_em")
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")
   // Soft delete (ADR 0005): excluir grava is_deleted, nunca apaga a linha.

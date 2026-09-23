@@ -4,12 +4,16 @@ import { prisma } from "@/lib/db/prisma"
 import { usuarioDaSessao, semSessao } from "@/lib/sessao"
 import { escopoDaLoja, lojaAtiva, foraDaLoja } from "@/lib/loja"
 import { z } from "zod"
+import { VALORES_DE_ETAPA, ETAPAS } from "@/lib/funil/etapas"
 
 const dealSchema = z.object({
   contactId: z.string(),
   conversationId: z.string().optional().nullable(),
   assignedTo: z.string().optional().nullable(),
-  stage: z.string().default("lead"),
+  // Lista fechada: `deals.stage` e `text` sem CHECK, entao a unica barreira
+  // entre um texto qualquer e a coluna e este enum. Etapa desconhecida some da
+  // tela do pipeline, que so monta as colunas que conhece.
+  stage: z.enum(VALORES_DE_ETAPA as [string, ...string[]]).default("lead"),
   value: z.number().default(0),
   products: z.array(z.record(z.string(), z.unknown())).default([]),
   notes: z.string().optional().nullable(),
@@ -40,9 +44,9 @@ export async function GET(req: Request) {
     orderBy: { lastActivityAt: "desc" },
   })
 
-  // Group by stage for pipeline view
-  const stages = ["lead", "interested", "negotiating", "closing", "won", "lost"]
-  const pipeline = stages.map((s) => ({
+  // As colunas do pipeline, na ordem da esteira — de `@/lib/funil/etapas`,
+  // que e a unica lista de etapas do sistema.
+  const pipeline = ETAPAS.map(({ valor: s }) => ({
     stage: s,
     deals: deals.filter((d) => d.stage === s),
     totalValue: deals
