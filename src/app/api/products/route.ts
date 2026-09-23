@@ -56,7 +56,7 @@ export async function GET(req: Request) {
     ? { distinct: ["sku"] }
     : {}
 
-  const [products, chaves] = await Promise.all([
+  const [products, chaves, categorias] = await Promise.all([
     prisma.product.findMany({
       ...distinto,
       where,
@@ -66,9 +66,27 @@ export async function GET(req: Request) {
     }),
     // `count` nao aceita `distinct`, entao o total sai da contagem das chaves.
     prisma.product.findMany({ ...distinto, where, select: { id: true } }),
+    // As categorias que EXISTEM no catalogo, para a tela montar o filtro.
+    // Escopo de loja apenas, de proposito: derivar as opcoes do resultado
+    // filtrado faria o seletor so oferecer a categoria ja escolhida, e a tela
+    // so conhecia as categorias da pagina visivel — com 569 pecas em 12
+    // categorias, filtrar por qualquer uma fora das 20 primeiras dava lista
+    // vazia.
+    prisma.product.findMany({
+      where: { ...escopoDaLoja(usuario, lojaAtiva(req)), category: { not: null } },
+      distinct: ["category"],
+      select: { category: true },
+      orderBy: { category: "asc" },
+    }),
   ])
 
-  return NextResponse.json({ products, total: chaves.length, page, limit })
+  return NextResponse.json({
+    products,
+    total: chaves.length,
+    page,
+    limit,
+    categorias: categorias.map((c) => c.category).filter((c): c is string => !!c),
+  })
 }
 
 export async function POST(req: Request) {

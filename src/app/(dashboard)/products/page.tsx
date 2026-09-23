@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Plus, Search, Pencil, Trash2 } from "lucide-react"
+import { Plus, Search, Pencil, Trash2, Image as ImageIcon } from "lucide-react"
 import { toast } from "sonner"
 import { Paginacao } from "@/components/comum/Paginacao"
 import { SkeletonTable } from "@/components/ui/skeleton"
@@ -96,6 +96,40 @@ const defaultSizes: Record<string, string[]> = {
   slim: ["PP", "P", "M", "G", "GG"],
   plussize: ["46", "48", "50", "52", "54", "56", "58"],
   both: ["PP", "P", "M", "G", "GG", "46", "48", "50", "52", "54", "56", "58"],
+}
+
+/**
+ * O quadradinho da foto na lista, como o Bling mostra.
+ *
+ * `<img>` cru, e nao `next/image`: a foto vem assinada do S3 do Bling, com
+ * dominio e query que mudam a cada sincronizacao — o otimizador do Next exige
+ * dominio liberado em configuracao e cairia para todo produto. Peca sem foto
+ * fica com o quadro vazio, que e informacao: mostra de relance quanto do
+ * catalogo ainda nao tem imagem.
+ */
+function MiniaturaDoProduto({ produto }: { produto: Product }) {
+  const foto = produto.imageUrls?.[0]
+  if (!foto) {
+    return (
+      <div className="flex h-12 w-12 items-center justify-center rounded-md border border-dashed border-neutral-200 bg-neutral-50">
+        <ImageIcon className="h-4 w-4 text-neutral-300" />
+      </div>
+    )
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={foto}
+      alt={produto.name}
+      loading="lazy"
+      className="h-12 w-12 rounded-md border border-neutral-200 object-cover"
+      // Link assinado expira: quando expirar, o quadro vazio aparece de novo em
+      // vez de um icone de imagem quebrada.
+      onError={(e) => {
+        e.currentTarget.style.display = "none"
+      }}
+    />
+  )
 }
 
 function ProductForm({
@@ -271,6 +305,8 @@ export default function ProductsPage() {
   const [pagina, setPagina] = useState(1)
   const [total, setTotal] = useState(0)
   const [limite, setLimite] = useState(POR_PAGINA)
+  // As categorias que existem no catalogo inteiro, nao so na pagina visivel.
+  const [categoriasDoCatalogo, setCategoriasDoCatalogo] = useState<string[]>([])
 
   const loadProducts = useCallback(async () => {
     setLoading(true)
@@ -289,6 +325,7 @@ export default function ProductsPage() {
     setProducts(data.products)
     setTotal(data.total ?? 0)
     setLimite(data.limit ?? POR_PAGINA)
+    if (Array.isArray(data.categorias)) setCategoriasDoCatalogo(data.categorias)
     setLoading(false)
   }, [search, filterCategory, filterSizeType, pagina])
 
@@ -371,11 +408,10 @@ export default function ProductsPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todas</SelectItem>
-            {/* Mais as categorias dos produtos JA carregados: sem isto o filtro
-                nao alcanca nenhuma categoria vinda do Bling. So enxerga o que
-                esta na tela — filtrar por uma categoria ausente desta pagina
-                continua exigindo a busca por nome. */}
-            {opcoesDeCategoria(...products.map((p) => p.category)).map((c) => (
+            {/* Todas as categorias do catalogo, vindas da API — nao as da
+                pagina visivel. Com 569 pecas em 12 categorias, derivar as
+                opcoes do que esta na tela deixava quase todas inalcancaveis. */}
+            {opcoesDeCategoria(...categoriasDoCatalogo).map((c) => (
               <SelectItem key={c.value} value={c.value}>
                 {c.label}
               </SelectItem>
@@ -398,12 +434,13 @@ export default function ProductsPage() {
       </div>
 
       {loading ? (
-        <SkeletonTable rows={8} cols={6} />
+        <SkeletonTable rows={8} cols={7} />
       ) : (
       <div className="rounded-md border bg-white">
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-16">Imagem</TableHead>
               <TableHead>Nome</TableHead>
               <TableHead>SKU</TableHead>
               <TableHead>Categoria</TableHead>
@@ -423,6 +460,9 @@ export default function ProductsPage() {
             ) : (
               products.map((product) => (
                 <TableRow key={product.id} className="hover:bg-neutral-50/80 transition-colors cursor-pointer">
+                  <TableCell>
+                    <MiniaturaDoProduto produto={product} />
+                  </TableCell>
                   <TableCell className="font-medium">{product.name}</TableCell>
                   <TableCell className="text-muted-foreground">
                     {product.sku || "—"}
