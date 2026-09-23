@@ -10,7 +10,13 @@ import { resolve } from "node:path"
 import { criarState, validarState } from "@/lib/bling/estado"
 import { cabecalhoBasic, configDoApp, ehBlingConfigError } from "@/lib/bling/config"
 import { precoDeCatalogo, numeroDoBling } from "@/lib/bling/preco"
-import { tamanhoDaVariacao, ordenarTamanhos, tipoDeTamanho } from "@/lib/bling/tamanhos"
+import {
+  tamanhoDaVariacao,
+  ordenarTamanhos,
+  tipoDeTamanho,
+  tamanhoDoAtributo,
+} from "@/lib/bling/tamanhos"
+import { gradeDoDetalhe, primeiraFoto } from "@/lib/bling/enriquecer"
 import { categoriaPeloNome } from "@/lib/bling/categorias"
 
 const raiz = resolve(__dirname, "..")
@@ -356,5 +362,92 @@ describe("incerteza isolada", () => {
     ]) {
       expect(ler(...arq), arq.join("/")).not.toMatch(/tiktokglobalshop\.com|tiktok-shops\.com/)
     }
+  })
+})
+
+describe("tamanho pelo atributo da variacao", () => {
+  it("le o formato que a spec documenta", () => {
+    // `ProdutosVariacaoDTO.properties.nome.example` e literalmente
+    // "Tamanho:G;Cor:Verde". E o UNICO lugar onde o tamanho aparece separado
+    // da cor: pelo nome da variacao, uma peca de 39 variacoes cor x tamanho e
+    // indecifravel — foi o que deu grade em 1 peca de 569.
+    expect(tamanhoDoAtributo("Tamanho:G;Cor:Verde")).toBe("G")
+    expect(tamanhoDoAtributo("Cor:Azul;Tamanho:PP")).toBe("PP")
+    expect(tamanhoDoAtributo("Tamanho:44")).toBe("44")
+  })
+
+  it("aceita sem acento, em ingles, e o valor solto", () => {
+    expect(tamanhoDoAtributo("tamanho:gg")).toBe("GG")
+    expect(tamanhoDoAtributo("Size:M")).toBe("M")
+    expect(tamanhoDoAtributo("G1")).toBe("G1")
+  })
+
+  it("devolve null quando nao ha tamanho — nao chuta a cor", () => {
+    // Chutar aqui ofereceria "VERDE" como tamanho no seletor do chat.
+    expect(tamanhoDoAtributo("Cor:Verde")).toBeNull()
+    expect(tamanhoDoAtributo("Estampa:Onca;Cor:Preto")).toBeNull()
+    expect(tamanhoDoAtributo("")).toBeNull()
+    expect(tamanhoDoAtributo(undefined)).toBeNull()
+  })
+})
+
+describe("foto e grade vindas do detalhe", () => {
+  const detalhe = {
+    id: 1,
+    nome: "T-SHIRT ALGODAO SLIM",
+    midia: {
+      imagens: {
+        internas: [{ link: "https://bling/interna.jpg" }],
+        externas: [{ link: "https://loja/externa.jpg" }],
+      },
+    },
+    variacoes: [
+      { nome: "x", variacao: { nome: "Tamanho:P;Cor:Preto" }, estoque: { saldoVirtualTotal: 2 } },
+      { nome: "x", variacao: { nome: "Tamanho:P;Cor:Branco" }, estoque: { saldoVirtualTotal: 3 } },
+      { nome: "x", variacao: { nome: "Tamanho:M;Cor:Preto" }, estoque: { saldoVirtualTotal: 1 } },
+      { nome: "x", variacao: { nome: "Cor:Verde" }, estoque: { saldoVirtualTotal: 9 } },
+    ],
+  }
+
+  it("soma o saldo das cores dentro do mesmo tamanho", () => {
+    // Cor x tamanho: duas variacoes caem no mesmo tamanho. Sem somar, a
+    // vendedora veria so o estoque da ultima cor lida.
+    const grade = gradeDoDetalhe(detalhe)
+    expect(grade.tamanhos).toEqual(["P", "M"])
+    expect(grade.estoque).toEqual({ P: 5, M: 1 })
+  })
+
+  it("variacao sem tamanho nao entra na grade nem no estoque", () => {
+    expect(gradeDoDetalhe(detalhe).estoque.VERDE).toBeUndefined()
+  })
+
+  it("prefere a foto interna, que e a que a loja cadastrou", () => {
+    expect(primeiraFoto(detalhe)).toBe("https://bling/interna.jpg")
+    expect(primeiraFoto({ id: 1, imagemURL: "https://bling/lista.jpg" })).toBe(
+      "https://bling/lista.jpg"
+    )
+    expect(primeiraFoto({ id: 1 })).toBeNull()
+  })
+
+  it("a foto e BAIXADA, nunca apontada", () => {
+    // A imagem interna vem numa URL do S3 assinada, com prazo (`Expires=...`):
+    // guardar o link daria um catalogo que funciona hoje e amanhece quebrado.
+    const lib = semComentarios(ler("src", "lib", "bling", "enriquecer.ts"))
+    expect(lib).toMatch(/subirArquivo/)
+    expect(lib).toMatch(/imageUrls = \[url\]/)
+    // E a url gravada e a NOSSA, nao a do Bling.
+    expect(lib).toMatch(/urlInterna\(id\)/)
+  })
+
+  it("nao pisa na foto que a equipe subiu pela Galeria", () => {
+    const lib = semComentarios(ler("src", "lib", "bling", "enriquecer.ts"))
+    expect(lib).toMatch(/linhas\.filter\(\(l\) => l\.imageUrls\.length === 0\)/)
+  })
+
+  it("carimba a peca mesmo quando o Bling nao tem detalhe", () => {
+    // Sem carimbar, a peca sem foto voltaria para a fila em toda rodada e a
+    // fila nunca zeraria.
+    const lib = semComentarios(ler("src", "lib", "bling", "enriquecer.ts"))
+    expect(lib.match(/blingDetalheEm: new Date\(\)/g)?.length).toBeGreaterThanOrEqual(3)
   })
 })

@@ -61,9 +61,18 @@ function Selo({ status, expirada }: { status: string; expirada: boolean }) {
   )
 }
 
+/**
+ * Teto de rodadas por clique. 40 pecas por rodada dao 1.600 pecas — mais que o
+ * catalogo inteiro — e o teto existe so para a tela nunca ficar presa num laco
+ * se a fila nao diminuir.
+ */
+const RODADAS_MAXIMAS = 40
+
 export default function IntegracoesPage() {
   const [integracoes, setIntegracoes] = useState<Integracao[]>([])
   const [carregando, setCarregando] = useState(true)
+  const [buscandoDetalhes, setBuscandoDetalhes] = useState(false)
+  const [progressoDetalhes, setProgressoDetalhes] = useState("")
   const [semPermissao, setSemPermissao] = useState(false)
   const [sessaoDe, setSessaoDe] = useState<string | null>(null)
   const [estado, setEstado] = useState<EstadoSessao | null>(null)
@@ -203,6 +212,50 @@ export default function IntegracoesPage() {
     }
     toast.success(d.aviso ?? "Catálogo sincronizado.")
     carregar()
+  }
+
+  /**
+   * Busca foto e grade de tamanhos, peca a peca, pelo detalhe do Bling.
+   *
+   * Em LOTES, repetindo ate a fila zerar: sao centenas de pecas a 3 requisicoes
+   * por segundo, e uma unica requisicao HTTP morreria no tempo limite do proxy
+   * antes de terminar. Cada rodada diz quantas faltam, e o progresso aparece no
+   * aviso — uma barra que nao anda por tres minutos parece travada.
+   */
+  async function buscarFotosETamanhos() {
+    if (buscandoDetalhes) return
+    setBuscandoDetalhes(true)
+    let comFoto = 0
+    let comGrade = 0
+
+    try {
+      for (let rodada = 1; rodada <= RODADAS_MAXIMAS; rodada++) {
+        const res = await fetch("/api/integracoes/bling/detalhes", { method: "POST" })
+        const d = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          toast.error(d.error || "Não foi possível buscar as fotos.")
+          return
+        }
+        comFoto += d.comFoto ?? 0
+        comGrade += d.comGrade ?? 0
+
+        if (d.restantes > 0) {
+          setProgressoDetalhes(`${d.restantes} peça(s) restantes…`)
+          continue
+        }
+        toast.success(
+          `Pronto: ${comFoto} peça(s) ganharam foto e ${comGrade} ganharam grade de tamanhos.`
+        )
+        return
+      }
+      toast.info(
+        `Parei em ${RODADAS_MAXIMAS} rodadas para não prender a tela. Clique de novo para continuar de onde parou.`
+      )
+    } finally {
+      setBuscandoDetalhes(false)
+      setProgressoDetalhes("")
+      carregar()
+    }
   }
 
   /** Aponta o webhook da conta para este sistema (uazapi). */
@@ -355,9 +408,19 @@ export default function IntegracoesPage() {
                   </>
                 )}
                 {item.provedor === "bling" && (
-                  <Button variant="outline" size="sm" onClick={sincronizarCatalogo}>
-                    Sincronizar catálogo
-                  </Button>
+                  <>
+                    <Button variant="outline" size="sm" onClick={sincronizarCatalogo}>
+                      Sincronizar catálogo
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={buscarFotosETamanhos}
+                      disabled={buscandoDetalhes}
+                    >
+                      {progressoDetalhes || "Buscar fotos e tamanhos"}
+                    </Button>
+                  </>
                 )}
                 <Button variant="outline" size="sm" onClick={() => renomear(item)}>
                   Renomear

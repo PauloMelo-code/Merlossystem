@@ -185,6 +185,8 @@ function gradeDaPeca(peca: ProdutoBling, variacoes: ProdutoBling[]): Grade {
 type Desejado = {
   name: string
   price: string
+  /** Id da peca no Bling — a chave da segunda passada, que busca foto e grade. */
+  blingId: string
   category?: string
   description?: string
   sizes?: string[]
@@ -245,6 +247,7 @@ export async function sincronizarCatalogo(
       sizeType: true,
       imageUrls: true,
       stock: true,
+      blingId: true,
     },
   })
   for (const p of jaNoBanco) {
@@ -290,6 +293,7 @@ export async function sincronizarCatalogo(
           sku,
           name: nome,
           price: preco,
+          blingId: String(peca.id),
           ...(categoria ? { category: categoria } : {}),
           ...(descricao ? { description: descricao } : {}),
           ...(foto ? { imageUrls: [foto] } : {}),
@@ -305,6 +309,7 @@ export async function sincronizarCatalogo(
       const dados = oQueMudou(atual, {
         name: nome,
         price: preco,
+        blingId: String(peca.id),
         ...(categoria ? { category: categoria } : {}),
         ...(descricao ? { description: descricao } : {}),
         ...(foto ? { imageUrls: [foto] } : {}),
@@ -350,6 +355,7 @@ type ProdutoLocal = {
   sizeType: string
   imageUrls: string[]
   stock: unknown
+  blingId: string | null
 }
 
 /**
@@ -374,6 +380,9 @@ function oQueMudou(atual: ProdutoLocal, desejado: Desejado): Record<string, unkn
   const dados: Record<string, unknown> = {}
 
   if (atual.name !== desejado.name) dados.name = desejado.name
+  // O id do Bling nao muda; so entra quando a linha ainda nao o tinha (as
+  // gravadas antes da segunda passada existir).
+  if (atual.blingId !== desejado.blingId) dados.blingId = desejado.blingId
   if (String(atual.price) !== desejado.price) dados.price = desejado.price
   if (desejado.category && atual.category !== desejado.category) {
     dados.category = desejado.category

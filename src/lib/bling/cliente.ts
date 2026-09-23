@@ -325,6 +325,61 @@ export async function listarProdutos(integracaoId: string, pagina = 1, limite = 
   return (await listarPaginaProdutos(integracaoId, pagina, limite)).filter(ehProdutoDeTopo)
 }
 
+/**
+ * Uma imagem do produto, do jeito que o detalhe devolve.
+ *
+ * As internas sao as hospedadas pelo Bling e vem com URL ASSINADA que expira —
+ * guardar o link significa foto quebrada semanas depois. Quem usa isto tem de
+ * baixar o arquivo, nao guardar o endereco.
+ */
+export type ImagemBling = { link?: string }
+
+export type VariacaoDetalhada = {
+  id?: number | string
+  nome?: string
+  codigo?: string
+  preco?: number | string
+  estoque?: { saldoVirtualTotal?: number }
+  /** `variacao.nome` vem como `"Tamanho:G;Cor:Verde"`. */
+  variacao?: { nome?: string }
+}
+
+export type ProdutoDetalhado = {
+  id: number | string
+  nome?: string
+  codigo?: string
+  preco?: number | string
+  descricaoCurta?: string
+  imagemURL?: string
+  categoria?: { id?: number | string }
+  estoque?: { saldoVirtualTotal?: number }
+  midia?: {
+    imagens?: {
+      internas?: ImagemBling[]
+      externas?: ImagemBling[]
+      imagensURL?: ImagemBling[]
+    }
+  }
+  variacoes?: VariacaoDetalhada[]
+}
+
+/**
+ * O detalhe de UM produto — a unica forma de obter foto e o atributo de
+ * tamanho.
+ *
+ * A listagem nao traz nada disso: `imagemURL` vem vazio na maioria das pecas e
+ * o tamanho so existe dentro de `variacoes[].variacao.nome`. Custa uma
+ * requisicao por peca, a 3 por segundo — por isso quem chama trabalha em lote
+ * e guarda por onde parou.
+ */
+export async function buscarProduto(integracaoId: string, produtoId: string | number) {
+  const r = await buscar<{ data?: ProdutoDetalhado }>(
+    integracaoId,
+    `${BLING_ENDPOINTS.produtos}/${encodeURIComponent(String(produtoId))}`
+  )
+  return r.data ?? null
+}
+
 /** Categorias cadastradas — o de-para que transforma `categoria.id` em nome. */
 export async function listarCategorias(integracaoId: string, pagina = 1, limite = 100) {
   const r = await buscar<{ data?: CategoriaBling[] }>(integracaoId, BLING_ENDPOINTS.categorias, {

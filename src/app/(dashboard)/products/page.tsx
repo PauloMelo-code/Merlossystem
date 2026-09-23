@@ -77,13 +77,22 @@ function rotuloDaCategoria(valor: string | null | undefined): string {
   return categories.find((c) => c.value === valor)?.label ?? valor
 }
 
-/** As nove de sempre mais a que o produto ja tem, quando vier do Bling. */
+/**
+ * As categorias que o seletor oferece — SO as que tem produto.
+ *
+ * A lista fixa de nove ficou de fora de proposito: com o catalogo vindo do
+ * Bling, nenhuma delas tem produto, e o seletor mostrava 21 opcoes das quais
+ * 9 nao levavam a lugar nenhum. Ela continua servindo de rotulo bonito em
+ * `rotuloDaCategoria`, para produto antigo gravado com um daqueles valores.
+ */
 function opcoesDeCategoria(...presentes: (string | null | undefined)[]) {
-  const opcoes = new Map(categories.map((c) => [c.value, c.label] as const))
+  const opcoes = new Map<string, string>()
   for (const valor of presentes) {
-    if (valor && !opcoes.has(valor)) opcoes.set(valor, valor)
+    if (valor) opcoes.set(valor, rotuloDaCategoria(valor))
   }
-  return Array.from(opcoes).map(([value, label]) => ({ value, label }))
+  return Array.from(opcoes)
+    .map(([value, label]) => ({ value, label }))
+    .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"))
 }
 
 const sizeTypes = [
@@ -134,10 +143,12 @@ function MiniaturaDoProduto({ produto }: { produto: Product }) {
 
 function ProductForm({
   product,
+  categoriasDoCatalogo,
   onSave,
   onCancel,
 }: {
   product?: Product
+  categoriasDoCatalogo: string[]
   onSave: () => void
   onCancel: () => void
 }) {
@@ -219,7 +230,7 @@ function ProductForm({
             <SelectContent>
               {/* A categoria vinda do Bling entra na lista: sem ela o campo
                   abria vazio e salvar apagava a categoria do produto. */}
-              {opcoesDeCategoria(product?.category, category).map((c) => (
+              {opcoesDeCategoria(...categoriasDoCatalogo, product?.category, category).map((c) => (
                 <SelectItem key={c.value} value={c.value}>
                   {c.label}
                 </SelectItem>
@@ -385,6 +396,7 @@ export default function ProductsPage() {
             </DialogHeader>
             <ProductForm
               product={editingProduct}
+              categoriasDoCatalogo={categoriasDoCatalogo}
               onSave={handleSaved}
               onCancel={() => setDialogOpen(false)}
             />

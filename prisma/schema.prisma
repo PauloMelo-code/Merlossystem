@@ -391,6 +391,13 @@ model Product {
   imageUrls      String[] @default([]) @map("image_urls")
   active         Boolean  @default(true)
   featured       Boolean  @default(false)
+  /// Id da peca no Bling. Guardado na sincronizacao porque o detalhe — unica
+  /// fonte de foto e do atributo de tamanho — e buscado por id, e resolver
+  /// codigo -> id a cada rodada custaria uma requisicao a cada 100 pecas.
+  blingId        String?  @map("bling_id")
+  /// Quando o detalhe desta peca foi buscado pela ultima vez. Marcador da
+  /// fila: sem ele, peca que o Bling nao tem foto voltaria para sempre.
+  blingDetalheEm DateTime? @map("bling_detalhe_em")
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 

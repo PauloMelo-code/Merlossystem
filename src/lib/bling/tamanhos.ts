@@ -62,6 +62,34 @@ export function tamanhoDaVariacao(
   return limpo === "UN" ? "U" : limpo
 }
 
+/**
+ * Tamanho a partir do ATRIBUTO da variacao, que so o detalhe do produto traz.
+ *
+ * `variacao.nome` vem no formato `"Tamanho:G;Cor:Verde"` — dito assim na
+ * propria especificacao (`ProdutosVariacaoDTO.properties.nome.example`). E o
+ * unico lugar onde o tamanho aparece SEPARADO da cor: pelo nome da variacao,
+ * uma peca com 39 variacoes de cor x tamanho e indecifravel, e foi por isso
+ * que a primeira sincronizacao deu grade em 1 peca de 569.
+ *
+ * Aceita tambem o rotulo em ingles e sem acento, e cai no valor unico quando
+ * nao ha rotulo nenhum (`"G"`).
+ */
+export function tamanhoDoAtributo(nomeDaVariacao: string | undefined): string | null {
+  const bruto = (nomeDaVariacao ?? "").trim()
+  if (!bruto) return null
+
+  for (const parte of bruto.split(";")) {
+    const [rotulo, valor] = parte.split(":")
+    // Sem rotulo, o proprio pedaco e o valor — variacao de um atributo so.
+    const candidato = valor === undefined ? rotulo : ROTULO.test(rotulo.trim()) ? valor : ""
+    const limpo = semAcento(candidato ?? "")
+      .trim()
+      .toUpperCase()
+    if (limpo && TAMANHO.test(limpo)) return limpo === "UN" ? "U" : limpo
+  }
+  return null
+}
+
 /** Da ordem de arara: PP, P, M, G, GG... e depois os numericos crescendo. */
 export function ordenarTamanhos(tamanhos: string[]): string[] {
   const unicos = Array.from(new Set(tamanhos))
