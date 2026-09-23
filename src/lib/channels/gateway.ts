@@ -170,9 +170,17 @@ export async function processIncomingMessage(
 
   if (msg.mediaUrl && msg.contentType !== "text") {
     try {
-      const fileType = msg.mediaMimeType
-        ? getFileTypeFromMime(msg.mediaMimeType)
-        : (msg.contentType as "image" | "video" | "audio" | "document")
+      // Figurinha antes do mime: o WhatsApp manda figurinha como `image/webp`,
+      // entao classificar pelo mime jogava toda figurinha na mesma pilha das
+      // fotos de peca — e a Galeria e onde a equipe procura foto de produto.
+      // O canal ja disse o que e (`contentType: "sticker"`); so estavamos
+      // jogando fora essa informacao.
+      const fileType =
+        msg.contentType === "sticker"
+          ? "sticker"
+          : msg.mediaMimeType
+            ? getFileTypeFromMime(msg.mediaMimeType)
+            : (msg.contentType as "image" | "video" | "audio" | "document")
 
       const uploaded = await subirDeUrl(msg.mediaUrl, {
         storeId,

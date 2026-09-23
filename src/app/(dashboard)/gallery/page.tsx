@@ -10,7 +10,7 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog"
-import { Upload, Search, Trash2, Image as ImageIcon, Video, Music, FileText, X } from "lucide-react"
+import { Upload, Search, Trash2, Image as ImageIcon, Video, Music, FileText, Sticker, X } from "lucide-react"
 import { toast } from "sonner"
 
 interface MediaFile {
@@ -39,6 +39,10 @@ const folders = [
 const fileTypes = [
   { value: "all", label: "Todos" },
   { value: "image", label: "Imagens" },
+  // Figurinha e uma pilha propria: o WhatsApp manda como `image/webp`, e
+  // misturada com foto de peca ela atrapalha justamente quem procura foto de
+  // produto na Galeria.
+  { value: "sticker", label: "Figurinhas" },
   { value: "video", label: "Vídeos" },
   { value: "audio", label: "Áudios" },
   { value: "document", label: "Documentos" },
@@ -47,6 +51,7 @@ const fileTypes = [
 function FileTypeIcon({ type }: { type: string }) {
   switch (type) {
     case "image": return <ImageIcon className="h-5 w-5" />
+    case "sticker": return <Sticker className="h-5 w-5" />
     case "video": return <Video className="h-5 w-5" />
     case "audio": return <Music className="h-5 w-5" />
     default: return <FileText className="h-5 w-5" />
@@ -211,7 +216,7 @@ export default function GalleryPage() {
                 onClick={() => setPreviewFile(file)}
               >
                 <div className="aspect-square bg-neutral-100 flex items-center justify-center">
-                  {file.fileType === "image" ? (
+                  {file.fileType === "image" || file.fileType === "sticker" ? (
                     <img
                       src={file.thumbnailUrl || file.fileUrl}
                       alt={file.originalName || ""}

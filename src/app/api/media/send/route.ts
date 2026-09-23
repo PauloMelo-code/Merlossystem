@@ -85,6 +85,10 @@ export async function POST(req: Request) {
 
       switch (mediaFile.fileType) {
         case "image":
+        // Figurinha sai como imagem: o `webp` chega como foto do outro lado, e
+        // e o que os quatro adapters tem em comum. Separa-la da imagem serve
+        // para ORGANIZAR a Galeria, nao para mudar o envio.
+        case "sticker":
           result = await adapter.sendImage(recipientId, url, caption)
           break
         case "video":
