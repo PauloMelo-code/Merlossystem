@@ -243,6 +243,22 @@ export default function IntegracoesPage() {
           setProgressoDetalhes(`${d.restantes} peça(s) restantes…`)
           continue
         }
+
+        // Fila vazia por falta do id do Bling NAO e trabalho concluido. Dizer
+        // "0 peças ganharam foto" aqui se le como "o Bling não tem foto", e o
+        // que falta e rodar a sincronização, que é quem grava esse id.
+        if (rodada === 1 && d.processadas === 0 && d.semBlingId > 0) {
+          toast.error(
+            `Nenhuma peça na fila: ${d.semBlingId} linha(s) estão sem o id do Bling. ` +
+              `Rode "Sincronizar catálogo" primeiro — é ele que grava esse id.`
+          )
+          return
+        }
+        if (rodada === 1 && d.processadas === 0) {
+          toast.info("Nenhuma peça pendente: todas já foram consultadas no Bling.")
+          return
+        }
+
         toast.success(
           `Pronto: ${comFoto} peça(s) ganharam foto e ${comGrade} ganharam grade de tamanhos.`
         )

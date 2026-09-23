@@ -35,6 +35,15 @@ export type ResultadoDoEnriquecimento = {
   semDetalhe: number
   /** Quantas ainda faltam depois desta rodada. */
   restantes: number
+  /**
+   * Pecas sem o id do Bling gravado — elas NAO entram na fila.
+   *
+   * E o estado de quem sincronizou o catalogo antes de a segunda passada
+   * existir: sem o id nao ha como pedir o detalhe. Sem este numero, a rodada
+   * terminaria dizendo "0 pecas ganharam foto", que se le como se o Bling nao
+   * tivesse foto nenhuma — quando o que falta e rodar a sincronizacao.
+   */
+  semBlingId: number
   falhas: { sku: string; erro: string }[]
 }
 
@@ -149,6 +158,7 @@ export async function enriquecerLote(
     comGrade: 0,
     semDetalhe: 0,
     restantes: 0,
+    semBlingId: 0,
     falhas: [],
   }
 
@@ -227,6 +237,7 @@ export async function enriquecerLote(
   resultado.restantes = await prisma.product.count({
     where: { blingId: { not: null }, blingDetalheEm: null },
   })
+  resultado.semBlingId = await prisma.product.count({ where: { blingId: null } })
 
   return resultado
 }
