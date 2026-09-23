@@ -37,6 +37,8 @@ export default function LojasPage() {
   const [lojas, setLojas] = useState<Loja[]>([])
   const [depositos, setDepositos] = useState<Deposito[]>([])
   const [blingConectado, setBlingConectado] = useState(false)
+  /** Por que a lista de depositos nao veio. Vazio = nao houve falha. */
+  const [falhaDosDepositos, setFalhaDosDepositos] = useState("")
   const [carregando, setCarregando] = useState(true)
   const [semPermissao, setSemPermissao] = useState(false)
 
@@ -58,12 +60,19 @@ export default function LojasPage() {
     }
 
     // Bling desconectado nao impede cadastrar loja — so tira a lista de
-    // depositos e o campo vira texto livre.
+    // depositos e o campo vira texto livre. Mas a falha precisa APARECER: cair
+    // no texto livre em silencio faz a tela dizer "conecte o Bling" para quem
+    // ja conectou, e o unico caminho que sobra e caçar o id dentro do Bling.
     const dep = await fetch("/api/integracoes/bling/depositos")
+    const corpo = await dep.json().catch(() => ({}))
     if (dep.ok) {
-      const d = await dep.json()
-      setBlingConectado(d.conectado)
-      setDepositos(d.depositos)
+      setBlingConectado(corpo.conectado)
+      setDepositos(corpo.depositos ?? [])
+      if (corpo.conectado && (corpo.depositos ?? []).length === 0) {
+        setFalhaDosDepositos("O Bling respondeu, mas não devolveu nenhum depósito.")
+      }
+    } else {
+      setFalhaDosDepositos(corpo.error || `O Bling não respondeu (HTTP ${dep.status}).`)
     }
     setCarregando(false)
   }, [])
@@ -252,10 +261,17 @@ export default function LojasPage() {
                     placeholder="id do depósito"
                     autoComplete="off"
                   />
-                  <p className="text-xs text-muted-foreground">
-                    Conecte o Bling em Integrações para escolher de uma lista em vez de
-                    digitar o id.
-                  </p>
+                  {falhaDosDepositos ? (
+                    <p className="text-xs text-red-600">
+                      {falhaDosDepositos} Pegue o id em Cadastros → Estoques → Depósitos,
+                      dentro do Bling: ele aparece na URL ao abrir o depósito.
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Conecte o Bling em Integrações para escolher de uma lista em vez de
+                      digitar o id.
+                    </p>
+                  )}
                 </>
               )}
               <p className="text-xs text-muted-foreground">
