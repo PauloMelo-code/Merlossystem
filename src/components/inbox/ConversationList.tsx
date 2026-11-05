@@ -1,5 +1,6 @@
 "use client"
 
+import type { ReactNode } from "react"
 import { formatDistanceToNow } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import { Badge } from "@/components/ui/badge"
@@ -96,6 +97,8 @@ interface ConversationListProps {
   numeros: NumeroConectado[]
   numeroFilter: string
   onNumeroFilterChange: (v: string) => void
+  /** Controle de pagina, montado pela tela. */
+  rodape?: ReactNode
 }
 
 export function ConversationList({
@@ -111,6 +114,7 @@ export function ConversationList({
   numeros,
   numeroFilter,
   onNumeroFilterChange,
+  rodape,
 }: ConversationListProps) {
   const unanswered = conversations.filter((c) => c.unreadCount > 0).length
 
@@ -269,6 +273,9 @@ export function ConversationList({
           })
         )}
       </ScrollArea>
+      {/* Fora do ScrollArea de proposito: o controle de pagina tem que ficar
+          a vista sem precisar rolar ate o fim da lista. */}
+      {rodape ? <div className="border-t">{rodape}</div> : null}
     </div>
   )
 }

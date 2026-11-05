@@ -13,6 +13,7 @@ import { SkeletonConversationList, SkeletonChat } from "@/components/ui/skeleton
 import { Inbox as InboxIcon, ArrowLeft, UserCircle, ShoppingBag } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
+import { Paginacao } from "@/components/comum/Paginacao"
 import { cn } from "@/lib/utils"
 
 export default function InboxPage() {
@@ -26,6 +27,13 @@ export default function InboxPage() {
   const [numeros, setNumeros] = useState<NumeroConectado[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [vendendo, setVendendo] = useState(false)
+  // A rota SEMPRE paginou (30 por pagina); a tela e que nunca mandava `page`,
+  // entao a lista parava nas 30 conversas mais recentes e as antigas nao
+  // tinham como ser alcancadas — parecia completa e nao era. Mesmo defeito ja
+  // corrigido em contatos e produtos.
+  const [pagina, setPagina] = useState(1)
+  const [total, setTotal] = useState(0)
+  const LIMITE = 30
 
   const selectedConv = conversations.find((c) => c.id === selectedId)
 
@@ -45,12 +53,22 @@ export default function InboxPage() {
     if (statusFilter !== "all") params.set("status", statusFilter)
     if (numeroFilter !== "all") params.set("integracaoId", numeroFilter)
 
+    params.set("page", String(pagina))
+    params.set("limit", String(LIMITE))
+
     const res = await fetch(`/api/conversations?${params}`)
     if (res.ok) {
       const data = await res.json()
       setConversations(data.conversations)
+      setTotal(data.total ?? 0)
     }
     setIsLoading(false)
+  }, [buscaAplicada, channelFilter, statusFilter, numeroFilter, pagina])
+
+  // Filtrar estando na pagina 5 devolvia uma lista vazia de um resultado que
+  // tem uma pagina so. Qualquer troca de filtro volta para a primeira.
+  useEffect(() => {
+    setPagina(1)
   }, [buscaAplicada, channelFilter, statusFilter, numeroFilter])
 
   // Os números da loja mudam raramente: carrega uma vez, fora do polling.
@@ -105,6 +123,14 @@ export default function InboxPage() {
             numeros={numeros}
             numeroFilter={numeroFilter}
             onNumeroFilterChange={setNumeroFilter}
+            rodape={
+              <Paginacao
+                pagina={pagina}
+                limite={LIMITE}
+                total={total}
+                onMudar={setPagina}
+              />
+            }
           />
         )}
       </div>

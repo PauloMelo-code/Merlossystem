@@ -10,9 +10,12 @@
  *  2. O try/catch da rota de webhook cobria o LACO INTEIRO: esse P2002 no
  *     meio de um lote descartava calado todas as mensagens seguintes, e a
  *     rota ainda respondia 200 — o uazapi nunca reenviava.
- *  3. Na tela, o polling chamava a mesma `carregar()` da abertura e
- *     recalculava `temMais` pela pagina MAIS RECENTE: quando ela vinha curta
+ *  3. Na tela da conversa, o polling chamava a mesma `carregar()` da abertura
+ *     e recalculava `temMais` pela pagina MAIS RECENTE: quando ela vinha curta
  *     o botao "carregar anteriores" sumia, com o historico ja no banco.
+ *  4. E na LISTA de conversas a tela nunca mandava `page`: a rota paginava em
+ *     30 e devolvia sempre as 30 mais recentes, entao a lista parava umas
+ *     horas atras e as conversas antigas nao tinham como ser alcancadas.
  */
 import { describe, it, expect } from "vitest"
 import { readFileSync } from "node:fs"
@@ -69,5 +72,33 @@ describe("paginacao da conversa na tela", () => {
     expect(fonte).toMatch(/void carregar\(true\)\.then/)
     const laco = fonte.slice(fonte.indexOf("setInterval"))
     expect(laco).toMatch(/await carregar\(\)/)
+  })
+})
+
+describe("paginacao da lista de conversas", () => {
+  const tela = semComentarios(ler("src", "app", "(dashboard)", "inbox", "page.tsx"))
+
+  it("pede a pagina ao servidor", () => {
+    // Sem `page` a rota devolve sempre a primeira: a lista parecia completa
+    // e parava nas 30 conversas mais recentes.
+    expect(tela).toMatch(/params\.set\("page", String\(pagina\)\)/)
+    expect(tela).toMatch(/params\.set\("limit", String\(LIMITE\)\)/)
+  })
+
+  it("guarda o total e monta o controle de pagina", () => {
+    expect(tela).toMatch(/setTotal\(data\.total/)
+    expect(tela).toMatch(/<Paginacao/)
+  })
+
+  it("o polling recarrega a pagina em que a pessoa esta", () => {
+    // `pagina` tem que estar nas dependencias, senao o ciclo de 5s continuaria
+    // buscando a primeira e jogaria a atendente de volta para o topo.
+    expect(tela).toMatch(/\[buscaAplicada, channelFilter, statusFilter, numeroFilter, pagina\]/)
+  })
+
+  it("trocar de filtro volta para a primeira pagina", () => {
+    // Filtrar estando na pagina 5 devolvia lista vazia de um resultado que
+    // tem uma pagina so.
+    expect(tela).toMatch(/setPagina\(1\)/)
   })
 })
