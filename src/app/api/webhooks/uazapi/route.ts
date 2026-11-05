@@ -120,17 +120,29 @@ export async function POST(req: Request) {
         }
       }
 
-      const resultado = await processIncomingMessage(msg, conta, { historico })
+      // Cada mensagem responde por si. O try/catch de fora cobria o laco
+      // INTEIRO: uma mensagem que falhava no meio de um lote de historico
+      // descartava calada todas as seguintes, e a rota ainda respondia 200 —
+      // o uazapi nunca reenviava e o passado simplesmente nao chegava.
+      try {
+        const resultado = await processIncomingMessage(msg, conta, { historico })
 
-      // Foto da cliente: só quando ela ainda não tem. A URL do WhatsApp é
-      // temporária, então a imagem é baixada e guardada como mídia da loja —
-      // gravar o link direto daria foto quebrada semanas depois.
-      if (resultado?.contact && !resultado.contact.avatarUrl && !msg.fromMe && conta.storeId) {
-        await guardarFotoDoContato(
-          credenciais?.token,
-          conta.storeId,
-          resultado.contact.id,
-          msg.senderId
+        // Foto da cliente: só quando ela ainda não tem. A URL do WhatsApp é
+        // temporária, então a imagem é baixada e guardada como mídia da loja —
+        // gravar o link direto daria foto quebrada semanas depois.
+        if (resultado?.contact && !resultado.contact.avatarUrl && !msg.fromMe && conta.storeId) {
+          await guardarFotoDoContato(
+            credenciais?.token,
+            conta.storeId,
+            resultado.contact.id,
+            msg.senderId
+          )
+        }
+      } catch (erro) {
+        console.error(
+          "[uazapi] Mensagem descartada:",
+          msg.externalId ?? "(sem id)",
+          (erro as Error).message
         )
       }
     }

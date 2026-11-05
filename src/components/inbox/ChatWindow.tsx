@@ -84,8 +84,15 @@ export function ChatWindow({
 
   // ------------------------------------------------------------ carregamento
 
-  /** Traz a pagina mais recente e mescla com a tela (ver lib/chat/mesclar). */
-  const carregar = useCallback(async () => {
+  /**
+   * Traz a pagina mais recente e mescla com a tela (ver lib/chat/mesclar).
+   *
+   * `inicial` separa a abertura da conversa do polling. So a abertura decide
+   * se ha passado a carregar: o polling le SEMPRE a pagina mais recente, e
+   * deixa-lo mexer em `temMais` apagava o botao "carregar anteriores" assim
+   * que essa pagina vinha curta — com o historico inteiro ja no banco.
+   */
+  const carregar = useCallback(async (inicial = false) => {
     const res = await fetch(
       `/api/messages?conversationId=${conversationId}&limit=${PAGINA}`
     )
@@ -93,7 +100,7 @@ export function ChatWindow({
     const recentes: Mensagem[] = await res.json()
 
     setMensagens((atuais) => mesclarMensagens(atuais, recentes))
-    setTemMais(recentes.length >= PAGINA)
+    if (inicial) setTemMais(recentes.length >= PAGINA)
     return recentes
   }, [conversationId])
 
@@ -141,7 +148,7 @@ export function ChatWindow({
     setMensagens([])
     setTemMais(false)
     ultimaVistaRef.current = null
-    void carregar().then(() => requestAnimationFrame(irParaOFim))
+    void carregar(true).then(() => requestAnimationFrame(irParaOFim))
   }, [conversationId, carregar, irParaOFim])
 
   useEffect(() => armarAviso(), [])

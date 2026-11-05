@@ -73,16 +73,29 @@ export async function processIncomingMessage(
   })
 
   if (!contact) {
-    contact = await prisma.contact.create({
-      data: {
-        storeId,
-        name: msg.senderName || null,
-        avatarUrl: msg.senderAvatarUrl || null,
-        [idField]: msg.senderId,
-        // Also set phone for WhatsApp
-        ...(msg.channel === "whatsapp" && { phone: msg.senderId }),
-      },
-    })
+    try {
+      contact = await prisma.contact.create({
+        data: {
+          storeId,
+          name: msg.senderName || null,
+          avatarUrl: msg.senderAvatarUrl || null,
+          [idField]: msg.senderId,
+          // Also set phone for WhatsApp
+          ...(msg.channel === "whatsapp" && { phone: msg.senderId }),
+        },
+      })
+    } catch (erro) {
+      // Corrida real: o uazapi entrega o historico em webhooks PARALELOS, e
+      // dois lotes da mesma cliente nova passam juntos pelo `findFirst` acima
+      // — os dois acham que precisam criar. O unico (store_id, whatsapp_id)
+      // barra o segundo com P2002; quem perde a corrida le a contato que o
+      // outro acabou de gravar, em vez de derrubar o lote inteiro.
+      if (!(erro instanceof Prisma.PrismaClientKnownRequestError) || erro.code !== "P2002") throw erro
+      contact = await prisma.contact.findFirst({
+        where: { storeId, [idField]: msg.senderId },
+      })
+      if (!contact) throw erro
+    }
   } else if ((msg.senderName && !contact.name) || (msg.senderAvatarUrl && !contact.avatarUrl)) {
     // Completa o que faltava: nome e foto chegam em mensagens diferentes.
     contact = await prisma.contact.update({
